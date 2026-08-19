@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Freight Pilot</title>
+<link rel="stylesheet" href="styles.css" />
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===================== LOGIN SCREEN ===================== -->
+  <section id="screen-login" class="screen">
+    <header class="brand">
+      <div class="brand-mark">FP</div>
+      <div class="brand-text">
+        <h1>Freight Pilot</h1>
+        <p class="hint">Dispatch control panel</p>
+      </div>
+    </header>
+
+    <div class="tabs" role="tablist">
+      <button class="tab is-active" data-role="owner" role="tab">Owner</button>
+      <button class="tab" data-role="dispatcher" role="tab">Dispatcher</button>
+    </div>
+
+    <form id="form-owner" class="card form">
+      <label>
+        <span>MC number</span>
+        <input type="text" id="owner-mc" inputmode="numeric" placeholder="e.g. 123456" required />
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" id="owner-password" placeholder="••••••••" required />
+      </label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+      <p class="error hidden" id="owner-error"></p>
+    </form>
+
+    <form id="form-dispatcher" class="card form hidden">
+      <label>
+        <span>Username</span>
+        <input type="text" id="dispatcher-username" placeholder="dispatcher username" required />
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" id="dispatcher-password" placeholder="••••••••" required />
+      </label>
+      <button type="submit" class="btn btn-primary">Log in</button>
+      <p class="error hidden" id="dispatcher-error"></p>
+    </form>
+  </section>
+
+  <!-- ===================== DASHBOARD SCREEN ===================== -->
+  <section id="screen-dashboard" class="screen hidden">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="dash-company">—</p>
+        <h1 id="dash-role">Dashboard</h1>
+      </div>
+      <button class="btn btn-ghost" id="btn-logout">Log out</button>
+    </header>
+
+    <div class="stats-row">
+      <div class="stat">
+        <span class="stat-value" id="stat-total">0</span>
+        <span class="stat-label">Drivers</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-active">0</span>
+        <span class="stat-label">Active</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-loads">0</span>
+        <span class="stat-label">Loads run</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="stat-weekly">$0</span>
+        <span class="stat-label">Weekly gross</span>
+      </div>
+    </div>
+
+    <!-- Billing card (owner only) -->
+    <div id="billing-card" class="card billing-card hidden">
+      <h3 class="billing-title">💳 Subscription</h3>
+      <div class="billing-row">
+        <span class="billing-label">Active drivers</span>
+        <span class="billing-value" id="billing-drivers">0</span>
+      </div>
+      <div class="billing-row">
+        <span class="billing-label">Price per driver</span>
+        <span class="billing-value" id="billing-per-driver">$25</span>
+      </div>
+      <div class="billing-row billing-total">
+        <span class="billing-label">Monthly total</span>
+        <span class="billing-value" id="billing-total">$0</span>
+      </div>
+      <p class="billing-hint" id="billing-hint"></p>
+    </div>
+
+    <h2 class="section-title">Drivers</h2>
+    <div id="driver-list" class="driver-list">
+      <p class="empty" id="driver-empty">No drivers yet.</p>
+    </div>
+
+    <!-- Driver details modal -->
+    <div id="driver-modal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modal-driver-name">Driver Details</h2>
+          <button class="btn-close" id="btn-close-modal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-stats">
+            <div class="detail-stat">
+              <span class="detail-label">Bot ID</span>
+              <span class="detail-value" id="detail-bot-id">—</span>
+            </div>
+            <div class="detail-stat">
+              <span class="detail-label">Telegram Group</span>
+              <span class="detail-value" id="detail-group-id">—</span>
+            </div>
+            <div class="detail-stat">
+              <span class="detail-label">Dispatcher</span>
+              <span class="detail-value" id="detail-dispatcher">—</span>
+            </div>
+          </div>
+          
+          <div class="detail-earnings">
+            <div class="earning-card">
+              <span class="earning-label">Weekly Gross</span>
+              <span class="earning-value" id="detail-weekly-gross">$0</span>
+              <span class="earning-sublabel" id="detail-weekly-loads">0 loads</span>
+            </div>
+            <div class="earning-card">
+              <span class="earning-label">Total Gross</span>
+              <span class="earning-value" id="detail-total-gross">$0</span>
+              <span class="earning-sublabel" id="detail-total-loads">0 loads</span>
+            </div>
+          </div>
+
+          <h3 class="detail-section-title">Load History</h3>
+          <div id="load-history" class="load-history">
+            <p class="empty">No loads yet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="owner-only-section" class="hidden">
+      <h2 class="section-title">Add a dispatcher</h2>
+      <form id="form-add-dispatcher" class="card form">
+        <label>
+          <span>Username</span>
+          <input type="text" id="new-dispatcher-username" placeholder="new dispatcher username" required />
+        </label>
+        <label>
+          <span>Password</span>
+          <input type="password" id="new-dispatcher-password" placeholder="min. 6 characters" required minlength="6" />
+        </label>
+        <button type="submit" class="btn btn-primary">Create dispatcher login</button>
+        <p class="error hidden" id="add-dispatcher-error"></p>
+        <p class="success hidden" id="add-dispatcher-success">Dispatcher login created.</p>
+      </form>
+    </div>
+  </section>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+/* ============================================================
+   Freight Pilot Mini App — visual identity
+   - Base colors come from Telegram's own theme (light/dark aware),
+     with sane fallbacks for testing outside Telegram.
+   - Signature: signal-color status dots on every driver row, echoing
+     the bot's own 🟢PU / 🔴DEL language from the chat messages —
+     green = active, red = inactive, amber = the one shared accent.
+   - UI type is the system font (fast, native-feeling in a WebView);
+     data (MC#, IDs, counts) uses a monospace stack for a dispatch-
+     terminal feel, distinct from ordinary body text.
+   ============================================================ */
+
+:root {
+  --bg: var(--tg-theme-bg-color, #0f1115);
+  --secondary-bg: var(--tg-theme-secondary-bg-color, #171a21);
+  --text: var(--tg-theme-text-color, #eef0f3);
+  --hint: var(--tg-theme-hint-color, #8a8f98);
+  --link: var(--tg-theme-link-color, #ff9f1c);
+  --button-bg: var(--tg-theme-button-color, #ff9f1c);
+  --button-text: var(--tg-theme-button-text-color, #14171c);
+
+  --amber: #ff9f1c;
+  --green: #2ecc71;
+  --red: #ff5a5a;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.hidden { display: none !important; }
+
+/* ---------- Brand header ---------- */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 28px;
+}
+.brand-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--amber);
+  color: #14171c;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.brand-text h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.hint {
+  margin: 2px 0 0;
+  color: var(--hint);
+  font-size: 13px;
+}
+
+/* ---------- Tabs (login screen) ---------- */
+.tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--secondary-bg);
+  padding: 4px;
+  border-radius: 999px;
+  margin-bottom: 18px;
+}
+.tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--hint);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.tab.is-active {
+  background: var(--amber);
+  color: #14171c;
+}
+
+/* ---------- Cards / forms ---------- */
+.card {
+  background: var(--secondary-bg);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.form { display: flex; flex-direction: column; gap: 14px; }
+.form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--hint); }
+.form input {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 11px 12px;
+}
+.form input:focus {
+  outline: none;
+  border-color: var(--amber);
+}
+
+.btn {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: 10px;
+  padding: 12px;
+  border: none;
+  cursor: pointer;
+}
+.btn-primary { background: var(--button-bg); color: var(--button-text); }
+.btn-primary:active { opacity: 0.85; }
+.btn-ghost { background: transparent; color: var(--hint); font-size: 13px; padding: 8px 10px; }
+
+.error {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0;
+  min-height: 16px;
+}
+.success {
+  color: var(--green);
+  font-size: 13px;
+  margin: 0;
+}
+
+/* ---------- Dashboard ---------- */
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.topbar h1 { margin: 2px 0 0; font-size: 20px; }
+
+.stats-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.stat {
+  flex: 1;
+  background: var(--secondary-bg);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+}
+.stat-value {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--amber);
+}
+.stat-label {
+  display: block;
+  font-size: 11px;
+  color: var(--hint);
+  margin-top: 2px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hint);
+  margin: 24px 0 10px;
+}
+
+.driver-list { display: flex; flex-direction: column; gap: 8px; }
+.driver-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--secondary-bg);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.on { background: var(--green); }
+.status-dot.off { background: var(--red); }
+
+.driver-info { flex: 1; min-width: 0; }
+.driver-name { font-weight: 600; font-size: 14px; }
+.driver-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--hint);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle {
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  position: relative;
+  cursor: pointer;
+  border: none;
+  flex-shrink: 0;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.toggle.is-on { background: var(--green); }
+.toggle.is-on::after { transform: translateX(16px); }
+
+.empty { color: var(--hint); font-size: 13px; text-align: center; padding: 20px 0; }

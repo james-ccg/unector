@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import './styles/pages.css';
+
+/* ============================================================
+   Freight Pilot — design tokens
+   Identity: a night-highway / dispatch-terminal feel rather than a
+   generic navy-and-purple SaaS look — warm charcoal base (like asphalt
+   after dark), signal-amber as the one brand accent, and green/red
+   status colors that echo the bot's own 🟢PU / 🔴DEL language.
+   Type: Space Grotesk for headings (distinctive, geometric), Inter for
+   body/UI text (dense-UI legible), IBM Plex Mono for data (load IDs,
+   MC#, dollar figures) — gives numbers a "terminal" feel that plain
+   text figures don't have.
+   ============================================================ */
+
+:root {
+  /* Core surfaces */
+  --bg: #16150f;
+  --card: #201f17;
+  --dark: #16150f;
+  --dark-lighter: #201f17;
+  --border: #37342a;
+
+  /* Text */
+  --text: #f4f1e8;
+  --text-primary: #f4f1e8;
+  --hint: #a49d8c;
+  --text-muted: #a49d8c;
+
+  /* Brand accent (amber) - the one color that carries the identity */
+  --amber: #ff9f1c;
+  --amber-dark: #e08800;
+  --primary: #ff9f1c;
+  --primary-dark: #e08800;
+  --gradient-start: #ffb54d;
+  --gradient-end: #ff9f1c;
+
+  /* Signal colors - same language as the Telegram bot's 🟢PU / 🔴DEL */
+  --green: #2ecc71;
+  --red: #ff5a5a;
+  --blue: #5b9dd9;
+  --success: #2ecc71;
+
+  /* Type */
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius: 14px;
+  --radius-sm: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+code, .mono, .stat-value, .value {
+  font-family: var(--font-mono);
+}
+
+a {
+  color: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  padding-top: 70px;
+}
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10px); }
+  75% { transform: translateX(10px); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--card);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--amber);
+}
