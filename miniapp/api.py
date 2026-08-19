@@ -130,6 +130,26 @@ class SubscriptionToggleRequest(BaseModel):
     active: bool
 
 
+class DispatcherSummary(BaseModel):
+    id: int
+    username: str
+    role: str
+    created_at: str | None
+
+
+class TwoFaStatusResponse(BaseModel):
+    totp_enabled: bool
+    email_otp_enabled: bool
+    contact_email: str | None
+    sms_otp_enabled: bool
+    phone_number: str | None
+    telegram_otp_enabled: bool
+    telegram_linked: bool
+    webauthn_count: int
+    recovery_codes_remaining: int
+    any_enabled: bool
+
+
 class ConnectSamsaraRequest(BaseModel):
     api_key: str
 
@@ -406,8 +426,11 @@ def update_subscription(
 # ------------------------------------------------------------------
 # Dispatcher management (owner only)
 # ------------------------------------------------------------------
-@app.get("/api/dispatchers")
+@app.get("/api/dispatchers", response_model=list[DispatcherSummary])
 def list_dispatchers(user: dict = Depends(require_owner)):
+    # response_model strips anything beyond id/username/role/created_at -
+    # in particular, password_hash - even if get_dispatchers_by_company()
+    # is ever changed to return more than that.
     return get_dispatchers_by_company(user["company_id"])
 
 
@@ -810,8 +833,13 @@ def _self_account(user: dict) -> tuple[str, int]:
     return "dispatcher", user["dispatcher_id"]
 
 
-@app.get("/api/2fa/status")
+@app.get("/api/2fa/status", response_model=TwoFaStatusResponse)
 def get_two_factor_status(user: dict = Depends(get_current_user)):
+    # response_model acts as an allow-list here: get_2fa_status() reads a
+    # TwoFactorSecret row that also holds totp_secret_encrypted - if a
+    # future edit to that function ever returned the raw row instead of a
+    # curated dict, FastAPI would strip it back down to this schema
+    # instead of silently serializing the encrypted secret to the client.
     account_type, account_id = _self_account(user)
     return get_2fa_status(account_type, account_id)
 
