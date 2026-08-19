@@ -115,5 +115,27 @@ def generate_new_fernet_key() -> str:
     return Fernet.generate_key().decode()
 
 
+# ------------------------------------------------------------------
+# Fail fast on weak/missing secrets in production, rather than booting
+# successfully and only discovering the problem later (a forgeable JWT
+# session, or a RuntimeError the first time a credential is encrypted).
+# Dev keeps the fallback so a fresh clone still runs out of the box.
+# ------------------------------------------------------------------
+if IS_PRODUCTION:
+    _problems = []
+    if JWT_SECRET_KEY == "dev-only-change-me-before-going-live" or len(JWT_SECRET_KEY) < 32:
+        _problems.append(
+            "JWT_SECRET_KEY is missing, using the dev default, or too short (need 32+ chars) - "
+            'generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.'
+        )
+    if not FERNET_KEY:
+        _problems.append("FERNET_MASTER_KEY is not set - generate one with `python config.py`.")
+    if _problems:
+        raise RuntimeError(
+            "Refusing to start with ENVIRONMENT=production and insecure secrets:\n- "
+            + "\n- ".join(_problems)
+        )
+
+
 if __name__ == "__main__":
     print("New FERNET_MASTER_KEY:", generate_new_fernet_key())
