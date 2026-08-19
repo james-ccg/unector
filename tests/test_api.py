@@ -339,6 +339,15 @@ class TestTenantIsolation:
         assert response.status_code == 200
 
 
+class TestSecurityHeaders:
+    def test_security_headers_present_on_every_response(self, client):
+        response = client.get("/api/public/stats")
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "default-src 'self'" in response.headers["Content-Security-Policy"]
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+
+
 class TestPublicAPI:
     """Public API endpoints test"""
 

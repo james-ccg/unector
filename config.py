@@ -36,6 +36,11 @@ SAMSARA_POLL_INTERVAL_SECONDS = int(os.getenv("SAMSARA_POLL_INTERVAL_SECONDS", "
 # otherwise break plain-http localhost development.
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT == "production"
+# Off by default so local http://localhost dev keeps working. Turn on once
+# deployed somewhere that actually terminates HTTPS in front of this app -
+# if a reverse proxy already redirects to HTTPS, leave this off too, to
+# avoid a redirect loop.
+FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").strip().lower() == "true"
 
 # Mini App (owner/dispatcher dashboard) settings.
 # JWT_SECRET_KEY signs login sessions - set a real random value in production;

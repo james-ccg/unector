@@ -25,7 +25,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from config import FRONTEND_URL, TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY, encrypt_value
+from config import FORCE_HTTPS, FRONTEND_URL, IS_PRODUCTION, TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY, encrypt_value
 from db.database import init_db
 from db.repository import (
     create_dispatcher,
@@ -61,6 +61,42 @@ app = FastAPI(title="Freight Pilot Mini App API")
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+if FORCE_HTTPS:
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+
+# CSP is scoped to what this app actually loads: same-origin everything,
+# plus Google Fonts (index.css's @import) and Cloudflare Turnstile (the
+# bot-protection widget, itself only active once configured).
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://challenges.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data:; "
+    "frame-src https://challenges.cloudflare.com; "
+    "connect-src 'self' https://challenges.cloudflare.com; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Content-Security-Policy"] = _CSP
+    if IS_PRODUCTION:
+        # Only sent over an actual HTTPS deployment - meaningless (and
+        # potentially confusing) to send during plain-http local dev.
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
 
 # The frontend is served from the same origin as this API in production
 # (frontend/dist is mounted below), and Vite's dev-server proxy makes it
