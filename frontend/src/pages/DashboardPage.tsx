@@ -1,10 +1,37 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
 import { dashboardApi } from '../services/api'
 import './DashboardPage.css'
+
+// Matches index.css's dark theme tokens - recharts needs literal color
+// values (it renders to SVG attributes, not CSS custom properties... on
+// older versions; passing var(--x) does work in modern browsers via SVG's
+// CSS support, but hardcoding here avoids any renderer-version surprises).
+const CHART_COLORS = {
+  amber: '#ff9f1c',
+  green: '#2ecc71',
+  grid: '#37342a',
+  text: '#a49d8c',
+  tooltipBg: '#201f17',
+}
+
+function ChartTooltip({ active, payload, label, formatter }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="chart-tooltip">
+      {label && <p className="chart-tooltip-label">{label}</p>}
+      {payload.map((p: any) => (
+        <p key={p.dataKey} className="chart-tooltip-value">
+          {formatter ? formatter(p.value) : p.value}
+        </p>
+      ))}
+    </div>
+  )
+}
 
 interface Driver {
   id: number
@@ -75,6 +102,28 @@ export default function DashboardPage() {
     () => drivers.filter((d) => !d.samsara_vehicle_id).length,
     [drivers]
   )
+
+  // Real per-driver earnings already fetched for the list below - just
+  // reshaped for the chart, not a separate/fabricated data source.
+  const earningsChartData = useMemo(
+    () =>
+      [...drivers]
+        .sort((a, b) => b.weekly_gross - a.weekly_gross)
+        .slice(0, 8)
+        .map((d) => ({ name: d.full_name || d.driver_bot_id, gross: Math.round(d.weekly_gross) }))
+        .reverse(),
+    [drivers]
+  )
+
+  const fleetStatusData = useMemo(() => {
+    const active = dashboardData?.stats?.active_drivers || 0
+    const total = dashboardData?.stats?.total_drivers || 0
+    const inactive = Math.max(total - active, 0)
+    return [
+      { name: 'Active', value: active, color: CHART_COLORS.green },
+      { name: 'Inactive', value: inactive, color: CHART_COLORS.grid },
+    ].filter((d) => d.value > 0)
+  }, [dashboardData])
 
   if (loading) {
     return (
@@ -188,6 +237,68 @@ export default function DashboardPage() {
               </div>
               {dashboardData.billing.discount_applied && (
                 <p className="billing-hint">Volume discount applied for {dashboardData.billing.active_drivers}+ active drivers.</p>
+              )}
+            </div>
+          )}
+
+          {drivers.length > 0 && (
+            <div className="charts-row">
+              {earningsChartData.length > 0 && (
+                <div className="card chart-card">
+                  <h3 className="chart-title">Weekly Gross by Driver</h3>
+                  <ResponsiveContainer width="100%" height={Math.max(earningsChartData.length * 36, 120)}>
+                    <BarChart data={earningsChartData} layout="vertical" margin={{ left: 8, right: 16 }}>
+                      <XAxis type="number" hide />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={100}
+                        tick={{ fill: CHART_COLORS.text, fontSize: 12 }}
+                        axisLine={{ stroke: CHART_COLORS.grid }}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                        content={<ChartTooltip formatter={(v: number) => `$${v.toLocaleString()}`} />}
+                      />
+                      <Bar dataKey="gross" fill={CHART_COLORS.amber} radius={[0, 6, 6, 0]} barSize={16} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {fleetStatusData.length > 0 && (
+                <div className="card chart-card chart-card-narrow">
+                  <h3 className="chart-title">Fleet Status</h3>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={fleetStatusData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={fleetStatusData.length > 1 ? 3 : 0}
+                        strokeWidth={0}
+                        isAnimationActive={false}
+                      >
+                        {fleetStatusData.map((entry) => (
+                          <Cell key={entry.name} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="chart-legend">
+                    {fleetStatusData.map((entry) => (
+                      <div key={entry.name} className="chart-legend-item">
+                        <span className="chart-legend-dot" style={{ background: entry.color }} />
+                        <span>{entry.name}</span>
+                        <span className="chart-legend-value">{entry.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}

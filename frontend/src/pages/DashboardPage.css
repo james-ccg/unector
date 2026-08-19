@@ -146,6 +146,86 @@
   font-weight: 700;
 }
 
+/* ---------- Dashboard charts ---------- */
+.charts-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.chart-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-card-narrow {
+  align-items: center;
+}
+
+.chart-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 16px;
+}
+
+.chart-tooltip {
+  background: var(--dark, var(--card));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.chart-tooltip-label {
+  color: var(--hint);
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.chart-tooltip-value {
+  color: var(--text);
+  margin: 0;
+  font-weight: 600;
+}
+
+.chart-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--hint);
+}
+
+.chart-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.chart-legend-value {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media screen and (max-width: 768px) {
+  .charts-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .billing-hint {
   margin: 16px 0 0;
   font-size: 13px;

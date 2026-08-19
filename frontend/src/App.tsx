@@ -1,69 +1,86 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
 import RequireGmailConnected from './components/RequireGmailConnected'
 import HomePage from './pages/HomePage'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import DashboardPage from './pages/DashboardPage'
-import SettingsPage from './pages/SettingsPage'
-import MonitoringPage from './pages/MonitoringPage'
-import OnboardingGmailPage from './pages/OnboardingGmailPage'
-import FAQPage from './pages/FAQPage'
-import PricingPage from './pages/PricingPage'
-import SecurityPage from './pages/SecurityPage'
-import TrustPage from './pages/TrustPage'
-import UpdatesPage from './pages/UpdatesPage'
+
+// Route-based code splitting: the marketing pages (Home, Pricing, FAQ...)
+// shouldn't have to download the dashboard's chart library (recharts) or
+// any other page's own dependencies just to render. HomePage stays eager
+// since it's the most common landing page and shouldn't show a loading
+// flash on first paint.
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const MonitoringPage = lazy(() => import('./pages/MonitoringPage'))
+const OnboardingGmailPage = lazy(() => import('./pages/OnboardingGmailPage'))
+const FAQPage = lazy(() => import('./pages/FAQPage'))
+const PricingPage = lazy(() => import('./pages/PricingPage'))
+const SecurityPage = lazy(() => import('./pages/SecurityPage'))
+const TrustPage = lazy(() => import('./pages/TrustPage'))
+const UpdatesPage = lazy(() => import('./pages/UpdatesPage'))
+
+function RouteFallback() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <div className="spinner" />
+    </div>
+  )
+}
 
 function App() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/pages/faq" element={<FAQPage />} />
-        <Route path="/pages/pricing" element={<PricingPage />} />
-        <Route path="/pages/security" element={<SecurityPage />} />
-        <Route path="/pages/trust" element={<TrustPage />} />
-        <Route path="/pages/updates" element={<UpdatesPage />} />
-        <Route
-          path="/onboarding/connect-gmail"
-          element={
-            <PrivateRoute>
-              <OnboardingGmailPage />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <PrivateRoute>
-              <RequireGmailConnected>
-                <DashboardPage />
-              </RequireGmailConnected>
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <PrivateRoute>
-              <SettingsPage />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/monitoring"
-          element={
-            <PrivateRoute>
-              <RequireGmailConnected>
-                <MonitoringPage />
-              </RequireGmailConnected>
-            </PrivateRoute>
-          }
-        />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/pages/faq" element={<FAQPage />} />
+          <Route path="/pages/pricing" element={<PricingPage />} />
+          <Route path="/pages/security" element={<SecurityPage />} />
+          <Route path="/pages/trust" element={<TrustPage />} />
+          <Route path="/pages/updates" element={<UpdatesPage />} />
+          <Route
+            path="/onboarding/connect-gmail"
+            element={
+              <PrivateRoute>
+                <OnboardingGmailPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute>
+                <RequireGmailConnected>
+                  <DashboardPage />
+                </RequireGmailConnected>
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <PrivateRoute>
+                <SettingsPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/monitoring"
+            element={
+              <PrivateRoute>
+                <RequireGmailConnected>
+                  <MonitoringPage />
+                </RequireGmailConnected>
+              </PrivateRoute>
+            }
+          />
+        </Routes>
+      </Suspense>
     </AuthProvider>
   )
 }
