@@ -36,7 +36,7 @@ export default function LoginPage() {
   }, [isAuthenticated, navigate])
 
   const finishLogin = (data: LoginSuccess) => {
-    login(data.token, data.role, data.company_name, data.company_id)
+    login(data)
   }
 
   const handleOwnerLogin = async (e: React.FormEvent<HTMLFormElement>) => {

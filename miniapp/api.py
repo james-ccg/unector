@@ -16,7 +16,7 @@ URL with @BotFather (see README's Mini App section) and set MINIAPP_URL in .env.
 """
 import os
 from pathlib import Path
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -38,14 +38,33 @@ from db.repository import (
     get_company_credential,
     delete_company_credential,
 )
-from miniapp.auth import create_token, decode_token, hash_password, verify_password
+from miniapp.auth import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    SESSION_COOKIE_NAME,
+    SHORT_LIVED_SECONDS,
+    clear_session_cookies,
+    create_token,
+    decode_token,
+    hash_password,
+    set_session_cookies,
+    verify_password,
+)
 
 app = FastAPI(title="Freight Pilot Mini App API")
 
-# Wide-open CORS is fine here: the API only ever returns data scoped to the
-# caller's own company (enforced via the JWT), never anything sensitive
-# without a valid token.
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# The frontend is served from the same origin as this API in production
+# (frontend/dist is mounted below), and Vite's dev-server proxy makes it
+# same-origin in development too - so credentialed cross-origin requests
+# are a defense-in-depth measure, not the primary path. allow_credentials
+# requires an explicit origin list; "*" is not permitted with it.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_URL],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -101,11 +120,19 @@ class SubscriptionToggleRequest(BaseModel):
 
 # ------------------------------------------------------------------
 # Auth helpers
+#
+# The session token lives in an httpOnly cookie (never touched by frontend
+# JS), so get_current_user reads it from there instead of an Authorization
+# header. Because the browser now attaches that cookie automatically,
+# state-changing endpoints additionally require verify_csrf, which checks
+# the double-submit CSRF cookie against a matching request header - see
+# miniapp/auth.py's module docstring for the full threat model.
 # ------------------------------------------------------------------
-def get_current_user(authorization: str = Header(default="")) -> dict:
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing or invalid Authorization header")
-    payload = decode_token(authorization.removeprefix("Bearer ").strip())
+def get_current_user(request: Request) -> dict:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        raise HTTPException(401, "Missing or invalid session")
+    payload = decode_token(token)
     if not payload:
         raise HTTPException(401, "Invalid or expired session - please log in again")
     return payload
@@ -117,8 +144,15 @@ def require_owner(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def verify_csrf(request: Request) -> None:
+    cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
+    header_value = request.headers.get(CSRF_HEADER_NAME)
+    if not cookie_value or not header_value or cookie_value != header_value:
+        raise HTTPException(403, "Missing or invalid CSRF token")
+
+
 @app.post("/api/auth/register")
-def register_company(body: RegisterRequest):
+def register_company(body: RegisterRequest, response: Response):
     """Register a new logistics company"""
     from db.database import get_session
     from db import models
@@ -147,9 +181,9 @@ def register_company(body: RegisterRequest):
             session.commit()
             session.refresh(new_company)
 
-            token = create_token({"role": "owner", "company_id": new_company.id})
+            token = create_token({"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name})
+            set_session_cookies(response, token)
             return {
-                "token": token,
                 "company_name": new_company.company_name,
                 "mc_number": new_company.mc_number,
                 "company_id": new_company.id,
@@ -163,29 +197,35 @@ def register_company(body: RegisterRequest):
         raise HTTPException(500, "Registration failed. Please try again.")
 
 @app.post("/api/auth/owner")
-def login_owner(body: OwnerLoginRequest):
+def login_owner(body: OwnerLoginRequest, response: Response):
     company = get_company_by_mc(body.mc_number.strip())
     if not company or not company.password_hash or not verify_password(body.password, company.password_hash):
         raise HTTPException(401, "Invalid MC number or password")
 
-    return _finish_password_step("owner", company.id, {"company_name": company.company_name, "company_id": company.id})
+    return _finish_password_step(
+        response, "owner", company.id, {"company_name": company.company_name, "company_id": company.id}
+    )
 
 
 @app.post("/api/auth/dispatcher")
-def login_dispatcher(body: DispatcherLoginRequest):
+def login_dispatcher(body: DispatcherLoginRequest, response: Response):
     dispatcher = get_dispatcher_by_username(body.username.strip())
     if not dispatcher or not verify_password(body.password, dispatcher.password_hash):
         raise HTTPException(401, "Invalid username or password")
 
     return _finish_password_step(
-        "dispatcher", dispatcher.id, {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id}
+        response, "dispatcher", dispatcher.id,
+        {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id},
     )
 
 
-def _finish_password_step(account_type: str, account_id: int, extra_claims: dict):
+def _finish_password_step(response: Response, account_type: str, account_id: int, extra_claims: dict):
     """Shared by both login endpoints: once the password checks out, either
-    issue a real session token (no 2FA enabled) or a short-lived "pending"
-    token the frontend must complete a second factor with."""
+    issue a real session (cookie) when no 2FA is enabled, or a short-lived
+    "pending" token the frontend must complete a second factor with. The
+    pending token is handed back in the response body rather than a cookie -
+    it grants no resource access on its own (still requires a valid 2FA
+    code), so it's a narrow login-handshake token, not a session."""
     from db.repository import get_2fa_status
 
     status = get_2fa_status(account_type, account_id)
@@ -193,7 +233,8 @@ def _finish_password_step(account_type: str, account_id: int, extra_claims: dict
 
     if not status["any_enabled"]:
         token = create_token(base_claims)
-        return {"token": token, "role": account_type, **extra_claims}
+        set_session_cookies(response, token)
+        return {"role": account_type, **extra_claims}
 
     available_methods = [
         m
@@ -207,7 +248,8 @@ def _finish_password_step(account_type: str, account_id: int, extra_claims: dict
         if enabled
     ]
     pending_token = create_token(
-        {"purpose": "2fa_login", "account_type": account_type, "account_id": account_id, **base_claims}
+        {"purpose": "2fa_login", "account_type": account_type, "account_id": account_id, **base_claims},
+        lifetime_seconds=SHORT_LIVED_SECONDS,
     )
     return {"requires_2fa": True, "pending_token": pending_token, "methods": available_methods}
 
@@ -215,6 +257,14 @@ def _finish_password_step(account_type: str, account_id: int, extra_claims: dict
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
     return user
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    """Clears the session/CSRF cookies. Client-side JS can't read or delete
+    an httpOnly cookie itself, so this round-trip is required."""
+    clear_session_cookies(response)
+    return {"success": True}
 
 
 # ------------------------------------------------------------------
@@ -258,7 +308,10 @@ def get_driver(driver_id: int, user: dict = Depends(get_current_user)):
 
 
 @app.patch("/api/drivers/{driver_id}/subscription")
-def update_subscription(driver_id: int, body: SubscriptionToggleRequest, user: dict = Depends(require_owner)):
+def update_subscription(
+    driver_id: int, body: SubscriptionToggleRequest,
+    user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
     try:
         # Security: verify driver belongs to this company
         from db.database import get_session
@@ -289,7 +342,9 @@ def list_dispatchers(user: dict = Depends(require_owner)):
 
 
 @app.post("/api/dispatchers")
-def add_dispatcher(body: CreateDispatcherRequest, user: dict = Depends(require_owner)):
+def add_dispatcher(
+    body: CreateDispatcherRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
     username = body.username.strip()
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
@@ -343,7 +398,7 @@ def gmail_connect(user: dict = Depends(require_owner)):
 
     # The state token proves the callback belongs to this company - it's
     # short-lived and signed, so it can't be forged or reused elsewhere.
-    state = create_token({"company_id": user["company_id"], "purpose": "gmail_oauth"})
+    state = create_token({"company_id": user["company_id"], "purpose": "gmail_oauth"}, lifetime_seconds=SHORT_LIVED_SECONDS)
     auth_url = build_authorization_url(GMAIL_REDIRECT_URI, state)
     return {"auth_url": auth_url}
 
@@ -377,14 +432,14 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
 
 
 @app.delete("/api/settings/gmail")
-def disconnect_gmail(user: dict = Depends(require_owner)):
+def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
     """Disconnect Gmail account"""
     company_id = user.get("company_id")
     delete_company_credential(company_id, "gmail_refresh_token")
     return {"success": True}
 
 @app.post("/api/settings/samsara")
-def connect_samsara(body: dict, user: dict = Depends(require_owner)):
+def connect_samsara(body: dict, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
     """Connect Samsara GPS account (for owners only)"""
     from db.repository import save_company_credential
     
@@ -400,7 +455,7 @@ def connect_samsara(body: dict, user: dict = Depends(require_owner)):
         raise HTTPException(500, f"Failed to connect Samsara: {str(e)}")
 
 @app.delete("/api/settings/samsara")
-def disconnect_samsara(user: dict = Depends(require_owner)):
+def disconnect_samsara(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
     """Disconnect Samsara account"""
     from db.repository import delete_company_credential
     
@@ -694,7 +749,7 @@ def get_two_factor_status(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/totp/setup")
-def totp_setup(user: dict = Depends(get_current_user)):
+def totp_setup(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     secret = twofactor_service.generate_totp_secret()
     save_totp_secret(account_type, account_id, encrypt_value(secret))
@@ -704,7 +759,7 @@ def totp_setup(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/totp/verify")
-def totp_verify(body: OtpVerifyRequest, user: dict = Depends(get_current_user)):
+def totp_verify(body: OtpVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     info = get_2fa_delivery_info(account_type, account_id)
     if not info or not info["totp_secret_encrypted"]:
@@ -716,14 +771,16 @@ def totp_verify(body: OtpVerifyRequest, user: dict = Depends(get_current_user)):
 
 
 @app.delete("/api/2fa/totp")
-def totp_disable(user: dict = Depends(get_current_user)):
+def totp_disable(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     set_totp_enabled(account_type, account_id, False)
     return {"enabled": False}
 
 
 @app.post("/api/2fa/otp/send")
-async def otp_send(body: OtpChannelRequest, user: dict = Depends(get_current_user)):
+async def otp_send(
+    body: OtpChannelRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
     account_type, account_id = _self_account(user)
     code = twofactor_service.generate_otp_code()
     create_pending_otp(
@@ -751,7 +808,10 @@ async def otp_send(body: OtpChannelRequest, user: dict = Depends(get_current_use
 
 
 @app.post("/api/2fa/otp/confirm")
-def otp_confirm(body: OtpVerifyRequest, contact: str | None = None, user: dict = Depends(get_current_user)):
+def otp_confirm(
+    body: OtpVerifyRequest, contact: str | None = None,
+    user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
     account_type, account_id = _self_account(user)
     if not consume_pending_otp(account_type, account_id, body.channel, "enroll", twofactor_service.hash_otp_code(body.code)):
         raise HTTPException(400, "Incorrect or expired code")
@@ -767,7 +827,7 @@ def otp_confirm(body: OtpVerifyRequest, contact: str | None = None, user: dict =
 
 
 @app.delete("/api/2fa/otp/{channel}")
-def otp_disable(channel: str, user: dict = Depends(get_current_user)):
+def otp_disable(channel: str, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     from db.repository import set_telegram_otp as _set_tg
 
     account_type, account_id = _self_account(user)
@@ -783,7 +843,7 @@ def otp_disable(channel: str, user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/telegram/link/start")
-def telegram_link_start(user: dict = Depends(get_current_user)):
+def telegram_link_start(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     code = _secrets.token_hex(3).upper()
     create_telegram_link_token(account_type, account_id, code, datetime.now(timezone.utc) + _timedelta(minutes=15))
@@ -798,7 +858,7 @@ def webauthn_list(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/webauthn/register/options")
-def webauthn_register_options(user: dict = Depends(get_current_user)):
+def webauthn_register_options(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     existing = [c["credential_id"] for c in list_webauthn_credentials(account_type, account_id)]
     label = user.get("company_name") or f"{account_type}-{account_id}"
@@ -807,7 +867,9 @@ def webauthn_register_options(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/webauthn/register/verify")
-def webauthn_register_verify(body: WebAuthnVerifyRequest, user: dict = Depends(get_current_user)):
+def webauthn_register_verify(
+    body: WebAuthnVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
     account_type, account_id = _self_account(user)
     try:
         result = webauthn_service.verify_registration(body.credential_json, body.challenge)
@@ -820,14 +882,16 @@ def webauthn_register_verify(body: WebAuthnVerifyRequest, user: dict = Depends(g
 
 
 @app.delete("/api/2fa/webauthn/{credential_pk}")
-def webauthn_delete(credential_pk: int, user: dict = Depends(get_current_user)):
+def webauthn_delete(
+    credential_pk: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
     account_type, account_id = _self_account(user)
     delete_webauthn_credential(account_type, account_id, credential_pk)
     return {"deleted": True}
 
 
 @app.post("/api/2fa/recovery-codes/generate")
-def recovery_codes_generate(user: dict = Depends(get_current_user)):
+def recovery_codes_generate(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     codes = twofactor_service.generate_recovery_codes()
     save_recovery_codes(account_type, account_id, [twofactor_service.hash_recovery_code(c) for c in codes])
@@ -870,7 +934,7 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
 
 
 @app.post("/api/2fa/login/verify")
-async def login_2fa_verify(body: TwoFaLoginVerifyRequest):
+async def login_2fa_verify(body: TwoFaLoginVerifyRequest, response: Response):
     claims = decode_token(body.pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
@@ -896,11 +960,12 @@ async def login_2fa_verify(body: TwoFaLoginVerifyRequest):
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_token(session_claims)
-    return {"token": token, **session_claims}
+    set_session_cookies(response, token)
+    return {**session_claims}
 
 
 @app.post("/api/2fa/login/webauthn/verify")
-async def login_2fa_webauthn_verify(body: WebAuthnVerifyRequest, pending_token: str):
+async def login_2fa_webauthn_verify(body: WebAuthnVerifyRequest, pending_token: str, response: Response):
     claims = decode_token(pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
@@ -927,7 +992,8 @@ async def login_2fa_webauthn_verify(body: WebAuthnVerifyRequest, pending_token: 
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_token(session_claims)
-    return {"token": token, **session_claims}
+    set_session_cookies(response, token)
+    return {**session_claims}
 
 
 # ------------------------------------------------------------------

@@ -31,6 +31,12 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SAMSARA_NEARBY_MILES = float(os.getenv("SAMSARA_NEARBY_MILES", "5"))
 SAMSARA_POLL_INTERVAL_SECONDS = int(os.getenv("SAMSARA_POLL_INTERVAL_SECONDS", "120"))
 
+# Deployment environment. Set ENVIRONMENT=production on the real server -
+# this gates cookie Secure flags and HTTPS enforcement, both of which would
+# otherwise break plain-http localhost development.
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+
 # Mini App (owner/dispatcher dashboard) settings.
 # JWT_SECRET_KEY signs login sessions - set a real random value in production;
 # the fallback below is only for local development.

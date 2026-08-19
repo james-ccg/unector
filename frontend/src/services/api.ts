@@ -1,28 +1,39 @@
 // API service for backend communication
 const API_BASE = ''
 
-interface ApiOptions extends RequestInit {
-  token?: string
+const CSRF_COOKIE_NAME = 'fp_csrf'
+const CSRF_HEADER_NAME = 'X-CSRF-Token'
+
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
 }
+
+type ApiOptions = RequestInit
 
 export async function apiRequest<T>(
   path: string,
   options: ApiOptions = {}
 ): Promise<T> {
-  const { token, ...fetchOptions } = options
-  
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }
 
-  if (fetchOptions.headers) {
-    Object.entries(fetchOptions.headers).forEach(([key, value]) => {
+  if (options.headers) {
+    Object.entries(options.headers).forEach(([key, value]) => {
       headers[key] = String(value)
     })
   }
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+  // The session lives in an httpOnly cookie the browser attaches automatically
+  // (credentials: 'include'). State-changing requests also need the matching
+  // CSRF header - see miniapp/auth.py's module docstring for the full pattern.
+  const method = (options.method || 'GET').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD') {
+    const csrfToken = readCookie(CSRF_COOKIE_NAME)
+    if (csrfToken) {
+      headers[CSRF_HEADER_NAME] = csrfToken
+    }
   }
 
   const controller = new AbortController()
@@ -30,8 +41,9 @@ export async function apiRequest<T>(
 
   try {
     const response = await fetch(API_BASE + path, {
-      ...fetchOptions,
+      ...options,
       headers,
+      credentials: 'include',
       signal: controller.signal,
     })
 
@@ -53,7 +65,6 @@ export async function apiRequest<T>(
       switch (response.status) {
         case 401:
           errorMsg = 'Session expired. Please log in again.'
-          localStorage.removeItem('fp_token')
           break
         case 403:
           errorMsg = data.detail || 'Access denied'
@@ -95,7 +106,6 @@ export interface TwoFaChallenge {
 }
 
 export interface LoginSuccess {
-  token: string
   role: 'owner' | 'dispatcher'
   company_name?: string
   company_id: number
@@ -122,15 +132,21 @@ export const authApi = {
     password: string
     confirm_password: string
   }) =>
-    apiRequest<{ token: string; role: string; company_name: string; company_id: number }>(
+    apiRequest<{ role: string; company_name: string; company_id: number }>(
       '/api/auth/register',
       { method: 'POST', body: JSON.stringify(data) }
     ),
+
+  logout: () => apiRequest<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
+
+  // Called on app load to check whether the httpOnly session cookie (if any)
+  // is still valid - the frontend never sees the token itself, only this result.
+  me: () => apiRequest<LoginSuccess>('/api/me'),
 }
 
 export const twoFaApi = {
   // ---- while already logged in: Settings > Security ----
-  getStatus: (token: string) =>
+  getStatus: () =>
     apiRequest<{
       totp_enabled: boolean
       email_otp_enabled: boolean
@@ -142,63 +158,60 @@ export const twoFaApi = {
       webauthn_count: number
       recovery_codes_remaining: number
       any_enabled: boolean
-    }>('/api/2fa/status', { token }),
+    }>('/api/2fa/status'),
 
-  totpSetup: (token: string) =>
-    apiRequest<{ secret: string; qr_code: string }>('/api/2fa/totp/setup', { method: 'POST', token }),
-  totpVerify: (code: string, token: string) =>
+  totpSetup: () =>
+    apiRequest<{ secret: string; qr_code: string }>('/api/2fa/totp/setup', { method: 'POST' }),
+  totpVerify: (code: string) =>
     apiRequest<{ enabled: boolean }>('/api/2fa/totp/verify', {
       method: 'POST',
       body: JSON.stringify({ channel: 'totp', code }),
-      token,
     }),
-  totpDisable: (token: string) =>
-    apiRequest<{ enabled: boolean }>('/api/2fa/totp', { method: 'DELETE', token }),
+  totpDisable: () =>
+    apiRequest<{ enabled: boolean }>('/api/2fa/totp', { method: 'DELETE' }),
 
-  otpSend: (channel: 'email' | 'sms' | 'telegram', contact: string | null, token: string) =>
+  otpSend: (channel: 'email' | 'sms' | 'telegram', contact: string | null) =>
     apiRequest<{ sent: boolean }>('/api/2fa/otp/send', {
       method: 'POST',
       body: JSON.stringify({ channel, contact }),
-      token,
     }),
-  otpConfirm: (channel: 'email' | 'sms' | 'telegram', code: string, contact: string | null, token: string) =>
+  otpConfirm: (channel: 'email' | 'sms' | 'telegram', code: string, contact: string | null) =>
     apiRequest<{ enabled: boolean }>(`/api/2fa/otp/confirm?contact=${encodeURIComponent(contact || '')}`, {
       method: 'POST',
       body: JSON.stringify({ channel, code }),
-      token,
     }),
-  otpDisable: (channel: 'email' | 'sms' | 'telegram', token: string) =>
-    apiRequest<{ enabled: boolean }>(`/api/2fa/otp/${channel}`, { method: 'DELETE', token }),
+  otpDisable: (channel: 'email' | 'sms' | 'telegram') =>
+    apiRequest<{ enabled: boolean }>(`/api/2fa/otp/${channel}`, { method: 'DELETE' }),
 
-  telegramLinkStart: (token: string) =>
-    apiRequest<{ code: string; bot_command: string }>('/api/2fa/telegram/link/start', { method: 'POST', token }),
+  telegramLinkStart: () =>
+    apiRequest<{ code: string; bot_command: string }>('/api/2fa/telegram/link/start', { method: 'POST' }),
 
-  webauthnList: (token: string) =>
-    apiRequest<{ id: number; label: string | null; created_at: string | null }[]>('/api/2fa/webauthn', { token }),
+  webauthnList: () =>
+    apiRequest<{ id: number; label: string | null; created_at: string | null }[]>('/api/2fa/webauthn'),
 
-  webauthnRegisterOptions: (token: string) =>
+  webauthnRegisterOptions: () =>
     apiRequest<{ options: string; challenge: string }>('/api/2fa/webauthn/register/options', {
       method: 'POST',
-      token,
     }),
-  webauthnRegisterVerify: (credentialJson: string, challenge: string, label: string, token: string) =>
+  webauthnRegisterVerify: (credentialJson: string, challenge: string, label: string) =>
     apiRequest<{ registered: boolean }>('/api/2fa/webauthn/register/verify', {
       method: 'POST',
       body: JSON.stringify({ credential_json: credentialJson, challenge, label }),
-      token,
     }),
-  webauthnDelete: (credentialPk: number, token: string) =>
-    apiRequest<{ deleted: boolean }>(`/api/2fa/webauthn/${credentialPk}`, { method: 'DELETE', token }),
+  webauthnDelete: (credentialPk: number) =>
+    apiRequest<{ deleted: boolean }>(`/api/2fa/webauthn/${credentialPk}`, { method: 'DELETE' }),
 
-  recoveryCodesGenerate: (token: string) =>
-    apiRequest<{ codes: string[] }>('/api/2fa/recovery-codes/generate', { method: 'POST', token }),
+  recoveryCodesGenerate: () =>
+    apiRequest<{ codes: string[] }>('/api/2fa/recovery-codes/generate', { method: 'POST' }),
 
-  // ---- during login, before the session token exists ----
+  // ---- during login, before the session cookie exists: the frontend holds
+  // the short-lived pending_token itself and passes it as a bearer header,
+  // since no session cookie exists yet at this point ----
   loginChallenge: (channel: 'email' | 'sms' | 'telegram', pendingToken: string) =>
     apiRequest<{ sent: boolean }>('/api/2fa/login/challenge', {
       method: 'POST',
       body: JSON.stringify({ channel }),
-      token: pendingToken,
+      headers: { Authorization: `Bearer ${pendingToken}` },
     }),
   loginVerify: (pendingToken: string, method: string, code: string) =>
     apiRequest<LoginSuccess>('/api/2fa/login/verify', {
@@ -208,7 +221,7 @@ export const twoFaApi = {
   loginWebauthnOptions: (pendingToken: string) =>
     apiRequest<{ options: string; challenge: string }>('/api/2fa/login/webauthn/options', {
       method: 'POST',
-      token: pendingToken,
+      headers: { Authorization: `Bearer ${pendingToken}` },
     }),
   loginWebauthnVerify: (pendingToken: string, credentialJson: string, challenge: string) =>
     apiRequest<LoginSuccess>(`/api/2fa/login/webauthn/verify?pending_token=${encodeURIComponent(pendingToken)}`, {
@@ -218,26 +231,24 @@ export const twoFaApi = {
 }
 
 export const dashboardApi = {
-  getDashboard: (token: string) =>
-    apiRequest<any>('/api/dashboard', { token }),
+  getDashboard: () =>
+    apiRequest<any>('/api/dashboard'),
 
-  getDriverDetails: (driverId: string, token: string) =>
-    apiRequest<any>(`/api/drivers/${driverId}`, { token }),
+  getDriverDetails: (driverId: string) =>
+    apiRequest<any>(`/api/drivers/${driverId}`),
 
-  addDispatcher: (username: string, password: string, token: string) =>
+  addDispatcher: (username: string, password: string) =>
     apiRequest<any>('/api/dispatchers', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-      token,
     }),
 
-  listDispatchers: (token: string) =>
+  listDispatchers: () =>
     apiRequest<{ id: number; username: string; role: string; created_at: string | null }[]>(
-      '/api/dispatchers',
-      { token }
+      '/api/dispatchers'
     ),
 
-  getMonitoring: (token: string) =>
+  getMonitoring: () =>
     apiRequest<{
       samsara_connected: boolean
       vehicles: {
@@ -249,39 +260,39 @@ export const dashboardApi = {
         location: { lat?: number; lng?: number; updated_at?: string } | null
         load: { load_id: string; status: string; pickup: string; delivery: string; rate: number } | null
       }[]
-    }>('/api/monitoring', { token }),
+    }>('/api/monitoring'),
 }
 
 export const settingsApi = {
-  getSettings: (token: string) =>
+  getSettings: () =>
     apiRequest<{
       gmail_connected: boolean
       samsara_connected: boolean
       company_name: string
       mc_number: string
-    }>('/api/settings', { token }),
+    }>('/api/settings'),
 
   // Kicks off the real Google OAuth flow: the backend returns a consent-screen
   // URL, the browser is sent there directly (no codes to copy/paste).
-  getGmailAuthUrl: (token: string) =>
-    apiRequest<{ auth_url: string }>('/api/settings/gmail/connect', { token }),
+  getGmailAuthUrl: () =>
+    apiRequest<{ auth_url: string }>('/api/settings/gmail/connect'),
 
-  disconnectGmail: (token: string) =>
+  disconnectGmail: () =>
     apiRequest<{ success: boolean }>(
       '/api/settings/gmail',
-      { method: 'DELETE', token }
+      { method: 'DELETE' }
     ),
 
-  connectSamsara: (apiKey: string, token: string) =>
+  connectSamsara: (apiKey: string) =>
     apiRequest<{ success: boolean; message: string }>(
       '/api/settings/samsara',
-      { method: 'POST', body: JSON.stringify({ api_key: apiKey }), token }
+      { method: 'POST', body: JSON.stringify({ api_key: apiKey }) }
     ),
 
-  disconnectSamsara: (token: string) =>
+  disconnectSamsara: () =>
     apiRequest<{ success: boolean }>(
       '/api/settings/samsara',
-      { method: 'DELETE', token }
+      { method: 'DELETE' }
     ),
 }
 

@@ -1,16 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { authApi, type LoginSuccess } from '../services/api'
 
 interface User {
-  token: string
   role: 'owner' | 'dispatcher'
   companyName?: string
   companyId?: number
+  dispatcherId?: number
 }
 
 interface AuthContextType {
   user: User | null
-  login: (token: string, role: 'owner' | 'dispatcher', companyName?: string, companyId?: number) => void
+  login: (session: LoginSuccess) => void
   logout: () => void
   isAuthenticated: boolean
   isLoading: boolean
@@ -18,48 +19,41 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+function toUser(session: LoginSuccess): User {
+  return {
+    role: session.role,
+    companyName: session.company_name,
+    companyId: session.company_id,
+    dispatcherId: session.dispatcher_id,
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Check for existing session on mount
-    const token = localStorage.getItem('fp_token')
-    const role = localStorage.getItem('fp_role') as 'owner' | 'dispatcher' | null
-    const companyName = localStorage.getItem('fp_company') || undefined
-    const companyId = localStorage.getItem('fp_company_id')
-      ? parseInt(localStorage.getItem('fp_company_id')!)
-      : undefined
-
-    if (token && role) {
-      setUser({ token, role, companyName, companyId })
-    }
-    setIsLoading(false)
+    // The session lives in an httpOnly cookie the frontend can't read directly,
+    // so restoring it on load means asking the backend whether it's still valid.
+    authApi
+      .me()
+      .then((session) => setUser(toUser(session)))
+      .catch(() => setUser(null))
+      .finally(() => setIsLoading(false))
   }, [])
 
-  const login = (token: string, role: 'owner' | 'dispatcher', companyName?: string, companyId?: number) => {
-    // Save to localStorage
-    localStorage.setItem('fp_token', token)
-    localStorage.setItem('fp_role', role)
-    if (companyName) {
-      localStorage.setItem('fp_company', companyName)
-    }
-    if (companyId) {
-      localStorage.setItem('fp_company_id', companyId.toString())
-    }
-    
-    // Update state - this will trigger re-render and persist session
-    setUser({ token, role, companyName, companyId })
+  const login = (session: LoginSuccess) => {
+    // The session/CSRF cookies are already set by the browser from the
+    // login/register response - this just updates UI state.
+    setUser(toUser(session))
   }
 
   const logout = () => {
-    localStorage.removeItem('fp_token')
-    localStorage.removeItem('fp_role')
-    localStorage.removeItem('fp_company')
-    localStorage.removeItem('fp_company_id')
-    setUser(null)
-    navigate('/login')
+    authApi.logout().finally(() => {
+      setUser(null)
+      navigate('/login')
+    })
   }
 
   return (

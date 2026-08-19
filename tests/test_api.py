@@ -1,18 +1,37 @@
 """
 Test suite for Freight Pilot API endpoints.
 Run: pytest tests/ -v
+
+The session lives in an httpOnly cookie now (not a bearer token in the
+response body), so each test gets its own fresh TestClient - otherwise
+cookies set by one test's login would leak into the next test via the
+client's persistent cookie jar. Mutating requests (POST/PATCH/DELETE made
+by an already-logged-in caller) also need the CSRF header the double-submit
+cookie pattern requires - see _csrf_headers().
 """
 import pytest
 from fastapi.testclient import TestClient
 from miniapp.api import app
+from miniapp.auth import CSRF_COOKIE_NAME
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+def _csrf_headers(client: TestClient) -> dict:
+    """Reads the CSRF cookie the last login/register response set on this
+    client and returns the header a mutating request must send alongside it."""
+    token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert token, "no CSRF cookie set - must log in/register on this client first"
+    return {"X-CSRF-Token": token}
 
 
 class TestAuth:
     """Authentication endpoints test"""
-    
-    def test_register_success(self):
+
+    def test_register_success(self, client):
         """Test company registration"""
         response = client.post("/api/auth/register", json={
             "mc_number": "999999",
@@ -24,8 +43,11 @@ class TestAuth:
         assert response.status_code in [200, 400]  # 400 if already exists
         if response.status_code == 200:
             assert response.json()["company_id"]
+            assert "token" not in response.json()  # session lives in an httpOnly cookie, not the body
+            assert client.cookies.get("fp_session")
+            assert client.cookies.get(CSRF_COOKIE_NAME)
 
-    def test_register_password_mismatch(self):
+    def test_register_password_mismatch(self, client):
         """Test registration with mismatched passwords"""
         response = client.post("/api/auth/register", json={
             "mc_number": "888888",
@@ -37,7 +59,7 @@ class TestAuth:
         assert response.status_code == 400
         assert "do not match" in response.json()["detail"].lower()
 
-    def test_register_short_password(self):
+    def test_register_short_password(self, client):
         """Test registration with short password"""
         response = client.post("/api/auth/register", json={
             "mc_number": "777777",
@@ -49,7 +71,7 @@ class TestAuth:
         assert response.status_code == 400
         assert "8 characters" in response.json()["detail"].lower()
 
-    def test_register_invalid_mc(self):
+    def test_register_invalid_mc(self, client):
         """Test registration with non-numeric MC - rejected by request validation (422)"""
         response = client.post("/api/auth/register", json={
             "mc_number": "ABC123",
@@ -61,7 +83,7 @@ class TestAuth:
         assert response.status_code == 422
         assert "digits" in str(response.json()["detail"]).lower()
 
-    def test_register_invalid_email(self):
+    def test_register_invalid_email(self, client):
         """Test registration with a malformed email - rejected by request validation (422)"""
         response = client.post("/api/auth/register", json={
             "mc_number": "666666",
@@ -72,7 +94,7 @@ class TestAuth:
         })
         assert response.status_code == 422
 
-    def test_register_missing_email(self):
+    def test_register_missing_email(self, client):
         """Test registration with no email at all - rejected by request validation (422)"""
         response = client.post("/api/auth/register", json={
             "mc_number": "555555",
@@ -82,13 +104,79 @@ class TestAuth:
         })
         assert response.status_code == 422
 
+    def test_logout_clears_session(self, client):
+        """Logging out must clear the cookie server-side - JS can't touch an httpOnly cookie itself."""
+        client.post("/api/auth/register", json={
+            "mc_number": "222222",
+            "company_name": "Logout Test Co",
+            "email": "owner@logouttest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        assert client.cookies.get("fp_session")
+
+        logout = client.post("/api/auth/logout", headers=_csrf_headers(client))
+        assert logout.status_code == 200
+
+        me = client.get("/api/me")
+        assert me.status_code == 401
+
+
+class TestCsrfProtection:
+    """State-changing requests must present a matching X-CSRF-Token header,
+    even with a fully valid session cookie - otherwise a cross-site request
+    riding the ambient session cookie could perform actions on the user's
+    behalf."""
+
+    def test_mutating_request_without_csrf_header_rejected(self, client):
+        client.post("/api/auth/register", json={
+            "mc_number": "112233",
+            "company_name": "CSRF Test Co",
+            "email": "owner@csrftest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        # Valid session cookie present, but no X-CSRF-Token header at all.
+        response = client.post("/api/dispatchers", json={"username": "nope", "password": "password123"})
+        assert response.status_code == 403
+
+    def test_mutating_request_with_wrong_csrf_token_rejected(self, client):
+        client.post("/api/auth/register", json={
+            "mc_number": "223344",
+            "company_name": "CSRF Test Co 2",
+            "email": "owner2@csrftest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        response = client.post(
+            "/api/dispatchers",
+            json={"username": "nope", "password": "password123"},
+            headers={"X-CSRF-Token": "not-the-real-token"},
+        )
+        assert response.status_code == 403
+
+    def test_mutating_request_with_correct_csrf_token_allowed(self, client):
+        client.post("/api/auth/register", json={
+            "mc_number": "334455",
+            "company_name": "CSRF Test Co 3",
+            "email": "owner3@csrftest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        response = client.post(
+            "/api/dispatchers",
+            json={"username": "csrf_ok_dispatcher", "password": "password123"},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 200
+
 
 class TestDispatcherAuth:
     """Regression test: dispatcher logins used to omit dispatcher_id from the
     JWT, which crashed every 2FA endpoint for a dispatcher account (they all
     resolve "self" via user["dispatcher_id"])."""
 
-    def _register_owner_and_dispatcher(self, mc_number: str, dispatcher_username: str):
+    def _register_owner_and_dispatcher(self, client, mc_number: str, dispatcher_username: str):
         reg = client.post("/api/auth/register", json={
             "mc_number": mc_number,
             "company_name": "Dispatcher Test Co",
@@ -97,18 +185,17 @@ class TestDispatcherAuth:
             "confirm_password": "ownerpass123",
         })
         assert reg.status_code == 200, reg.text
-        owner_token = reg.json()["token"]
 
         created = client.post(
             "/api/dispatchers",
             json={"username": dispatcher_username, "password": "dispatcherpass123"},
-            headers={"Authorization": f"Bearer {owner_token}"},
+            headers=_csrf_headers(client),
         )
         assert created.status_code == 200, created.text
-        return owner_token
 
-    def test_dispatcher_login_includes_dispatcher_id(self):
-        self._register_owner_and_dispatcher("444444", "dispatcher_regress_1")
+    def test_dispatcher_login_includes_dispatcher_id(self, client):
+        self._register_owner_and_dispatcher(client, "444444", "dispatcher_regress_1")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
 
         login = client.post("/api/auth/dispatcher", json={
             "username": "dispatcher_regress_1",
@@ -118,16 +205,17 @@ class TestDispatcherAuth:
         body = login.json()
         assert body.get("dispatcher_id"), "login response must include dispatcher_id"
 
-    def test_dispatcher_can_load_2fa_status_without_500(self):
-        self._register_owner_and_dispatcher("333333", "dispatcher_regress_2")
+    def test_dispatcher_can_load_2fa_status_without_500(self, client):
+        self._register_owner_and_dispatcher(client, "333333", "dispatcher_regress_2")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
 
         login = client.post("/api/auth/dispatcher", json={
             "username": "dispatcher_regress_2",
             "password": "dispatcherpass123",
         })
-        dispatcher_token = login.json()["token"]
+        assert login.status_code == 200, login.text
 
-        status = client.get("/api/2fa/status", headers={"Authorization": f"Bearer {dispatcher_token}"})
+        status = client.get("/api/2fa/status")
         assert status.status_code == 200, status.text
 
 
@@ -135,9 +223,9 @@ class TestTenantIsolation:
     """SQLite has no row-level security, so tenant isolation is enforced
     entirely in miniapp/api.py. These tests lock in that every driver-scoped
     endpoint rejects access from a different company's owner, even with a
-    valid, correctly-signed session token."""
+    valid, correctly-signed session cookie."""
 
-    def _register_owner(self, mc_number: str) -> tuple[str, int]:
+    def _register_owner(self, client, mc_number: str) -> int:
         reg = client.post("/api/auth/register", json={
             "mc_number": mc_number,
             "company_name": f"Tenant Test Co {mc_number}",
@@ -146,8 +234,7 @@ class TestTenantIsolation:
             "confirm_password": "ownerpass123",
         })
         assert reg.status_code == 200, reg.text
-        body = reg.json()
-        return body["token"], body["company_id"]
+        return reg.json()["company_id"]
 
     def _create_driver(self, company_id: int) -> int:
         from db.database import get_session
@@ -161,43 +248,41 @@ class TestTenantIsolation:
             return driver.id
 
     def test_cross_tenant_driver_details_forbidden(self):
-        _, company_a_id = self._register_owner("211111")
-        owner_b_token, _ = self._register_owner("311111")
+        client_a = TestClient(app)
+        client_b = TestClient(app)
+        company_a_id = self._register_owner(client_a, "211111")
+        self._register_owner(client_b, "311111")
         driver_a_id = self._create_driver(company_a_id)
 
-        response = client.get(
-            f"/api/drivers/{driver_a_id}",
-            headers={"Authorization": f"Bearer {owner_b_token}"},
-        )
+        response = client_b.get(f"/api/drivers/{driver_a_id}")
         assert response.status_code == 403
 
     def test_cross_tenant_subscription_toggle_forbidden(self):
-        _, company_a_id = self._register_owner("411111")
-        owner_b_token, _ = self._register_owner("511111")
+        client_a = TestClient(app)
+        client_b = TestClient(app)
+        company_a_id = self._register_owner(client_a, "411111")
+        self._register_owner(client_b, "511111")
         driver_a_id = self._create_driver(company_a_id)
 
-        response = client.patch(
+        response = client_b.patch(
             f"/api/drivers/{driver_a_id}/subscription",
             json={"active": False},
-            headers={"Authorization": f"Bearer {owner_b_token}"},
+            headers=_csrf_headers(client_b),
         )
         assert response.status_code == 403
 
-    def test_own_tenant_driver_details_allowed(self):
-        owner_token, company_id = self._register_owner("611111")
+    def test_own_tenant_driver_details_allowed(self, client):
+        company_id = self._register_owner(client, "611111")
         driver_id = self._create_driver(company_id)
 
-        response = client.get(
-            f"/api/drivers/{driver_id}",
-            headers={"Authorization": f"Bearer {owner_token}"},
-        )
+        response = client.get(f"/api/drivers/{driver_id}")
         assert response.status_code == 200
 
 
 class TestPublicAPI:
     """Public API endpoints test"""
-    
-    def test_get_stats(self):
+
+    def test_get_stats(self, client):
         """Test public statistics endpoint"""
         response = client.get("/api/public/stats")
         assert response.status_code == 200
@@ -213,18 +298,18 @@ class TestPublicAPI:
 
 class TestProtectedEndpoints:
     """Protected endpoints (require authentication)"""
-    
-    def test_dashboard_unauthorized(self):
+
+    def test_dashboard_unauthorized(self, client):
         """Test dashboard without auth"""
         response = client.get("/api/dashboard")
         assert response.status_code == 401
-    
-    def test_drivers_unauthorized(self):
+
+    def test_drivers_unauthorized(self, client):
         """Test drivers list without auth"""
         response = client.get("/api/drivers")
         assert response.status_code == 401
-    
-    def test_billing_unauthorized(self):
+
+    def test_billing_unauthorized(self, client):
         """Test billing without auth"""
         response = client.get("/api/billing")
         assert response.status_code == 401
@@ -232,15 +317,15 @@ class TestProtectedEndpoints:
 
 class TestHealthCheck:
     """Basic health checks"""
-    
-    def test_root_returns_html(self):
+
+    def test_root_returns_html(self, client):
         """Test root path returns React app"""
         response = client.get("/")
         assert response.status_code == 200
         # Should serve React app HTML
         assert "<!DOCTYPE html>" in response.text or "<!doctype html>" in response.text
-    
-    def test_favicon_exists(self):
+
+    def test_favicon_exists(self, client):
         """Test favicon is accessible"""
         response = client.get("/favicon.svg")
         assert response.status_code == 200

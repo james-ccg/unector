@@ -32,10 +32,10 @@ export default function DashboardPage() {
   }, [])
 
   const loadDashboard = async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
       setLoading(true)
-      const data = await dashboardApi.getDashboard(user.token)
+      const data = await dashboardApi.getDashboard()
       setDashboardData(data)
       setError('')
     } catch (err: any) {

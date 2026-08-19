@@ -41,11 +41,11 @@ export default function TwoFactorSettings() {
   }, [])
 
   const load = async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
       const [statusData, creds] = await Promise.all([
-        twoFaApi.getStatus(user.token),
-        twoFaApi.webauthnList(user.token),
+        twoFaApi.getStatus(),
+        twoFaApi.webauthnList(),
       ])
       setStatus(statusData)
       setWebauthnCreds(creds)
@@ -63,9 +63,9 @@ export default function TwoFactorSettings() {
 
   // ---------------- TOTP ----------------
   const startTotpSetup = async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
-      const { qr_code } = await twoFaApi.totpSetup(user.token)
+      const { qr_code } = await twoFaApi.totpSetup()
       setTotpQr(qr_code)
     } catch (err: any) {
       flash('error', err.message)
@@ -74,10 +74,10 @@ export default function TwoFactorSettings() {
 
   const confirmTotp = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user?.token) return
+    if (!user) return
     setTotpBusy(true)
     try {
-      await twoFaApi.totpVerify(totpCode, user.token)
+      await twoFaApi.totpVerify(totpCode)
       setTotpQr(null)
       setTotpCode('')
       flash('success', 'Authenticator app enabled.')
@@ -90,18 +90,18 @@ export default function TwoFactorSettings() {
   }
 
   const disableTotp = async () => {
-    if (!user?.token) return
-    await twoFaApi.totpDisable(user.token)
+    if (!user) return
+    await twoFaApi.totpDisable()
     flash('success', 'Authenticator app disabled.')
     load()
   }
 
   // ---------------- Email ----------------
   const sendEmailCode = async () => {
-    if (!user?.token || !emailInput.trim()) return
+    if (!user || !emailInput.trim()) return
     setEmailBusy(true)
     try {
-      await twoFaApi.otpSend('email', emailInput.trim(), user.token)
+      await twoFaApi.otpSend('email', emailInput.trim())
       setEmailSent(true)
       flash('success', 'Verification code sent to your email.')
     } catch (err: any) {
@@ -113,10 +113,10 @@ export default function TwoFactorSettings() {
 
   const confirmEmail = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user?.token) return
+    if (!user) return
     setEmailBusy(true)
     try {
-      await twoFaApi.otpConfirm('email', emailCode, emailInput.trim(), user.token)
+      await twoFaApi.otpConfirm('email', emailCode, emailInput.trim())
       setEmailSent(false)
       setEmailCode('')
       setEmailInput('')
@@ -130,18 +130,18 @@ export default function TwoFactorSettings() {
   }
 
   const disableEmail = async () => {
-    if (!user?.token) return
-    await twoFaApi.otpDisable('email', user.token)
+    if (!user) return
+    await twoFaApi.otpDisable('email')
     flash('success', 'Email verification disabled.')
     load()
   }
 
   // ---------------- SMS ----------------
   const sendSmsCode = async () => {
-    if (!user?.token || !smsInput.trim()) return
+    if (!user || !smsInput.trim()) return
     setSmsBusy(true)
     try {
-      await twoFaApi.otpSend('sms', smsInput.trim(), user.token)
+      await twoFaApi.otpSend('sms', smsInput.trim())
       setSmsSent(true)
       flash('success', 'Verification code sent by text message.')
     } catch (err: any) {
@@ -153,10 +153,10 @@ export default function TwoFactorSettings() {
 
   const confirmSms = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user?.token) return
+    if (!user) return
     setSmsBusy(true)
     try {
-      await twoFaApi.otpConfirm('sms', smsCode, smsInput.trim(), user.token)
+      await twoFaApi.otpConfirm('sms', smsCode, smsInput.trim())
       setSmsSent(false)
       setSmsCode('')
       setSmsInput('')
@@ -170,18 +170,18 @@ export default function TwoFactorSettings() {
   }
 
   const disableSms = async () => {
-    if (!user?.token) return
-    await twoFaApi.otpDisable('sms', user.token)
+    if (!user) return
+    await twoFaApi.otpDisable('sms')
     flash('success', 'Text message verification disabled.')
     load()
   }
 
   // ---------------- Telegram ----------------
   const startTelegramLink = async () => {
-    if (!user?.token) return
+    if (!user) return
     setTelegramBusy(true)
     try {
-      const { code } = await twoFaApi.telegramLinkStart(user.token)
+      const { code } = await twoFaApi.telegramLinkStart()
       setTelegramCode(code)
     } catch (err: any) {
       flash('error', err.message)
@@ -201,24 +201,24 @@ export default function TwoFactorSettings() {
   }
 
   const disableTelegram = async () => {
-    if (!user?.token) return
-    await twoFaApi.otpDisable('telegram', user.token)
+    if (!user) return
+    await twoFaApi.otpDisable('telegram')
     flash('success', 'Telegram verification disabled.')
     load()
   }
 
   // ---------------- Security keys ----------------
   const registerSecurityKey = async () => {
-    if (!user?.token) return
+    if (!user) return
     if (!isWebAuthnSupported()) {
       flash('error', 'This browser does not support security keys.')
       return
     }
     setWebauthnBusy(true)
     try {
-      const { options, challenge } = await twoFaApi.webauthnRegisterOptions(user.token)
+      const { options, challenge } = await twoFaApi.webauthnRegisterOptions()
       const credentialJson = await createCredential(options)
-      await twoFaApi.webauthnRegisterVerify(credentialJson, challenge, webauthnLabel || 'Security key', user.token)
+      await twoFaApi.webauthnRegisterVerify(credentialJson, challenge, webauthnLabel || 'Security key')
       setWebauthnLabel('')
       flash('success', 'Security key registered.')
       load()
@@ -230,18 +230,18 @@ export default function TwoFactorSettings() {
   }
 
   const removeSecurityKey = async (id: number) => {
-    if (!user?.token) return
-    await twoFaApi.webauthnDelete(id, user.token)
+    if (!user) return
+    await twoFaApi.webauthnDelete(id)
     flash('success', 'Security key removed.')
     load()
   }
 
   // ---------------- Recovery codes ----------------
   const generateRecoveryCodes = async () => {
-    if (!user?.token) return
+    if (!user) return
     setRecoveryBusy(true)
     try {
-      const { codes } = await twoFaApi.recoveryCodesGenerate(user.token)
+      const { codes } = await twoFaApi.recoveryCodesGenerate()
       setRecoveryCodes(codes)
       flash('success', 'New recovery codes generated - save them now, they will not be shown again.')
       load()

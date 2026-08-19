@@ -67,12 +67,12 @@ export default function SettingsPage() {
   }, [])
 
   const loadAll = async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
-      const settingsData = await settingsApi.getSettings(user.token)
+      const settingsData = await settingsApi.getSettings()
       setSettings(settingsData)
       if (user.role === 'owner') {
-        const dispatcherData = await dashboardApi.listDispatchers(user.token)
+        const dispatcherData = await dashboardApi.listDispatchers()
         setDispatchers(dispatcherData)
       }
     } catch (err) {
@@ -83,9 +83,9 @@ export default function SettingsPage() {
   }
 
   const handleConnectGmail = async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
-      const { auth_url } = await settingsApi.getGmailAuthUrl(user.token)
+      const { auth_url } = await settingsApi.getGmailAuthUrl()
       // Full-page redirect to Google's own consent screen - no code to copy/paste.
       window.location.href = auth_url
     } catch (err: any) {
@@ -94,10 +94,10 @@ export default function SettingsPage() {
   }
 
   const handleDisconnectGmail = async () => {
-    if (!user?.token) return
+    if (!user) return
     if (!confirm('Disconnect Gmail? The bot will stop being able to find Rate Confirmation emails until you reconnect.')) return
     try {
-      await settingsApi.disconnectGmail(user.token)
+      await settingsApi.disconnectGmail()
       setBanner({ kind: 'success', text: 'Gmail disconnected.' })
       loadAll()
     } catch (err: any) {
@@ -106,11 +106,11 @@ export default function SettingsPage() {
   }
 
   const handleConnectSamsara = async () => {
-    if (!user?.token || !samsaraKey.trim()) return
+    if (!user || !samsaraKey.trim()) return
     setSamsaraBusy(true)
     setSamsaraError('')
     try {
-      await settingsApi.connectSamsara(samsaraKey.trim(), user.token)
+      await settingsApi.connectSamsara(samsaraKey.trim())
       setSamsaraModalOpen(false)
       setSamsaraKey('')
       setBanner({ kind: 'success', text: 'Samsara connected successfully.' })
@@ -123,10 +123,10 @@ export default function SettingsPage() {
   }
 
   const handleDisconnectSamsara = async () => {
-    if (!user?.token) return
+    if (!user) return
     if (!confirm('Disconnect Samsara? GPS proximity alerts will stop working until you reconnect.')) return
     try {
-      await settingsApi.disconnectSamsara(user.token)
+      await settingsApi.disconnectSamsara()
       setBanner({ kind: 'success', text: 'Samsara disconnected.' })
       loadAll()
     } catch (err: any) {
@@ -136,7 +136,7 @@ export default function SettingsPage() {
 
   const handleAddDispatcher = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user?.token) return
+    if (!user) return
     setAddDispatcherError('')
     if (newPassword.length < 6) {
       setAddDispatcherError('Password must be at least 6 characters.')
@@ -144,7 +144,7 @@ export default function SettingsPage() {
     }
     setAddDispatcherBusy(true)
     try {
-      await dashboardApi.addDispatcher(newUsername.trim(), newPassword, user.token)
+      await dashboardApi.addDispatcher(newUsername.trim(), newPassword)
       setNewUsername('')
       setNewPassword('')
       setBanner({ kind: 'success', text: 'Dispatcher login created.' })

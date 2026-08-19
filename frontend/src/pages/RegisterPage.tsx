@@ -36,7 +36,7 @@ export default function RegisterPage() {
     try {
       const result = await authApi.register(data)
       setSuccess('Registration successful! Redirecting to dashboard...')
-      login(result.token, 'owner', result.company_name, result.company_id)
+      login({ role: 'owner', company_name: result.company_name, company_id: result.company_id })
       // useEffect will handle navigation
     } catch (err: any) {
       setError(err.message)

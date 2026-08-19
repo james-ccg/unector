@@ -19,9 +19,9 @@ export default function MonitoringPage() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!user?.token) return
+    if (!user) return
     try {
-      const data = await dashboardApi.getMonitoring(user.token)
+      const data = await dashboardApi.getMonitoring()
       setVehicles(data.vehicles || [])
       setConnected(data.samsara_connected)
       setSelectedId((current) => current ?? data.vehicles?.[0]?.id ?? null)
