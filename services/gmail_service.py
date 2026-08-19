@@ -100,7 +100,11 @@ def find_rc_pdf_by_load_id(company_id: int, load_id: str) -> bytes | None:
     returns the first matching PDF's bytes, or None if nothing is found."""
     service = _build_gmail_client(company_id)
 
-    query = f'"{load_id}" has:attachment filename:pdf'
+    # load_id comes from a Telegram command argument the driver types - strip
+    # quotes so it can't break out of the quoted search term and inject
+    # extra Gmail search operators (e.g. "OR from:someone-else").
+    safe_load_id = load_id.replace('"', "")
+    query = f'"{safe_load_id}" has:attachment filename:pdf'
     results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
     messages = results.get("messages", [])
     if not messages:

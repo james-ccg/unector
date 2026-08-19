@@ -130,6 +130,18 @@ class SubscriptionToggleRequest(BaseModel):
     active: bool
 
 
+class ConnectSamsaraRequest(BaseModel):
+    api_key: str
+
+    @field_validator("api_key")
+    @classmethod
+    def _api_key_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("API key is required")
+        return v
+
+
 # ------------------------------------------------------------------
 # Auth helpers
 #
@@ -497,17 +509,15 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
     return {"success": True}
 
 @app.post("/api/settings/samsara")
-def connect_samsara(body: dict, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
+def connect_samsara(
+    body: ConnectSamsaraRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
     """Connect Samsara GPS account (for owners only)"""
     from db.repository import save_company_credential
-    
-    api_key = body.get("api_key", "").strip()
-    if not api_key:
-        raise HTTPException(400, "API key is required")
-    
+
     company_id = user.get("company_id")
     try:
-        save_company_credential(company_id, "samsara_api_key", api_key)
+        save_company_credential(company_id, "samsara_api_key", body.api_key)
         return {"success": True, "message": "Samsara connected successfully"}
     except Exception as e:
         raise HTTPException(500, f"Failed to connect Samsara: {str(e)}")
