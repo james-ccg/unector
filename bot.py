@@ -7,7 +7,15 @@ Getting started:
     # fill in .env (see below)
     python bot.py
 
-Commands (all work inside a driver+dispatch group):
+Commands:
+    /start         - welcome message and command list (works anywhere)
+    /faq           - frequently asked questions (works anywhere)
+    /dashboard     - sends a button that opens the Mini App (owner/dispatcher login)
+    /link          - direct link to the Mini App, for opening in any browser
+    /verify2fa <code> - links this Telegram account for 2FA codes (code from Settings > Security)
+    /myid          - debug helper, prints the current chat/group ID
+
+The rest only work inside a driver+dispatch group, once it's linked to a driver:
     /loadid <id>   - finds RC from email, formats it, and posts to the group
     /loadpics      - (photo caption) AI reviews the load photo(s). Send 1-10 photos together
                      as one album (load, seal, reefer display, BOL, etc.) with /loadpics as the
@@ -18,7 +26,6 @@ Commands (all work inside a driver+dispatch group):
     /pod           - (photo/document caption) forwards the POD straight to the broker by email.
                      Not checked by AI - just sent as-is. Supports multiple photos/pages too.
     /setvehicle    - links this group's driver to a Samsara vehicle ID, for GPS location alerts
-    /dashboard     - sends a button that opens the Mini App (owner/dispatcher login)
 """
 import asyncio
 import html
@@ -99,6 +106,58 @@ async def update_group_title(group_id: int, title: str):
             driver.telegram_group_title = title
             session.commit()
             logger.info(f"Updated group title for driver {driver.driver_bot_id}: {title}")
+
+
+@dp.message(Command("start"))
+async def handle_start(message: Message):
+    """Welcome message + command list - the first thing most users see."""
+    await message.reply(
+        "👋 **Welcome to Freight Pilot!**\n\n"
+        "I help trucking companies automate dispatch: I pull rate confirmations from email, "
+        "extract load details with AI, check your BOL/POD photos, and track GPS proximity to "
+        "pickup/delivery.\n\n"
+        "**Commands:**\n"
+        "• /loadid <id> - find and post a load's rate confirmation\n"
+        "• /loadpics - (photo caption) AI reviews your load photos\n"
+        "• /bol - (photo/document caption) compares the BOL against the RC\n"
+        "• /pod - (photo/document caption) forwards the POD to the broker\n"
+        "• /setvehicle <id> - link this group to a Samsara vehicle for GPS alerts\n"
+        "• /dashboard - open the owner/dispatcher web dashboard\n"
+        "• /faq - frequently asked questions\n\n"
+        "The load commands only work inside your driver+dispatch group - if you're not sure "
+        "where that is, ask your dispatcher.",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(Command("faq"))
+async def handle_faq(message: Message):
+    """Frequently asked questions - mirrors the web dashboard's FAQ page."""
+    await message.reply(
+        "**Frequently Asked Questions**\n\n"
+        "**What is Freight Pilot?**\n"
+        "An AI-powered dispatch management system that automates load management through "
+        "Telegram - connects Gmail, extracts load details with AI, tracks GPS, and gives "
+        "owners/dispatchers a real-time web dashboard.\n\n"
+        "**How does billing work?**\n"
+        "You pay monthly only for active drivers via Stripe. A 14-day free trial is "
+        "available. $25/driver/month, no hidden fees.\n\n"
+        "**How does Gmail integration work?**\n"
+        "A secure OAuth 2.0 connection - the owner authorizes it once from the dashboard. "
+        "The bot then automatically finds rate confirmations in that inbox.\n\n"
+        "**How does GPS tracking work?**\n"
+        "Through a Samsara integration - you get automatic notifications when a driver "
+        "approaches pickup/delivery, plus real-time tracking and ETA updates.\n\n"
+        "**What does the AI do?**\n"
+        "Google Gemini extracts every load detail from a rate confirmation - load ID, "
+        "addresses, dates, broker, rate, and more - eliminating manual data entry.\n\n"
+        "**Can I add dispatchers?**\n"
+        "Yes - unlimited dispatchers on Professional and Enterprise plans, each with their "
+        "own dashboard login and permissions.\n\n"
+        "For anything else, use /dashboard to reach the web dashboard, or /link for the "
+        "direct URL.",
+        parse_mode="Markdown",
+    )
 
 
 @dp.message(Command("myid"))
