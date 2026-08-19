@@ -198,6 +198,8 @@ def get_company_credential(company_id: int, cred_type: str) -> str | None:
         )
         if row is None:
             return None
+        return decrypt_value(row.encrypted_value)
+
 
 def delete_company_credential(company_id: int, cred_type: str) -> None:
     """Delete a credential for a company."""
@@ -208,8 +210,6 @@ def delete_company_credential(company_id: int, cred_type: str) -> None:
         if cred:
             session.delete(cred)
             session.commit()
-
-        return decrypt_value(row.encrypted_value)
 
 
 def update_load_status(load_pk: int, status: str) -> None:

@@ -110,6 +110,9 @@ export interface LoginSuccess {
   company_name?: string
   company_id: number
   dispatcher_id?: number
+  // Only present for owners - Gmail connection is mandatory for them (the
+  // bot's core feature depends on it), not applicable to dispatchers.
+  gmail_connected?: boolean
 }
 
 export const authApi = {
@@ -133,7 +136,7 @@ export const authApi = {
     confirm_password: string
     turnstile_token?: string | null
   }) =>
-    apiRequest<{ role: string; company_name: string; company_id: number }>(
+    apiRequest<LoginSuccess>(
       '/api/auth/register',
       { method: 'POST', body: JSON.stringify(data) }
     ),
@@ -275,8 +278,10 @@ export const settingsApi = {
 
   // Kicks off the real Google OAuth flow: the backend returns a consent-screen
   // URL, the browser is sent there directly (no codes to copy/paste).
-  getGmailAuthUrl: () =>
-    apiRequest<{ auth_url: string }>('/api/settings/gmail/connect'),
+  // returnTo tells the backend where to redirect after Google's consent
+  // screen - "settings" (default) or "onboarding" (mandatory first connect).
+  getGmailAuthUrl: (returnTo: 'settings' | 'onboarding' = 'settings') =>
+    apiRequest<{ auth_url: string }>(`/api/settings/gmail/connect?return_to=${returnTo}`),
 
   disconnectGmail: () =>
     apiRequest<{ success: boolean }>(

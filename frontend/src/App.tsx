@@ -1,12 +1,14 @@
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import PrivateRoute from './components/PrivateRoute'
+import RequireGmailConnected from './components/RequireGmailConnected'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
 import SettingsPage from './pages/SettingsPage'
 import MonitoringPage from './pages/MonitoringPage'
+import OnboardingGmailPage from './pages/OnboardingGmailPage'
 import FAQPage from './pages/FAQPage'
 import PricingPage from './pages/PricingPage'
 import SecurityPage from './pages/SecurityPage'
@@ -26,10 +28,20 @@ function App() {
         <Route path="/pages/trust" element={<TrustPage />} />
         <Route path="/pages/updates" element={<UpdatesPage />} />
         <Route
+          path="/onboarding/connect-gmail"
+          element={
+            <PrivateRoute>
+              <OnboardingGmailPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path="/dashboard"
           element={
             <PrivateRoute>
-              <DashboardPage />
+              <RequireGmailConnected>
+                <DashboardPage />
+              </RequireGmailConnected>
             </PrivateRoute>
           }
         />
@@ -45,7 +57,9 @@ function App() {
           path="/monitoring"
           element={
             <PrivateRoute>
-              <MonitoringPage />
+              <RequireGmailConnected>
+                <MonitoringPage />
+              </RequireGmailConnected>
             </PrivateRoute>
           }
         />

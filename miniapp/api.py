@@ -224,6 +224,18 @@ def require_owner(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def _gmail_connected_field(role: str, company_id: int) -> dict:
+    """Owners must connect Gmail as part of onboarding (the bot's core
+    feature - pulling rate confirmations - depends on it); dispatchers
+    can't manage integrations themselves, so this is owner-only. Returned
+    as a dict to splat into a response body, not baked into the JWT
+    itself, since connection status can change independently of the
+    session's lifetime."""
+    if role != "owner":
+        return {}
+    return {"gmail_connected": bool(get_company_credential(company_id, "gmail_refresh_token"))}
+
+
 def verify_csrf(request: Request) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     header_value = request.headers.get(CSRF_HEADER_NAME)
@@ -309,7 +321,8 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 "company_name": new_company.company_name,
                 "mc_number": new_company.mc_number,
                 "company_id": new_company.id,
-                "role": "owner"
+                "role": "owner",
+                "gmail_connected": False,  # a brand-new company has never connected anything yet
             }
     except HTTPException:
         raise
@@ -360,7 +373,7 @@ def _finish_password_step(response: Response, account_type: str, account_id: int
     if not status["any_enabled"]:
         token = create_token(base_claims)
         set_session_cookies(response, token)
-        return {"role": account_type, **extra_claims}
+        return {"role": account_type, **extra_claims, **_gmail_connected_field(account_type, extra_claims["company_id"])}
 
     available_methods = [
         m
@@ -382,7 +395,7 @@ def _finish_password_step(response: Response, account_type: str, account_id: int
 
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
-    return user
+    return {**user, **_gmail_connected_field(user.get("role"), user.get("company_id"))}
 
 
 @app.post("/api/auth/logout")
@@ -521,13 +534,25 @@ def get_settings(user: dict = Depends(get_current_user)):
 GMAIL_REDIRECT_URI = os.getenv("GMAIL_OAUTH_REDIRECT_URI", "http://localhost:8000/api/settings/gmail/callback")
 
 
+_GMAIL_RETURN_PATHS = {"settings": "/settings", "onboarding": "/onboarding/connect-gmail"}
+
+
 @app.get("/api/settings/gmail/connect")
-def gmail_connect(user: dict = Depends(require_owner)):
+def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owner)):
     from services.gmail_service import build_authorization_url
+
+    if return_to not in _GMAIL_RETURN_PATHS:
+        raise HTTPException(400, "Invalid return_to")
 
     # The state token proves the callback belongs to this company - it's
     # short-lived and signed, so it can't be forged or reused elsewhere.
-    state = create_token({"company_id": user["company_id"], "purpose": "gmail_oauth"}, lifetime_seconds=SHORT_LIVED_SECONDS)
+    # return_to travels inside it too, so the callback (which Google calls
+    # directly, with no way for the frontend to pass its own state) still
+    # knows whether to send the owner back to onboarding or Settings.
+    state = create_token(
+        {"company_id": user["company_id"], "purpose": "gmail_oauth", "return_to": return_to},
+        lifetime_seconds=SHORT_LIVED_SECONDS,
+    )
     auth_url = build_authorization_url(GMAIL_REDIRECT_URI, state)
     return {"auth_url": auth_url}
 
@@ -537,12 +562,18 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
     from fastapi.responses import RedirectResponse
     from services.gmail_service import exchange_code_for_refresh_token
 
-    if error or not code or not state:
-        return RedirectResponse(f"{FRONTEND_URL}/settings?gmail=error")
+    # Best-effort recovery of where to send the owner back to, even on an
+    # error/expired-state path - falls back to Settings, the safer default.
+    return_path = _GMAIL_RETURN_PATHS["settings"]
+    payload = decode_token(state) if state else None
+    if payload and payload.get("purpose") == "gmail_oauth":
+        return_path = _GMAIL_RETURN_PATHS.get(payload.get("return_to"), return_path)
 
-    payload = decode_token(state)
+    if error or not code or not state:
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
+
     if not payload or payload.get("purpose") != "gmail_oauth":
-        return RedirectResponse(f"{FRONTEND_URL}/settings?gmail=error")
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
 
     try:
         refresh_token = exchange_code_for_refresh_token(code, GMAIL_REDIRECT_URI)
@@ -550,14 +581,14 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
             # Google only issues a refresh_token the FIRST time an account
             # approves this app - if this fails, they likely need to revoke
             # access at myaccount.google.com/permissions and try again.
-            return RedirectResponse(f"{FRONTEND_URL}/settings?gmail=error_no_refresh_token")
+            return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_no_refresh_token")
         save_company_credential(payload["company_id"], "gmail_refresh_token", refresh_token)
     except Exception:
         import logging
         logging.exception("Gmail OAuth callback failed for company %s", payload.get("company_id"))
-        return RedirectResponse(f"{FRONTEND_URL}/settings?gmail=error")
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
 
-    return RedirectResponse(f"{FRONTEND_URL}/settings?gmail=connected")
+    return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=connected")
 
 
 @app.delete("/api/settings/gmail")
@@ -1100,7 +1131,7 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_token(session_claims)
     set_session_cookies(response, token)
-    return {**session_claims}
+    return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
 
 @app.post("/api/2fa/login/webauthn/verify")
@@ -1135,7 +1166,7 @@ async def login_2fa_webauthn_verify(
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_token(session_claims)
     set_session_cookies(response, token)
-    return {**session_claims}
+    return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
 
 # ------------------------------------------------------------------

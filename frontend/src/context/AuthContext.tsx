@@ -7,12 +7,15 @@ interface User {
   companyName?: string
   companyId?: number
   dispatcherId?: number
+  // undefined for dispatchers (not applicable); boolean for owners.
+  gmailConnected?: boolean
 }
 
 interface AuthContextType {
   user: User | null
   login: (session: LoginSuccess) => void
   logout: () => void
+  refreshUser: () => Promise<void>
   isAuthenticated: boolean
   isLoading: boolean
 }
@@ -25,6 +28,7 @@ function toUser(session: LoginSuccess): User {
     companyName: session.company_name,
     companyId: session.company_id,
     dispatcherId: session.dispatcher_id,
+    gmailConnected: session.gmail_connected,
   }
 }
 
@@ -56,8 +60,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  // Re-checks the session with the backend - used after an action that
+  // changes server-side state the frontend doesn't otherwise learn about,
+  // like completing the mandatory Gmail connect step.
+  const refreshUser = async () => {
+    try {
+      const session = await authApi.me()
+      setUser(toUser(session))
+    } catch {
+      setUser(null)
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshUser, isAuthenticated: !!user, isLoading }}>
       {children}
     </AuthContext.Provider>
   )

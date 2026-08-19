@@ -39,9 +39,40 @@ class TestDatabaseModels:
             assert company.password_hash is not None
 
 
+class TestCompanyCredentials:
+    """Regression coverage for save/get/delete_company_credential -
+    get_company_credential used to fall off the end of the function with
+    no return whenever a credential WAS found (only the "not found" path
+    returned explicitly), so it always returned None even for a credential
+    that existed; delete_company_credential had a stray line referencing
+    an undefined variable that raised NameError after every delete. Both
+    meant Gmail/Samsara "connect" silently never actually worked from the
+    API's perspective, and "disconnect" always crashed."""
+
+    def test_get_company_credential_returns_decrypted_value_when_present(self, setup_db):
+        company_id = int(str(uuid.uuid4().int)[:8])
+        repository.save_company_credential(company_id, "gmail_refresh_token", "super-secret-token")
+
+        result = repository.get_company_credential(company_id, "gmail_refresh_token")
+        assert result == "super-secret-token"
+
+    def test_get_company_credential_returns_none_when_absent(self, setup_db):
+        result = repository.get_company_credential(999999999, "gmail_refresh_token")
+        assert result is None
+
+    def test_delete_company_credential_removes_it_without_raising(self, setup_db):
+        company_id = int(str(uuid.uuid4().int)[:8])
+        repository.save_company_credential(company_id, "samsara_api_key", "some-api-key")
+        assert repository.get_company_credential(company_id, "samsara_api_key") == "some-api-key"
+
+        repository.delete_company_credential(company_id, "samsara_api_key")  # must not raise
+
+        assert repository.get_company_credential(company_id, "samsara_api_key") is None
+
+
 class TestRepository:
     """Test repository functions"""
-    
+
     def test_get_company_by_mc(self, setup_db):
         """Test getting company by MC number"""
         unique_mc = str(uuid.uuid4().int)[:6]

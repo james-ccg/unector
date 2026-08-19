@@ -339,6 +339,62 @@ class TestTenantIsolation:
         assert response.status_code == 200
 
 
+class TestMandatoryGmailOnboarding:
+    """Gmail connection is mandatory for owners - the bot's core feature
+    (pulling rate confirmations from email) depends on it. The frontend
+    enforces the redirect-to-onboarding gate, but the underlying signal
+    it relies on (gmail_connected on every auth response) is what these
+    tests lock in."""
+
+    def test_fresh_registration_reports_gmail_not_connected(self, client):
+        response = client.post("/api/auth/register", json={
+            "mc_number": "710000",
+            "company_name": "Onboarding Test Co",
+            "email": "owner@onboardingtest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        assert response.status_code == 200
+        assert response.json()["gmail_connected"] is False
+
+    def test_me_reflects_gmail_connected_after_credential_saved(self, client):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": "720000",
+            "company_name": "Onboarding Test Co 2",
+            "email": "owner2@onboardingtest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        company_id = reg.json()["company_id"]
+        assert client.get("/api/me").json()["gmail_connected"] is False
+
+        from db.repository import save_company_credential
+        save_company_credential(company_id, "gmail_refresh_token", "fake-refresh-token-for-test")
+
+        assert client.get("/api/me").json()["gmail_connected"] is True
+
+    def test_dispatcher_response_has_no_gmail_connected_field(self, client):
+        client.post("/api/auth/register", json={
+            "mc_number": "730000",
+            "company_name": "Onboarding Test Co 3",
+            "email": "owner3@onboardingtest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        client.post(
+            "/api/dispatchers",
+            json={"username": "onboarding_dispatcher", "password": "password123"},
+            headers=_csrf_headers(client),
+        )
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+
+        login = client.post("/api/auth/dispatcher", json={
+            "username": "onboarding_dispatcher", "password": "password123",
+        })
+        assert "gmail_connected" not in login.json()
+        assert "gmail_connected" not in client.get("/api/me").json()
+
+
 class TestSecurityHeaders:
     def test_security_headers_present_on_every_response(self, client):
         response = client.get("/api/public/stats")
