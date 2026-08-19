@@ -771,6 +771,12 @@ async def handle_pod_no_attachment(message: Message):
     await message.reply("Please send the POD photo(s) or file with the /pod caption.")
 
 
+@dp.message(_command_filter("loadpics"))
+async def handle_loadpics_no_attachment(message: Message):
+    """Reached only when /loadpics was sent with no photo attached."""
+    await message.reply("Please send the load photo(s) with the /loadpics caption.")
+
+
 # ------------------------------------------------------------------
 # Background task: polls Samsara for each active load's vehicle location,
 # and alerts the driver's group once the truck gets close to pickup/delivery.

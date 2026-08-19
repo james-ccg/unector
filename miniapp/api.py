@@ -288,20 +288,20 @@ def list_dispatchers(user: dict = Depends(require_owner)):
 
 @app.post("/api/dispatchers")
 def add_dispatcher(body: CreateDispatcherRequest, user: dict = Depends(require_owner)):
+    username = body.username.strip()
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
-    if not body.username.strip():
+    if not username:
         raise HTTPException(400, "Username cannot be empty")
+    if get_dispatcher_by_username(username):
+        raise HTTPException(400, "Username already exists")
     try:
-        dispatcher_id = create_dispatcher(user["company_id"], body.username.strip(), hash_password(body.password))
-        return {"id": dispatcher_id, "username": body.username.strip()}
-    except Exception as e:
+        dispatcher_id = create_dispatcher(user["company_id"], username, hash_password(body.password))
+        return {"id": dispatcher_id, "username": username}
+    except Exception:
         import logging
         logging.exception("Failed to create dispatcher for company %s", user["company_id"])
-        # Check if it's a duplicate username error
-        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
-            raise HTTPException(400, "Username already exists")
-        raise HTTPException(500, f"Failed to create dispatcher: {str(e)}")
+        raise HTTPException(500, "Failed to create dispatcher. Please try again.")
 
 
 # ------------------------------------------------------------------
