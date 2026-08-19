@@ -23,6 +23,7 @@ class Company(Base):
     mc_number: Mapped[str] = mapped_column(String(20), unique=True)
     company_name: Mapped[str] = mapped_column(String(200))
     telegram_group_prefix: Mapped[str] = mapped_column(String(20), unique=True)
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)  # owner's contact/billing email
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)  # owner's Mini App login
     subscription_tier: Mapped[str] = mapped_column(String(50), default="trial")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)

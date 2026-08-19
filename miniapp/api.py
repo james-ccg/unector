@@ -20,7 +20,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 
 from config import FRONTEND_URL, encrypt_value
 from db.database import init_db
@@ -56,6 +56,30 @@ def _startup():
 # ------------------------------------------------------------------
 # Request/response schemas
 # ------------------------------------------------------------------
+class RegisterRequest(BaseModel):
+    mc_number: str
+    company_name: str
+    email: EmailStr
+    password: str
+    confirm_password: str
+
+    @field_validator("mc_number")
+    @classmethod
+    def _mc_number_digits(cls, v: str) -> str:
+        v = v.strip()
+        if not v.isdigit() or not (1 <= len(v) <= 20):
+            raise ValueError("MC number must contain only digits")
+        return v
+
+    @field_validator("company_name")
+    @classmethod
+    def _company_name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Company name is required")
+        return v
+
+
 class OwnerLoginRequest(BaseModel):
     mc_number: str
     password: str
@@ -94,42 +118,35 @@ def require_owner(user: dict = Depends(get_current_user)) -> dict:
 
 
 @app.post("/api/auth/register")
-def register_company(body: dict):
+def register_company(body: RegisterRequest):
     """Register a new logistics company"""
     from db.database import get_session
     from db import models
-    
-    mc_number = body.get("mc_number", "").strip()
-    company_name = body.get("company_name", "").strip()
-    password = body.get("password", "")
-    confirm_password = body.get("confirm_password", "")
-    
-    # Validate
-    if password != confirm_password:
+
+    if body.password != body.confirm_password:
         raise HTTPException(400, "Passwords do not match")
-    if len(password) < 8:
+    if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
-    if not mc_number.isdigit():
-        raise HTTPException(400, "MC number must contain only digits")
-    
+
     try:
         with get_session() as session:
             # Check if MC exists
-            existing = session.query(models.Company).filter_by(mc_number=mc_number).first()
+            existing = session.query(models.Company).filter_by(mc_number=body.mc_number).first()
             if existing:
                 raise HTTPException(400, "This MC number is already registered")
-            
+
             # Create company
             new_company = models.Company(
-                mc_number=mc_number,
-                company_name=company_name,
-                telegram_group_prefix=f"FP{mc_number[:4]}",
-                password_hash=hash_password(password)
+                mc_number=body.mc_number,
+                company_name=body.company_name,
+                email=body.email,
+                telegram_group_prefix=f"FP{body.mc_number[:4]}",
+                password_hash=hash_password(body.password)
             )
             session.add(new_company)
             session.commit()
             session.refresh(new_company)
-            
+
             token = create_token({"role": "owner", "company_id": new_company.id})
             return {
                 "token": token,
@@ -140,10 +157,10 @@ def register_company(body: dict):
             }
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Registration failed")
-        raise HTTPException(500, f"Registration failed: {str(e)}")
+        raise HTTPException(500, "Registration failed. Please try again.")
 
 @app.post("/api/auth/owner")
 def login_owner(body: OwnerLoginRequest):
