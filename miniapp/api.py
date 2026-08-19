@@ -177,7 +177,9 @@ def login_dispatcher(body: DispatcherLoginRequest):
     if not dispatcher or not verify_password(body.password, dispatcher.password_hash):
         raise HTTPException(401, "Invalid username or password")
 
-    return _finish_password_step("dispatcher", dispatcher.id, {"company_id": dispatcher.company_id})
+    return _finish_password_step(
+        "dispatcher", dispatcher.id, {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id}
+    )
 
 
 def _finish_password_step(account_type: str, account_id: int, extra_claims: dict):

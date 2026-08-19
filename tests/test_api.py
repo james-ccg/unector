@@ -83,6 +83,117 @@ class TestAuth:
         assert response.status_code == 422
 
 
+class TestDispatcherAuth:
+    """Regression test: dispatcher logins used to omit dispatcher_id from the
+    JWT, which crashed every 2FA endpoint for a dispatcher account (they all
+    resolve "self" via user["dispatcher_id"])."""
+
+    def _register_owner_and_dispatcher(self, mc_number: str, dispatcher_username: str):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": "Dispatcher Test Co",
+            "email": "owner@dispatchertest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        owner_token = reg.json()["token"]
+
+        created = client.post(
+            "/api/dispatchers",
+            json={"username": dispatcher_username, "password": "dispatcherpass123"},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert created.status_code == 200, created.text
+        return owner_token
+
+    def test_dispatcher_login_includes_dispatcher_id(self):
+        self._register_owner_and_dispatcher("444444", "dispatcher_regress_1")
+
+        login = client.post("/api/auth/dispatcher", json={
+            "username": "dispatcher_regress_1",
+            "password": "dispatcherpass123",
+        })
+        assert login.status_code == 200, login.text
+        body = login.json()
+        assert body.get("dispatcher_id"), "login response must include dispatcher_id"
+
+    def test_dispatcher_can_load_2fa_status_without_500(self):
+        self._register_owner_and_dispatcher("333333", "dispatcher_regress_2")
+
+        login = client.post("/api/auth/dispatcher", json={
+            "username": "dispatcher_regress_2",
+            "password": "dispatcherpass123",
+        })
+        dispatcher_token = login.json()["token"]
+
+        status = client.get("/api/2fa/status", headers={"Authorization": f"Bearer {dispatcher_token}"})
+        assert status.status_code == 200, status.text
+
+
+class TestTenantIsolation:
+    """SQLite has no row-level security, so tenant isolation is enforced
+    entirely in miniapp/api.py. These tests lock in that every driver-scoped
+    endpoint rejects access from a different company's owner, even with a
+    valid, correctly-signed session token."""
+
+    def _register_owner(self, mc_number: str) -> tuple[str, int]:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Tenant Test Co {mc_number}",
+            "email": f"owner{mc_number}@tenanttest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        body = reg.json()
+        return body["token"], body["company_id"]
+
+    def _create_driver(self, company_id: int) -> int:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            driver = models.Driver(company_id=company_id, driver_bot_id=f"D{company_id}", full_name="Test Driver")
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+            return driver.id
+
+    def test_cross_tenant_driver_details_forbidden(self):
+        _, company_a_id = self._register_owner("211111")
+        owner_b_token, _ = self._register_owner("311111")
+        driver_a_id = self._create_driver(company_a_id)
+
+        response = client.get(
+            f"/api/drivers/{driver_a_id}",
+            headers={"Authorization": f"Bearer {owner_b_token}"},
+        )
+        assert response.status_code == 403
+
+    def test_cross_tenant_subscription_toggle_forbidden(self):
+        _, company_a_id = self._register_owner("411111")
+        owner_b_token, _ = self._register_owner("511111")
+        driver_a_id = self._create_driver(company_a_id)
+
+        response = client.patch(
+            f"/api/drivers/{driver_a_id}/subscription",
+            json={"active": False},
+            headers={"Authorization": f"Bearer {owner_b_token}"},
+        )
+        assert response.status_code == 403
+
+    def test_own_tenant_driver_details_allowed(self):
+        owner_token, company_id = self._register_owner("611111")
+        driver_id = self._create_driver(company_id)
+
+        response = client.get(
+            f"/api/drivers/{driver_id}",
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert response.status_code == 200
+
+
 class TestPublicAPI:
     """Public API endpoints test"""
     
