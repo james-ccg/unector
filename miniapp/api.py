@@ -21,6 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from config import FRONTEND_URL, encrypt_value
 from db.database import init_db
@@ -52,6 +55,12 @@ from miniapp.auth import (
 )
 
 app = FastAPI(title="Freight Pilot Mini App API")
+
+# Brute-force / abuse protection on auth and OTP endpoints. In-memory storage
+# is fine for this single-process deployment - no Redis needed.
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # The frontend is served from the same origin as this API in production
 # (frontend/dist is mounted below), and Vite's dev-server proxy makes it
@@ -152,7 +161,8 @@ def verify_csrf(request: Request) -> None:
 
 
 @app.post("/api/auth/register")
-def register_company(body: RegisterRequest, response: Response):
+@limiter.limit("5/minute")
+def register_company(request: Request, body: RegisterRequest, response: Response):
     """Register a new logistics company"""
     from db.database import get_session
     from db import models
@@ -197,7 +207,8 @@ def register_company(body: RegisterRequest, response: Response):
         raise HTTPException(500, "Registration failed. Please try again.")
 
 @app.post("/api/auth/owner")
-def login_owner(body: OwnerLoginRequest, response: Response):
+@limiter.limit("5/minute")
+def login_owner(request: Request, body: OwnerLoginRequest, response: Response):
     company = get_company_by_mc(body.mc_number.strip())
     if not company or not company.password_hash or not verify_password(body.password, company.password_hash):
         raise HTTPException(401, "Invalid MC number or password")
@@ -208,7 +219,8 @@ def login_owner(body: OwnerLoginRequest, response: Response):
 
 
 @app.post("/api/auth/dispatcher")
-def login_dispatcher(body: DispatcherLoginRequest, response: Response):
+@limiter.limit("5/minute")
+def login_dispatcher(request: Request, body: DispatcherLoginRequest, response: Response):
     dispatcher = get_dispatcher_by_username(body.username.strip())
     if not dispatcher or not verify_password(body.password, dispatcher.password_hash):
         raise HTTPException(401, "Invalid username or password")
@@ -778,8 +790,10 @@ def totp_disable(user: dict = Depends(get_current_user), _csrf: None = Depends(v
 
 
 @app.post("/api/2fa/otp/send")
+@limiter.limit("5/minute")
 async def otp_send(
-    body: OtpChannelRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+    request: Request, body: OtpChannelRequest,
+    user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     account_type, account_id = _self_account(user)
     code = twofactor_service.generate_otp_code()
@@ -808,8 +822,9 @@ async def otp_send(
 
 
 @app.post("/api/2fa/otp/confirm")
+@limiter.limit("10/minute")
 def otp_confirm(
-    body: OtpVerifyRequest, contact: str | None = None,
+    request: Request, body: OtpVerifyRequest, contact: str | None = None,
     user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     account_type, account_id = _self_account(user)
@@ -899,7 +914,10 @@ def recovery_codes_generate(user: dict = Depends(get_current_user), _csrf: None 
 
 
 @app.post("/api/2fa/login/challenge")
-async def login_2fa_challenge(body: OtpChannelRequest, claims: dict = Depends(get_pending_2fa_claims)):
+@limiter.limit("5/minute")
+async def login_2fa_challenge(
+    request: Request, body: OtpChannelRequest, claims: dict = Depends(get_pending_2fa_claims),
+):
     account_type, account_id = claims["account_type"], claims["account_id"]
     info = get_2fa_delivery_info(account_type, account_id)
     if not info:
@@ -934,7 +952,8 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
 
 
 @app.post("/api/2fa/login/verify")
-async def login_2fa_verify(body: TwoFaLoginVerifyRequest, response: Response):
+@limiter.limit("10/minute")
+async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, response: Response):
     claims = decode_token(body.pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
@@ -965,7 +984,10 @@ async def login_2fa_verify(body: TwoFaLoginVerifyRequest, response: Response):
 
 
 @app.post("/api/2fa/login/webauthn/verify")
-async def login_2fa_webauthn_verify(body: WebAuthnVerifyRequest, pending_token: str, response: Response):
+@limiter.limit("10/minute")
+async def login_2fa_webauthn_verify(
+    request: Request, body: WebAuthnVerifyRequest, pending_token: str, response: Response,
+):
     claims = decode_token(pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")

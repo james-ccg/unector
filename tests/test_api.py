@@ -17,6 +17,10 @@ from miniapp.auth import CSRF_COOKIE_NAME
 
 @pytest.fixture
 def client():
+    # Rate-limit counters live on the shared `app.state.limiter`, not per
+    # TestClient instance - without resetting, tests would trip each
+    # other's limits since they all originate from the same test IP.
+    app.state.limiter.reset()
     return TestClient(app)
 
 
@@ -169,6 +173,23 @@ class TestCsrfProtection:
             headers=_csrf_headers(client),
         )
         assert response.status_code == 200
+
+
+class TestRateLimiting:
+    """Login/register/OTP endpoints are rate-limited per IP to blunt brute
+    force and account-creation abuse - see the @limiter.limit(...)
+    decorators in miniapp/api.py."""
+
+    def test_owner_login_rate_limited_after_threshold(self, client):
+        # login_owner is limited to 5/minute; wrong credentials still count
+        # against the limit since the check happens before the 401.
+        responses = [
+            client.post("/api/auth/owner", json={"mc_number": "000000", "password": "wrong"})
+            for _ in range(6)
+        ]
+        statuses = [r.status_code for r in responses]
+        assert statuses[:5] == [401, 401, 401, 401, 401]
+        assert statuses[5] == 429
 
 
 class TestDispatcherAuth:
