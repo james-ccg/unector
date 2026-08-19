@@ -612,9 +612,9 @@ def get_2fa_status(account_type: str, account_id: int) -> dict:
         return {
             "totp_enabled": totp_enabled,
             "email_otp_enabled": email_enabled,
-            "contact_email": row.contact_email if row else None,
+            "contact_email": decrypt_value(row.contact_email) if row and row.contact_email else None,
             "sms_otp_enabled": sms_enabled,
-            "phone_number": row.phone_number if row else None,
+            "phone_number": decrypt_value(row.phone_number) if row and row.phone_number else None,
             "telegram_otp_enabled": telegram_enabled,
             "telegram_linked": bool(row and row.telegram_user_id),
             "webauthn_count": webauthn_count,
@@ -644,9 +644,9 @@ def get_2fa_delivery_info(account_type: str, account_id: int) -> dict | None:
         return {
             "totp_secret_encrypted": row.totp_secret_encrypted,
             "totp_enabled": row.totp_enabled,
-            "contact_email": row.contact_email,
+            "contact_email": decrypt_value(row.contact_email) if row.contact_email else None,
             "email_otp_enabled": row.email_otp_enabled,
-            "phone_number": row.phone_number,
+            "phone_number": decrypt_value(row.phone_number) if row.phone_number else None,
             "sms_otp_enabled": row.sms_otp_enabled,
             "telegram_user_id": row.telegram_user_id,
             "telegram_otp_enabled": row.telegram_otp_enabled,
@@ -671,7 +671,7 @@ def set_email_otp(account_type: str, account_id: int, contact_email: str | None,
     with get_session() as session:
         row = _get_or_create_2fa_row(session, account_type, account_id)
         if contact_email is not None:
-            row.contact_email = contact_email
+            row.contact_email = encrypt_value(contact_email)
         row.email_otp_enabled = enabled
         session.commit()
 
@@ -680,7 +680,7 @@ def set_sms_otp(account_type: str, account_id: int, phone_number: str | None, en
     with get_session() as session:
         row = _get_or_create_2fa_row(session, account_type, account_id)
         if phone_number is not None:
-            row.phone_number = phone_number
+            row.phone_number = encrypt_value(phone_number)
         row.sms_otp_enabled = enabled
         session.commit()
 
