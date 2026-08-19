@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { motion, AnimatePresence } from 'motion/react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import TwoFactorSettings from '../components/TwoFactorSettings'
@@ -336,37 +337,53 @@ export default function SettingsPage() {
       </div>
 
       {/* ---------------- Samsara connect modal ---------------- */}
-      {samsaraModalOpen && (
-        <div className="modal-overlay" onClick={() => setSamsaraModalOpen(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>Connect Samsara</h3>
-            <p className="modal-hint">
-              In your Samsara dashboard: Settings (gear icon) → Developer → API Tokens → Add an API Token.
-              Tag Access: Entire Organization. Permission Scope: <strong>Read Vehicle Statistics</strong> under Vehicles.
-              Paste the token below.
-            </p>
-            <label>
-              <span>Samsara API token</span>
-              <input
-                type="password"
-                value={samsaraKey}
-                onChange={(e) => setSamsaraKey(e.target.value)}
-                placeholder="samsara_api_..."
-                autoFocus
-              />
-            </label>
-            {samsaraError && <p className="form-error">{samsaraError}</p>}
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setSamsaraModalOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleConnectSamsara} disabled={samsaraBusy || !samsaraKey.trim()}>
-                {samsaraBusy ? 'Connecting...' : 'Connect'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {samsaraModalOpen && (
+          <motion.div
+            className="modal-overlay"
+            onClick={() => setSamsaraModalOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div
+              className="modal-card"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <h3>Connect Samsara</h3>
+              <p className="modal-hint">
+                In your Samsara dashboard: Settings (gear icon) → Developer → API Tokens → Add an API Token.
+                Tag Access: Entire Organization. Permission Scope: <strong>Read Vehicle Statistics</strong> under Vehicles.
+                Paste the token below.
+              </p>
+              <label>
+                <span>Samsara API token</span>
+                <input
+                  type="password"
+                  value={samsaraKey}
+                  onChange={(e) => setSamsaraKey(e.target.value)}
+                  placeholder="samsara_api_..."
+                  autoFocus
+                />
+              </label>
+              {samsaraError && <p className="form-error">{samsaraError}</p>}
+              <div className="modal-actions">
+                <button className="btn btn-ghost" onClick={() => setSamsaraModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={handleConnectSamsara} disabled={samsaraBusy || !samsaraKey.trim()}>
+                  {samsaraBusy ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
     </Layout>
   )

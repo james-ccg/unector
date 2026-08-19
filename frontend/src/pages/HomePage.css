@@ -98,7 +98,8 @@
 }
 
 .feature-card:hover {
-  transform: translateY(-8px);
+  /* translateY is handled by the motion.div's whileHover in HomePage.tsx -
+     setting it here too would fight the spring animation on every frame. */
   border-color: var(--primary);
   box-shadow: 0 16px 40px rgba(255, 159, 28, 0.2);
 }
