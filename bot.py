@@ -494,22 +494,33 @@ async def _process_photo_group(messages: list[Message]):
 
 
 def _format_loadpics_response(result: dict) -> str:
-    """Formats the /loadpics AI response into the specified blockquote format."""
+    """Formats the /loadpics AI response into the specified blockquote format.
+
+    Every value pulled from `result` originates from Gemini's OCR reading of
+    a driver-submitted photo - if the photographed text itself contains
+    HTML-special characters (`<`, `&`, ...), an unescaped interpolation
+    would either break Telegram's HTML parser or let it inject fake
+    formatting into the message, so every dynamic value is escaped via g()."""
+    e = html.escape
+
+    def g(d: dict, key: str, default: str) -> str:
+        return e(str(d.get(key) or default))
+
     lines = []
-    
+
     # Task 1 - Load securement
     task1 = result.get("task1_securement", {})
-    status1 = task1.get("status", "Not checked")
+    status1 = g(task1, "status", "Not checked")
     emoji1 = "✅" if "excellent" in status1.lower() or "good" in status1.lower() else "⚠️"
     lines.append(f"<b>Task 1 - Load securement:</b>")
     lines.append(f"<blockquote><b>Status</b> - {status1} {emoji1}</blockquote>")
     lines.append("")
-    
+
     # Task 2 - Seal number
     task2 = result.get("task2_seal", {})
-    bol_seal = task2.get("bol") or "not visible"
-    photos_seal = task2.get("photos") or "not visible"
-    status2 = task2.get("status", "Not checked")
+    bol_seal = g(task2, "bol", "not visible")
+    photos_seal = g(task2, "photos", "not visible")
+    status2 = g(task2, "status", "Not checked")
     emoji2 = "✅" if "match" in status2.lower() else "⚠️"
     lines.append(f"<b>Task 2 - Seal number:</b>")
     blockquote_lines = [
@@ -517,15 +528,15 @@ def _format_loadpics_response(result: dict) -> str:
         f"<b>Photos</b> - {photos_seal}",
         f"<b>Status</b> - {status2} {emoji2}"
     ]
-    lines.append(f"<blockquote>{html.escape(chr(10)).join(blockquote_lines)}</blockquote>")
+    lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Task 3 - Temperature
     task3 = result.get("task3_temperature", {})
-    rc_temp = task3.get("rc", "didn't show")
-    bol_temp = task3.get("bol", "didn't show")
-    photos_temp = task3.get("photos", "didn't show")
-    status3 = task3.get("status", "Not checked")
+    rc_temp = g(task3, "rc", "didn't show")
+    bol_temp = g(task3, "bol", "didn't show")
+    photos_temp = g(task3, "photos", "didn't show")
+    status3 = g(task3, "status", "Not checked")
     emoji3 = "✅" if "match" in status3.lower() else "⚠️"
     lines.append(f"<b>Task 3 - Temperature:</b>")
     blockquote_lines = [
@@ -536,12 +547,12 @@ def _format_loadpics_response(result: dict) -> str:
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Task 4 - Documentation
     task4 = result.get("task4_documentation", {})
-    rc_pages = task4.get("rc", "not specified")
-    bol_pages = task4.get("bol", "not visible")
-    status4 = task4.get("status", "Not checked")
+    rc_pages = g(task4, "rc", "not specified")
+    bol_pages = g(task4, "bol", "not visible")
+    status4 = g(task4, "status", "Not checked")
     emoji4 = "✅" if "okay" in status4.lower() or "match" in status4.lower() else "⚠️"
     lines.append(f"<b>Task 4 - Documentation:</b>")
     blockquote_lines = [
@@ -551,13 +562,13 @@ def _format_loadpics_response(result: dict) -> str:
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Final verdict
     if result.get("issues") and len(result["issues"]) > 0:
         lines.append("<b>Please review before proceeding.</b>")
     else:
         lines.append("<b>Everything looks good!</b>")
-    
+
     return "\n".join(lines)
 
 
@@ -589,14 +600,19 @@ async def _run_loadpics(chat_id: int, trigger_message: Message, files: list[tupl
 
 
 def _format_bol_response(result: dict) -> str:
-    """Formats the /bol AI response into the specified blockquote format."""
+    """Formats the /bol AI response into the specified blockquote format.
+    See _format_loadpics_response's docstring - same escaping rationale,
+    since this is also built from Gemini's OCR reading of a driver photo."""
+    def g(d: dict, key: str, default: str) -> str:
+        return html.escape(str(d.get(key) or default))
+
     lines = []
-    
+
     # Weight section
     weight = result.get("weight", {})
-    bol_weight = weight.get("bol", "not visible")
-    rc_weight = weight.get("rc", "not visible")
-    weight_status = weight.get("status", "Not checked")
+    bol_weight = g(weight, "bol", "not visible")
+    rc_weight = g(weight, "rc", "not visible")
+    weight_status = g(weight, "status", "Not checked")
     lines.append(f"<b>Weight:</b>")
     blockquote_lines = [
         f"<b>Bol</b> - {bol_weight}",
@@ -605,13 +621,13 @@ def _format_bol_response(result: dict) -> str:
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Delivery address section
     del_addr = result.get("delivery_address", {})
-    bol_addr = del_addr.get("bol", "not visible")
-    rc_addr = del_addr.get("rc", "not visible")
-    addr_status = del_addr.get("status", "Not checked")
-    addr_emoji = del_addr.get("emoji", "")
+    bol_addr = g(del_addr, "bol", "not visible")
+    rc_addr = g(del_addr, "rc", "not visible")
+    addr_status = g(del_addr, "status", "Not checked")
+    addr_emoji = g(del_addr, "emoji", "")
     lines.append(f"<b>Del address:</b>")
     blockquote_lines = [
         f"<b>Bol</b> - <i>{bol_addr}</i>",
@@ -620,12 +636,12 @@ def _format_bol_response(result: dict) -> str:
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Temperature section
     temp = result.get("temperature", {})
-    rc_temp = temp.get("rc", "didn't show")
-    bol_temp = temp.get("bol", "didn't show")
-    temp_status = temp.get("status", "Not checked")
+    rc_temp = g(temp, "rc", "didn't show")
+    bol_temp = g(temp, "bol", "didn't show")
+    temp_status = g(temp, "status", "Not checked")
     lines.append(f"<b>Temp:</b>")
     blockquote_lines = [
         f"<b>Rc</b> - {rc_temp}",
@@ -634,20 +650,20 @@ def _format_bol_response(result: dict) -> str:
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
     lines.append("")
-    
+
     # Seal match status section
     seal = result.get("seal", {})
-    seal_summary = seal.get("summary", "Not checked")
+    seal_summary = g(seal, "summary", "Not checked")
     lines.append(f"<b>Seal match status:</b>")
     lines.append(seal_summary)
     lines.append("")
-    
+
     # Final verdict
     if result.get("mismatches") and len(result["mismatches"]) > 0:
         lines.append("<b>Please review before proceeding.</b>")
     else:
         lines.append("<b>Good to go!</b>")
-    
+
     return "\n".join(lines)
 
 
@@ -742,9 +758,33 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
 # Document-based /bol and /pod - for when the driver sends a PDF file
 # instead of a photo. Registered AFTER handle_photo_message, so photos are
 # always caught by the album handler above; these only ever see documents.
+#
+# Unlike the `photo` message type (where Telegram itself guarantees the
+# content is an actual, size-limited image), a `document` can be any file
+# a user attaches - so it needs its own type/size check before being
+# downloaded and handed to Gemini/email sending.
 # ------------------------------------------------------------------
+MAX_DOCUMENT_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB (Telegram bots cap downloads at 20MB anyway)
+ALLOWED_DOCUMENT_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png"}
+
+
+async def _validate_document_or_reply(message: Message) -> bool:
+    """Returns False (having already sent a friendly reply) if the document
+    attachment fails the type/size check."""
+    doc = message.document
+    if doc.mime_type and doc.mime_type not in ALLOWED_DOCUMENT_MIME_TYPES:
+        await message.reply("⚠️ Please attach a PDF or image file - that file type isn't supported.")
+        return False
+    if doc.file_size and doc.file_size > MAX_DOCUMENT_UPLOAD_BYTES:
+        await message.reply(f"⚠️ That file is too large (max {MAX_DOCUMENT_UPLOAD_BYTES // (1024 * 1024)}MB).")
+        return False
+    return True
+
+
 @dp.message(F.document, _command_filter("bol"))
 async def handle_bol_document(message: Message):
+    if not await _validate_document_or_reply(message):
+        return
     file = await bot.get_file(message.document.file_id)
     data = (await bot.download_file(file.file_path)).read()
     mime_type = message.document.mime_type or "application/pdf"
@@ -753,6 +793,8 @@ async def handle_bol_document(message: Message):
 
 @dp.message(F.document, _command_filter("pod"))
 async def handle_pod_document(message: Message):
+    if not await _validate_document_or_reply(message):
+        return
     file = await bot.get_file(message.document.file_id)
     data = (await bot.download_file(file.file_path)).read()
     mime_type = message.document.mime_type or "application/pdf"
