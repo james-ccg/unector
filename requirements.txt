@@ -13,6 +13,7 @@ bcrypt==4.2.1
 pyopenssl==26.4.0
 email-validator==2.3.0
 slowapi==0.1.10
+requests==2.34.2
 
 # Two-factor authentication
 pyotp==2.9.0

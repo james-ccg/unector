@@ -175,6 +175,45 @@ class TestCsrfProtection:
         assert response.status_code == 200
 
 
+class TestTurnstile:
+    """Turnstile is off by default (no TURNSTILE_SECRET_KEY in the test
+    env) so every other test's register/login calls work with no token -
+    these tests turn it on temporarily to prove the enforcement path
+    itself is wired correctly, without making a real network call to
+    Cloudflare."""
+
+    def test_register_blocked_without_token_when_turnstile_configured(self, client, monkeypatch):
+        monkeypatch.setattr("miniapp.api.TURNSTILE_SECRET_KEY", "fake-secret-for-test")
+        response = client.post("/api/auth/register", json={
+            "mc_number": "800000",
+            "company_name": "Turnstile Test Co",
+            "email": "owner@turnstiletest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        assert response.status_code == 400
+        assert "bot verification" in response.json()["detail"].lower()
+
+    def test_register_allowed_with_valid_token_when_turnstile_configured(self, client, monkeypatch):
+        monkeypatch.setattr("miniapp.api.TURNSTILE_SECRET_KEY", "fake-secret-for-test")
+
+        class _FakeResponse:
+            def json(self):
+                return {"success": True}
+
+        monkeypatch.setattr("requests.post", lambda *a, **k: _FakeResponse())
+
+        response = client.post("/api/auth/register", json={
+            "mc_number": "800002",
+            "company_name": "Turnstile Test Co 2",
+            "email": "owner2@turnstiletest.com",
+            "password": "password123",
+            "confirm_password": "password123",
+            "turnstile_token": "a-real-looking-token",
+        })
+        assert response.status_code == 200, response.text
+
+
 class TestRateLimiting:
     """Login/register/OTP endpoints are rate-limited per IP to blunt brute
     force and account-creation abuse - see the @limiter.limit(...)

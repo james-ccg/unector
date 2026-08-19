@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { authApi } from '../services/api'
+import { authApi, publicApi } from '../services/api'
+import Turnstile from '../components/Turnstile'
 import './LoginPage.css'
 
 export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
@@ -17,6 +20,10 @@ export default function RegisterPage() {
       navigate('/dashboard')
     }
   }, [isAuthenticated, navigate])
+
+  useEffect(() => {
+    publicApi.getConfig().then((c) => setTurnstileSiteKey(c.turnstile_site_key)).catch(() => {})
+  }, [])
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -31,6 +38,7 @@ export default function RegisterPage() {
       email: formData.get('email') as string,
       password: formData.get('password') as string,
       confirm_password: formData.get('confirm_password') as string,
+      turnstile_token: turnstileToken,
     }
 
     try {
@@ -82,7 +90,12 @@ export default function RegisterPage() {
               <span>Confirm Password</span>
               <input type="password" name="confirm_password" placeholder="Repeat password" required minLength={8} />
             </label>
-            <button type="submit" className="btn-primary btn-full" disabled={loading}>
+            <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+            <button
+              type="submit"
+              className="btn-primary btn-full"
+              disabled={loading || (!!turnstileSiteKey && !turnstileToken)}
+            >
               {loading ? 'Creating Account...' : 'Create Account'}
             </button>
             {error && <p className="error">{error}</p>}

@@ -70,6 +70,12 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 
+# Cloudflare Turnstile (bot protection on register/login) - free tier,
+# sign up at dash.cloudflare.com/?to=/:account/turnstile. Leave both empty
+# to disable; register/login work normally without it, just unprotected.
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "").strip() or None
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip() or None
+
 # SMS OTP - pluggable provider. Only Twilio is wired up as an example; you
 # need your own paid Twilio (or similar) account for this to actually send
 # a text message. Everything else (TOTP, Telegram OTP, recovery codes,

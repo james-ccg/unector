@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { authApi, twoFaApi } from '../services/api'
+import { authApi, twoFaApi, publicApi } from '../services/api'
 import type { LoginSuccess, TwoFaChallenge } from '../services/api'
 import { isWebAuthnSupported, getCredential } from '../services/webauthn'
+import Turnstile from '../components/Turnstile'
 import './LoginPage.css'
 
 const METHOD_LABELS: Record<string, string> = {
@@ -31,9 +32,16 @@ export default function LoginPage() {
   const [code, setCode] = useState('')
   const [codeSent, setCodeSent] = useState(false)
 
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+
   useEffect(() => {
     if (isAuthenticated) navigate('/dashboard')
   }, [isAuthenticated, navigate])
+
+  useEffect(() => {
+    publicApi.getConfig().then((c) => setTurnstileSiteKey(c.turnstile_site_key)).catch(() => {})
+  }, [])
 
   const finishLogin = (data: LoginSuccess) => {
     login(data)
@@ -45,7 +53,9 @@ export default function LoginPage() {
     setLoading(true)
     const formData = new FormData(e.currentTarget)
     try {
-      const data = await authApi.loginOwner(formData.get('mc_number') as string, formData.get('password') as string)
+      const data = await authApi.loginOwner(
+        formData.get('mc_number') as string, formData.get('password') as string, turnstileToken
+      )
       if (isChallenge(data)) {
         setChallenge(data)
         setMethod(data.methods[0] || '')
@@ -65,7 +75,9 @@ export default function LoginPage() {
     setLoading(true)
     const formData = new FormData(e.currentTarget)
     try {
-      const data = await authApi.loginDispatcher(formData.get('username') as string, formData.get('password') as string)
+      const data = await authApi.loginDispatcher(
+        formData.get('username') as string, formData.get('password') as string, turnstileToken
+      )
       if (isChallenge(data)) {
         setChallenge(data)
         setMethod(data.methods[0] || '')
@@ -172,7 +184,12 @@ export default function LoginPage() {
                     <span>Password</span>
                     <input type="password" name="password" placeholder="Password" required />
                   </label>
-                  <button type="submit" className="btn-primary btn-full" disabled={loading}>
+                  <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <button
+                    type="submit"
+                    className="btn-primary btn-full"
+                    disabled={loading || (!!turnstileSiteKey && !turnstileToken)}
+                  >
                     {loading ? 'Logging in...' : 'Log in'}
                   </button>
                   {error && <p className="error">{error}</p>}
@@ -193,7 +210,12 @@ export default function LoginPage() {
                     <span>Password</span>
                     <input type="password" name="password" placeholder="Password" required />
                   </label>
-                  <button type="submit" className="btn-primary btn-full" disabled={loading}>
+                  <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <button
+                    type="submit"
+                    className="btn-primary btn-full"
+                    disabled={loading || (!!turnstileSiteKey && !turnstileToken)}
+                  >
                     {loading ? 'Logging in...' : 'Log in'}
                   </button>
                   {error && <p className="error">{error}</p>}

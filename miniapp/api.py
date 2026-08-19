@@ -25,7 +25,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from config import FRONTEND_URL, encrypt_value
+from config import FRONTEND_URL, TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY, encrypt_value
 from db.database import init_db
 from db.repository import (
     create_dispatcher,
@@ -90,6 +90,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str
+    turnstile_token: str | None = None
 
     @field_validator("mc_number")
     @classmethod
@@ -111,11 +112,13 @@ class RegisterRequest(BaseModel):
 class OwnerLoginRequest(BaseModel):
     mc_number: str
     password: str
+    turnstile_token: str | None = None
 
 
 class DispatcherLoginRequest(BaseModel):
     username: str
     password: str
+    turnstile_token: str | None = None
 
 
 class CreateDispatcherRequest(BaseModel):
@@ -160,12 +163,53 @@ def verify_csrf(request: Request) -> None:
         raise HTTPException(403, "Missing or invalid CSRF token")
 
 
+# ------------------------------------------------------------------
+# Cloudflare Turnstile - bot protection on register/login. No-ops if
+# TURNSTILE_SECRET_KEY isn't set in .env, so the app keeps working
+# normally until real keys are configured.
+# ------------------------------------------------------------------
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+
+def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
+    if not TURNSTILE_SECRET_KEY:
+        return
+    if not token:
+        raise HTTPException(400, "Bot verification failed. Please try again.")
+
+    import requests
+
+    try:
+        resp = requests.post(
+            TURNSTILE_VERIFY_URL,
+            data={"secret": TURNSTILE_SECRET_KEY, "response": token, "remoteip": remote_ip or ""},
+            timeout=5,
+        )
+        result = resp.json()
+    except Exception:
+        import logging
+        logging.exception("Turnstile verification request failed")
+        raise HTTPException(503, "Bot verification service unavailable. Please try again.")
+
+    if not result.get("success"):
+        raise HTTPException(400, "Bot verification failed. Please try again.")
+
+
+@app.get("/api/public/config")
+def get_public_config():
+    """Tells the frontend whether to render the Turnstile widget at all,
+    and with which site key - the secret key never leaves the backend."""
+    return {"turnstile_site_key": TURNSTILE_SITE_KEY}
+
+
 @app.post("/api/auth/register")
 @limiter.limit("5/minute")
 def register_company(request: Request, body: RegisterRequest, response: Response):
     """Register a new logistics company"""
     from db.database import get_session
     from db import models
+
+    verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
 
     if body.password != body.confirm_password:
         raise HTTPException(400, "Passwords do not match")
@@ -209,6 +253,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
 @app.post("/api/auth/owner")
 @limiter.limit("5/minute")
 def login_owner(request: Request, body: OwnerLoginRequest, response: Response):
+    verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
     company = get_company_by_mc(body.mc_number.strip())
     if not company or not company.password_hash or not verify_password(body.password, company.password_hash):
         raise HTTPException(401, "Invalid MC number or password")
@@ -221,6 +266,7 @@ def login_owner(request: Request, body: OwnerLoginRequest, response: Response):
 @app.post("/api/auth/dispatcher")
 @limiter.limit("5/minute")
 def login_dispatcher(request: Request, body: DispatcherLoginRequest, response: Response):
+    verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
     dispatcher = get_dispatcher_by_username(body.username.strip())
     if not dispatcher or not verify_password(body.password, dispatcher.password_hash):
         raise HTTPException(401, "Invalid username or password")

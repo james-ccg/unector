@@ -113,16 +113,16 @@ export interface LoginSuccess {
 }
 
 export const authApi = {
-  loginOwner: (mcNumber: string, password: string) =>
+  loginOwner: (mcNumber: string, password: string, turnstileToken?: string | null) =>
     apiRequest<LoginSuccess | TwoFaChallenge>('/api/auth/owner', {
       method: 'POST',
-      body: JSON.stringify({ mc_number: mcNumber, password }),
+      body: JSON.stringify({ mc_number: mcNumber, password, turnstile_token: turnstileToken }),
     }),
 
-  loginDispatcher: (username: string, password: string) =>
+  loginDispatcher: (username: string, password: string, turnstileToken?: string | null) =>
     apiRequest<LoginSuccess | TwoFaChallenge>('/api/auth/dispatcher', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, turnstile_token: turnstileToken }),
     }),
 
   register: (data: {
@@ -131,6 +131,7 @@ export const authApi = {
     email: string
     password: string
     confirm_password: string
+    turnstile_token?: string | null
   }) =>
     apiRequest<{ role: string; company_name: string; company_id: number }>(
       '/api/auth/register',
@@ -305,4 +306,8 @@ export const publicApi = {
       loads_value: number
       uptime: number
     }>('/api/public/stats'),
+
+  // turnstile_site_key is null when Cloudflare Turnstile isn't configured -
+  // the widget just doesn't render in that case and forms submit without it.
+  getConfig: () => apiRequest<{ turnstile_site_key: string | null }>('/api/public/config'),
 }
