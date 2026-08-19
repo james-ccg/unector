@@ -95,6 +95,13 @@
   color: var(--primary);
 }
 
+.footer-links .is-disabled {
+  color: var(--text-muted);
+  opacity: 0.6;
+  font-size: 14px;
+  cursor: default;
+}
+
 .footer-bottom {
   padding-top: 30px;
   border-top: 1px solid var(--border);

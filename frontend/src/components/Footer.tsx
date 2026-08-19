@@ -62,9 +62,6 @@ export default function Footer() {
               <li>
                 <Link to="/pages/trust">Trust & Stats</Link>
               </li>
-              <li>
-                <a href="#support">Support</a>
-              </li>
             </ul>
           </div>
 
@@ -72,10 +69,10 @@ export default function Footer() {
             <h4 className="footer-title">Legal</h4>
             <ul className="footer-links">
               <li>
-                <a href="#privacy">Privacy Policy</a>
+                <span className="is-disabled" title="Coming soon">Privacy Policy</span>
               </li>
               <li>
-                <a href="#terms">Terms of Service</a>
+                <span className="is-disabled" title="Coming soon">Terms of Service</span>
               </li>
             </ul>
           </div>
