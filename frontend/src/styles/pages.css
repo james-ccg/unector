@@ -9,11 +9,19 @@
 }
 
 .page-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
   font-family: var(--font-display);
   font-size: 42px;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 16px;
+}
+
+.page-title svg {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .page-description {
@@ -37,10 +45,18 @@
 }
 
 .faq-question {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 12px;
+}
+
+.faq-question svg {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .faq-answer {
@@ -61,7 +77,14 @@
 }
 
 .content-icon {
-  font-size: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(255, 159, 28, 0.12);
+  color: var(--primary);
   margin-bottom: 16px;
 }
 
@@ -152,6 +175,12 @@
   font-size: 15px;
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.pricing-features li svg {
+  flex-shrink: 0;
+  color: var(--success);
 }
 
 /* Stats Showcase */
@@ -251,10 +280,18 @@
 }
 
 .update-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0 0 16px;
+}
+
+.update-title svg {
+  color: var(--primary);
+  flex-shrink: 0;
 }
 
 .update-list {

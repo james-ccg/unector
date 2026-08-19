@@ -1,3 +1,4 @@
+import { Check } from 'lucide-react'
 import Layout from '../components/Layout'
 
 export default function PricingPage() {
@@ -21,13 +22,13 @@ export default function PricingPage() {
               </div>
               <p className="pricing-description">Perfect for small fleets starting out</p>
               <ul className="pricing-features">
-                <li>✅ Up to 5 drivers</li>
-                <li>✅ AI load extraction</li>
-                <li>✅ Gmail integration</li>
-                <li>✅ GPS tracking</li>
-                <li>✅ Telegram bot</li>
-                <li>✅ Basic dashboard</li>
-                <li>✅ 1 dispatcher login</li>
+                <li><Check size={16} /> Up to 5 drivers</li>
+                <li><Check size={16} /> AI load extraction</li>
+                <li><Check size={16} /> Gmail integration</li>
+                <li><Check size={16} /> GPS tracking</li>
+                <li><Check size={16} /> Telegram bot</li>
+                <li><Check size={16} /> Basic dashboard</li>
+                <li><Check size={16} /> 1 dispatcher login</li>
               </ul>
               <a href="/register" className="btn-primary btn-full">
                 Start Free Trial
@@ -42,13 +43,13 @@ export default function PricingPage() {
               </div>
               <p className="pricing-description">Best value for growing operations</p>
               <ul className="pricing-features">
-                <li>✅ Up to 20 drivers</li>
-                <li>✅ Everything in Starter</li>
-                <li>✅ Advanced analytics</li>
-                <li>✅ Custom notifications</li>
-                <li>✅ Priority support</li>
-                <li>✅ Unlimited dispatchers</li>
-                <li>✅ API access</li>
+                <li><Check size={16} /> Up to 20 drivers</li>
+                <li><Check size={16} /> Everything in Starter</li>
+                <li><Check size={16} /> Advanced analytics</li>
+                <li><Check size={16} /> Custom notifications</li>
+                <li><Check size={16} /> Priority support</li>
+                <li><Check size={16} /> Unlimited dispatchers</li>
+                <li><Check size={16} /> API access</li>
               </ul>
               <a href="/register" className="btn-primary btn-full">
                 Start Free Trial
@@ -62,13 +63,13 @@ export default function PricingPage() {
               </div>
               <p className="pricing-description">For large fleets with custom needs</p>
               <ul className="pricing-features">
-                <li>✅ Unlimited drivers</li>
-                <li>✅ Everything in Professional</li>
-                <li>✅ Dedicated account manager</li>
-                <li>✅ Custom integrations</li>
-                <li>✅ White-label options</li>
-                <li>✅ SLA guarantee</li>
-                <li>✅ 24/7 phone support</li>
+                <li><Check size={16} /> Unlimited drivers</li>
+                <li><Check size={16} /> Everything in Professional</li>
+                <li><Check size={16} /> Dedicated account manager</li>
+                <li><Check size={16} /> Custom integrations</li>
+                <li><Check size={16} /> White-label options</li>
+                <li><Check size={16} /> SLA guarantee</li>
+                <li><Check size={16} /> 24/7 phone support</li>
               </ul>
               <a href="#contact" className="btn-secondary btn-full">
                 Contact Sales

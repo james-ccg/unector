@@ -1,3 +1,4 @@
+import { Lightbulb, CreditCard, Mail, Map, Bot, Users } from 'lucide-react'
 import Layout from '../components/Layout'
 
 export default function FAQPage() {
@@ -12,7 +13,7 @@ export default function FAQPage() {
 
           <div className="faq-list">
             <div className="faq-item card">
-              <h3 className="faq-question">💡 What is Freight Pilot?</h3>
+              <h3 className="faq-question"><Lightbulb size={18} /> What is Freight Pilot?</h3>
               <p className="faq-answer">
                 AI-powered dispatch management system that automates load management through
                 Telegram. Connects Gmail, extracts load details with AI, tracks GPS, and provides
@@ -21,7 +22,7 @@ export default function FAQPage() {
             </div>
 
             <div className="faq-item card">
-              <h3 className="faq-question">💳 How does billing work?</h3>
+              <h3 className="faq-question"><CreditCard size={18} /> How does billing work?</h3>
               <p className="faq-answer">
                 You pay monthly only for active drivers via Stripe. 14-day free trial available.
                 $25/driver/month. No hidden fees.
@@ -29,7 +30,7 @@ export default function FAQPage() {
             </div>
 
             <div className="faq-item card">
-              <h3 className="faq-question">📧 How does Gmail integration work?</h3>
+              <h3 className="faq-question"><Mail size={18} /> How does Gmail integration work?</h3>
               <p className="faq-answer">
                 Secure OAuth 2.0 connection. Google account authorization required. Bot
                 automatically finds rate confirmations in your inbox.
@@ -37,7 +38,7 @@ export default function FAQPage() {
             </div>
 
             <div className="faq-item card">
-              <h3 className="faq-question">🗺️ How does GPS tracking work?</h3>
+              <h3 className="faq-question"><Map size={18} /> How does GPS tracking work?</h3>
               <p className="faq-answer">
                 Samsara integration. Auto notifications when driver approaches pickup/delivery.
                 Real-time tracking and ETA updates.
@@ -45,7 +46,7 @@ export default function FAQPage() {
             </div>
 
             <div className="faq-item card">
-              <h3 className="faq-question">🤖 What does AI do?</h3>
+              <h3 className="faq-question"><Bot size={18} /> What does AI do?</h3>
               <p className="faq-answer">
                 Google Gemini AI extracts all load details from rate confirmations: load ID,
                 addresses, dates, broker, rate, and more. Eliminates manual data entry.
@@ -53,7 +54,7 @@ export default function FAQPage() {
             </div>
 
             <div className="faq-item card">
-              <h3 className="faq-question">👥 Can I add dispatchers?</h3>
+              <h3 className="faq-question"><Users size={18} /> Can I add dispatchers?</h3>
               <p className="faq-answer">
                 Unlimited dispatchers in Professional and Enterprise plans. Each gets their own
                 dashboard login with appropriate permissions.

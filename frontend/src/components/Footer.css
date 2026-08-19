@@ -56,6 +56,17 @@
   transform: translateY(-3px);
 }
 
+.social-link.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.social-link.is-disabled:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  transform: none;
+}
+
 .footer-title {
   font-family: var(--font-display);
   font-weight: 700;

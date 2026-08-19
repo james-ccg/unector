@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Send, AtSign, Briefcase } from 'lucide-react'
 import './Footer.css'
 
 export default function Footer() {
@@ -16,15 +17,21 @@ export default function Footer() {
               with AI-powered tools.
             </p>
             <div className="social-links">
-              <a href="#" className="social-link" aria-label="Telegram">
-                📱
+              <a
+                href="https://t.me/FreightPilot_bot"
+                className="social-link"
+                aria-label="Telegram"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Send size={18} />
               </a>
-              <a href="#" className="social-link" aria-label="Twitter">
-                🐦
-              </a>
-              <a href="#" className="social-link" aria-label="LinkedIn">
-                💼
-              </a>
+              <span className="social-link is-disabled" aria-label="Twitter" title="Coming soon">
+                <AtSign size={18} />
+              </span>
+              <span className="social-link is-disabled" aria-label="LinkedIn" title="Coming soon">
+                <Briefcase size={18} />
+              </span>
             </div>
           </div>
 

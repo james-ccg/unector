@@ -258,7 +258,9 @@ export default function TwoFactorSettings() {
     <div className="twofa-section">
       {banner && <div className={`banner banner-${banner.kind}`}>
         <span>{banner.text}</span>
-        <button className="banner-close" onClick={() => setBanner(null)}>✕</button>
+        <button className="banner-close" onClick={() => setBanner(null)} aria-label="Dismiss">
+          <Icon name="close" size={14} />
+        </button>
       </div>}
 
       {/* ---------------- Authenticator app ---------------- */}

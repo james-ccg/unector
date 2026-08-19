@@ -1,3 +1,4 @@
+import { Zap, Bot, Mail, Map, Smartphone, BarChart3, Users } from 'lucide-react'
 import Layout from '../components/Layout'
 import './HomePage.css'
 
@@ -8,7 +9,7 @@ export default function HomePage() {
         <div className="hero-container container">
           <div className="hero-content">
             <div className="hero-badge">
-              <span>⚡</span>
+              <Zap size={16} />
               <span>AI-Powered Dispatch Automation</span>
             </div>
             <h1 className="hero-title">
@@ -43,42 +44,42 @@ export default function HomePage() {
           </div>
           <div className="features-grid">
             <div className="feature-card">
-              <div className="feature-icon">🤖</div>
+              <div className="feature-icon"><Bot size={28} /></div>
               <h3 className="feature-title">AI Load Extraction</h3>
               <p className="feature-description">
                 Google Gemini AI automatically extracts load details from rate confirmations
               </p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">📧</div>
+              <div className="feature-icon"><Mail size={28} /></div>
               <h3 className="feature-title">Gmail Integration</h3>
               <p className="feature-description">
                 Connect your Gmail via OAuth 2.0 - bot monitors and processes emails automatically
               </p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">🗺️</div>
+              <div className="feature-icon"><Map size={28} /></div>
               <h3 className="feature-title">GPS Tracking</h3>
               <p className="feature-description">
                 Samsara integration with real-time location tracking and auto-notifications
               </p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">📱</div>
+              <div className="feature-icon"><Smartphone size={28} /></div>
               <h3 className="feature-title">Telegram Bot</h3>
               <p className="feature-description">
                 Drivers get loads via Telegram - simple, familiar, and always accessible
               </p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">📊</div>
+              <div className="feature-icon"><BarChart3 size={28} /></div>
               <h3 className="feature-title">Smart Dashboard</h3>
               <p className="feature-description">
                 Track drivers, loads, and earnings in real-time from any device
               </p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">👥</div>
+              <div className="feature-icon"><Users size={28} /></div>
               <h3 className="feature-title">Multi-Dispatcher</h3>
               <p className="feature-description">
                 Add unlimited dispatchers - each with their own secure login

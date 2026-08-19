@@ -104,7 +104,14 @@
 }
 
 .feature-icon {
-  font-size: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: rgba(255, 159, 28, 0.12);
+  color: var(--primary);
   margin-bottom: 16px;
 }
 
