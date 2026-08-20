@@ -28,6 +28,9 @@ The rest only work inside a driver+dispatch group, once it's linked to a driver:
                      multiple photos sent together as one album, same as /loadpics.
     /pod           - (photo/document caption) forwards the POD straight to the broker by email.
                      Not checked by AI - just sent as-is. Supports multiple photos/pages too.
+    /detention     - sends a detention/layover request to the broker, citing the terms already
+                     extracted from the RC, and notifies the dispatcher. Send this when the
+                     driver is actually being held - it isn't triggered automatically.
     /setvehicle    - links this group's driver to a Samsara vehicle ID, for GPS location alerts
 """
 import asyncio
@@ -58,6 +61,7 @@ from db.repository import (
     set_driver_vehicle,
     get_active_loads_for_monitoring,
     mark_notified,
+    mark_detention_requested,
     consume_telegram_link_token,
     set_telegram_otp,
 )
@@ -124,6 +128,7 @@ async def handle_start(message: Message):
         "• /loadpics - (photo caption) AI reviews your load photos\n"
         "• /bol - (photo/document caption) compares the BOL against the RC\n"
         "• /pod - (photo/document caption) forwards the POD to the broker\n"
+        "• /detention - request detention/layover pay from the broker\n"
         "• /setvehicle <id> - link this group to a Samsara vehicle for GPS alerts\n"
         "• /dashboard - open the owner/dispatcher web dashboard\n"
         "• /faq - frequently asked questions\n"
@@ -186,6 +191,8 @@ async def handle_commands(message: Message):
         "• /loadpics - (photo caption) AI reviews load photos - send up to 10 as one album\n"
         "• /bol - (photo/document caption) compares the BOL against the RC\n"
         "• /pod - (photo/document caption) forwards the POD straight to the broker\n"
+        "• /detention - sends a detention/layover request to the broker, citing the RC's "
+        "terms, and notifies the dispatcher - send it when the driver is actually held\n"
         "• /setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts",
         parse_mode="Markdown",
     )
@@ -937,6 +944,80 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
 
 
 # ------------------------------------------------------------------
+# /detention - manual trigger, sent by the driver or dispatcher once
+# they're actually being held. Pulls the detention/layover terms Gemini
+# already extracted from the RC (see gemini_service.py's "detention_terms"
+# field) and emails the broker a request citing them - no GPS/time-based
+# auto-firing, to avoid false positives from traffic, breaks, etc.
+# ------------------------------------------------------------------
+@dp.message(Command("detention"))
+async def handle_detention(message: Message):
+    if message.chat.type in ["group", "supergroup"]:
+        await update_group_title(message.chat.id, message.chat.title or "Unknown Group")
+
+    try:
+        driver = get_driver_by_group(message.chat.id)
+    except NotImplementedError:
+        await message.reply("⚙️ This feature isn't fully set up yet (waiting on database connection).")
+        return
+
+    if not driver:
+        await message.reply("⚠️ This group isn't linked to a driver account yet. Please contact your dispatcher.")
+        return
+
+    load = get_load_by_group(message.chat.id)
+    if not load or not load.raw_extracted_json:
+        await message.reply("⚠️ No active load found for this group. Please load the RC first using /dispatch.")
+        return
+
+    if load.detention_requested_at:
+        await message.reply(
+            f"ℹ️ A detention/layover request was already sent for load {load.load_id} "
+            f"on {load.detention_requested_at.strftime('%b %d, %Y %H:%M UTC')}."
+        )
+        return
+
+    terms = (load.raw_extracted_json.get("detention_terms") or "").strip()
+    if not terms:
+        await message.reply(
+            "⚠️ No detention/layover terms were found on this load's rate confirmation. "
+            "Please contact your dispatcher directly to request detention pay."
+        )
+        return
+
+    broker_email = load.raw_extracted_json.get("broker_contact_email")
+    if not broker_email:
+        await message.reply("⚠️ No broker contact email found for this load - please request detention pay manually.")
+        return
+
+    try:
+        email_service.send_email(
+            company_id=load.company_id,
+            to_address=broker_email,
+            subject=f"Load #{load.load_id} — Detention/Layover Request",
+            body=(
+                f"This is a detention/layover request for load #{load.load_id}, per the "
+                f"rate confirmation's stated terms:\n\n{terms}\n\nPlease advise on next steps."
+            ),
+        )
+    except NotImplementedError as e:
+        await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
+        return
+    except Exception:
+        logger.exception("Failed to send detention request for load %s", load.load_id)
+        await message.reply("⚠️ Something went wrong while sending the detention request. Please try again.")
+        return
+
+    mark_detention_requested(load.id)
+
+    dispatcher_tag = f"@{driver.dispatcher_username}" if driver.dispatcher_username else "Your dispatcher"
+    await message.reply(
+        f"✅ Detention/layover request sent to {broker_email} for load {load.load_id}.\n"
+        f"{dispatcher_tag} has been notified."
+    )
+
+
+# ------------------------------------------------------------------
 # Document-based /bol and /pod - for when the driver sends a PDF file
 # instead of a photo. Registered AFTER handle_photo_message, so photos are
 # always caught by the album handler above; these only ever see documents.
@@ -1080,6 +1161,7 @@ async def main():
         BotCommand(command="loadpics", description="AI review of load photos (driver group)"),
         BotCommand(command="bol", description="Compare BOL against the RC (driver group)"),
         BotCommand(command="pod", description="Forward the POD to the broker (driver group)"),
+        BotCommand(command="detention", description="Request detention/layover pay (driver group)"),
         BotCommand(command="setvehicle", description="Link this group to a Samsara vehicle"),
         BotCommand(command="myid", description="Print the current chat/group ID"),
     ])

@@ -108,6 +108,7 @@ class Load(Base):
     del_lng: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     notified_pu_near: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_del_near: Mapped[bool] = mapped_column(Boolean, default=False)
+    detention_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     raw_extracted_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 

@@ -6,6 +6,7 @@ Functions here convert db/models.py ORM objects into lightweight dataclasses,
 so bot.py stays independent of DB implementation details.
 """
 from dataclasses import dataclass
+from datetime import datetime
 
 from config import encrypt_value, decrypt_value
 from db.database import get_session
@@ -53,6 +54,7 @@ class Load:
     driver_id: int
     load_id: str
     raw_extracted_json: dict
+    detention_requested_at: datetime | None = None
 
 
 def get_driver_by_group(telegram_group_id: int) -> Driver | None:
@@ -159,6 +161,7 @@ def get_load_by_group(telegram_group_id: int) -> Load | None:
             driver_id=row.driver_id,
             load_id=row.load_id,
             raw_extracted_json=row.raw_extracted_json,
+            detention_requested_at=row.detention_requested_at,
         )
 
 
@@ -295,6 +298,16 @@ def mark_notified(load_pk: int, which: str) -> None:
         elif which == "del":
             row.notified_del_near = True
         session.commit()
+
+
+def mark_detention_requested(load_pk: int) -> None:
+    """Marks a load as having already had its detention/layover email sent,
+    so /detention can't fire it twice for the same load."""
+    with get_session() as session:
+        row = session.get(models.Load, load_pk)
+        if row:
+            row.detention_requested_at = models.now_utc()
+            session.commit()
 
 
 # ------------------------------------------------------------------
