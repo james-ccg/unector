@@ -10,6 +10,7 @@ Getting started:
 Commands:
     /start         - welcome message and command list (works anywhere)
     /faq           - frequently asked questions (works anywhere)
+    /commands      - full command list (works anywhere)
     /dashboard     - sends a button that opens the Mini App (owner/dispatcher login)
     /link          - direct link to the Mini App, for opening in any browser
     /verify2fa <code> - links this Telegram account for 2FA codes (code from Settings > Security)
@@ -36,7 +37,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
 
 from config import (
     TELEGRAM_BOT_TOKEN,
@@ -123,7 +124,8 @@ async def handle_start(message: Message):
         "• /pod - (photo/document caption) forwards the POD to the broker\n"
         "• /setvehicle <id> - link this group to a Samsara vehicle for GPS alerts\n"
         "• /dashboard - open the owner/dispatcher web dashboard\n"
-        "• /faq - frequently asked questions\n\n"
+        "• /faq - frequently asked questions\n"
+        "• /commands - full command list\n\n"
         "The load commands only work inside your driver+dispatch group - if you're not sure "
         "where that is, ask your dispatcher.",
         parse_mode="Markdown",
@@ -156,8 +158,31 @@ async def handle_faq(message: Message):
         "**Can I add dispatchers?**\n"
         "Yes - add as many dispatchers as you need, each with their own dashboard login "
         "and permissions.\n\n"
-        "For anything else, use /dashboard to reach the web dashboard, or /link for the "
-        "direct URL.",
+        "For the full command list, use /commands. For anything else, use /dashboard to reach "
+        "the web dashboard, or /link for the direct URL.",
+        parse_mode="Markdown",
+    )
+
+
+@dp.message(Command("commands"))
+async def handle_commands(message: Message):
+    """Full command reference - everything /start only summarizes."""
+    await message.reply(
+        "**Full Command List**\n\n"
+        "**Anywhere:**\n"
+        "• /start - welcome message and command summary\n"
+        "• /faq - frequently asked questions\n"
+        "• /commands - this list\n"
+        "• /dashboard - open the owner/dispatcher web dashboard\n"
+        "• /link - direct dashboard link, for opening in any browser\n"
+        "• /verify2fa <code> - links this chat for 2FA codes (code from Settings → Security)\n"
+        "• /myid - prints the current chat/group ID\n\n"
+        "**Inside a driver+dispatch group only:**\n"
+        "• /loadid <id> - finds the rate confirmation email and posts it to the group\n"
+        "• /loadpics - (photo caption) AI reviews load photos - send up to 10 as one album\n"
+        "• /bol - (photo/document caption) compares the BOL against the RC\n"
+        "• /pod - (photo/document caption) forwards the POD straight to the broker\n"
+        "• /setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts",
         parse_mode="Markdown",
     )
 
@@ -942,6 +967,22 @@ async def _check_all_loads_once():
 async def main():
     init_db()
     logger.info("Database ready.")
+
+    # Populates Telegram's native "/" command menu next to the message box.
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Welcome message and command summary"),
+        BotCommand(command="faq", description="Frequently asked questions"),
+        BotCommand(command="commands", description="Full command list"),
+        BotCommand(command="dashboard", description="Open the owner/dispatcher web dashboard"),
+        BotCommand(command="link", description="Direct dashboard link, for any browser"),
+        BotCommand(command="verify2fa", description="Link this chat for 2FA codes"),
+        BotCommand(command="loadid", description="Find a load's RC email and post it (driver group)"),
+        BotCommand(command="loadpics", description="AI review of load photos (driver group)"),
+        BotCommand(command="bol", description="Compare BOL against the RC (driver group)"),
+        BotCommand(command="pod", description="Forward the POD to the broker (driver group)"),
+        BotCommand(command="setvehicle", description="Link this group to a Samsara vehicle"),
+        BotCommand(command="myid", description="Print the current chat/group ID"),
+    ])
 
     if TELEGRAM_PROXY_URL:
         logger.info("Connecting to Telegram via proxy: %s", TELEGRAM_PROXY_URL)
