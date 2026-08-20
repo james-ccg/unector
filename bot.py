@@ -17,7 +17,9 @@ Commands:
     /myid          - debug helper, prints the current chat/group ID
 
 The rest only work inside a driver+dispatch group, once it's linked to a driver:
-    /loadid <id>   - finds RC from email, formats it, and posts to the group
+    /dispatch <id> - finds RC from email, formats it, and posts to the group. With no id but
+                     a PDF attached, replied to, or forwarded alongside it, builds the template
+                     directly from that PDF instead of searching email.
     /loadpics      - (photo caption) AI reviews the load photo(s). Send 1-10 photos together
                      as one album (load, seal, reefer display, BOL, etc.) with /loadpics as the
                      caption on any one of them - the bot waits for the whole album and reviews
@@ -118,7 +120,7 @@ async def handle_start(message: Message):
         "extract load details with AI, check your BOL/POD photos, and track GPS proximity to "
         "pickup/delivery.\n\n"
         "**Commands:**\n"
-        "• /loadid <id> - find and post a load's rate confirmation\n"
+        "• /dispatch <id> - find and post a load's rate confirmation\n"
         "• /loadpics - (photo caption) AI reviews your load photos\n"
         "• /bol - (photo/document caption) compares the BOL against the RC\n"
         "• /pod - (photo/document caption) forwards the POD to the broker\n"
@@ -178,7 +180,9 @@ async def handle_commands(message: Message):
         "• /verify2fa <code> - links this chat for 2FA codes (code from Settings → Security)\n"
         "• /myid - prints the current chat/group ID\n\n"
         "**Inside a driver+dispatch group only:**\n"
-        "• /loadid <id> - finds the rate confirmation email and posts it to the group\n"
+        "• /dispatch <id> - finds the rate confirmation email and posts it to the group. "
+        "With no id but a PDF attached, replied to, or sent alongside it, builds the load "
+        "directly from that PDF instead\n"
         "• /loadpics - (photo caption) AI reviews load photos - send up to 10 as one album\n"
         "• /bol - (photo/document caption) compares the BOL against the RC\n"
         "• /pod - (photo/document caption) forwards the POD straight to the broker\n"
@@ -324,20 +328,27 @@ async def handle_setvehicle(message: Message):
 
 
 # ------------------------------------------------------------------
-# /loadid 11111
+# /dispatch 11111                     - finds the RC by load number in email
+# /dispatch (PDF attached or replied) - builds the RC template straight from that PDF
+#
+# The two paths share almost everything after "get the RC PDF bytes" - only
+# how those bytes are obtained differs (email search vs. a Telegram
+# document), so _post_load_template does the common extract/geocode/save/
+# post work and each path just gets it the bytes.
 # ------------------------------------------------------------------
-@dp.message(Command("loadid"))
-async def handle_loadid(message: Message):
-    # Update group title if changed
+def _command_arg(content: str, cmd: str) -> str:
+    """Returns whatever follows "/cmd" or "/cmd@botname" in a command's
+    text/caption, trimmed. Empty string if nothing follows."""
+    match = re.match(rf"(?i)^/{re.escape(cmd)}(@\w+)?\s*(.*)$", content, re.DOTALL)
+    return match.group(2).strip() if match else ""
+
+
+async def _get_driver_and_company(message: Message) -> tuple | None:
+    """Shared prelude for /dispatch: resolves the group's driver + company,
+    replying with the appropriate error and returning None if that's not
+    possible. Also refreshes the stored group title, same as other commands."""
     if message.chat.type in ["group", "supergroup"]:
         await update_group_title(message.chat.id, message.chat.title or "Unknown Group")
-    
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("Usage: /loadid <load number>  (e.g. /loadid 11111)")
-        return
-
-    load_id = args[1].strip()
 
     try:
         driver = get_driver_by_group(message.chat.id)
@@ -346,25 +357,19 @@ async def handle_loadid(message: Message):
             "⚙️ This feature isn't fully set up yet (waiting on database connection). "
             "It'll be ready soon."
         )
-        return
+        return None
 
     if not driver:
         await message.reply("⚠️ This group isn't linked to a driver account yet. Please contact your dispatcher.")
-        return
+        return None
 
-    company = get_company(driver.company_id)
-    await message.reply(f"🔎 Checking email for load {load_id}...")
+    return driver, get_company(driver.company_id)
 
-    try:
-        pdf_bytes = email_service.find_rc_pdf_by_load_id(company.id, load_id)
-    except NotImplementedError as e:
-        await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
-        return
 
-    if pdf_bytes is None:
-        await message.reply(f"❌ No RC email found for load {load_id}.")
-        return
-
+async def _post_load_template(message: Message, driver, company, load_id: str, pdf_bytes: bytes):
+    """Extracts RC data from `pdf_bytes`, geocodes, saves the load, and
+    posts the formatted template to the group - the tail end both the
+    email-search and direct-PDF paths share."""
     try:
         data = gemini_service.extract_rc_data(pdf_bytes)
 
@@ -382,8 +387,8 @@ async def handle_loadid(message: Message):
     except Exception:
         logger.exception("Failed to extract/save RC data for load %s", load_id)
         await message.reply(
-            f"⚠️ Found the RC email for load {load_id}, but something went wrong while "
-            "processing it. Please try again, or check the logs."
+            f"⚠️ Found the RC, but something went wrong while processing it "
+            f"(load {load_id}). Please try again, or check the logs."
         )
         return
 
@@ -392,6 +397,97 @@ async def handle_loadid(message: Message):
     driver_tag = f"@{driver.telegram_username}" if driver.telegram_username else ""
 
     await message.answer(f"{text}\n\n{driver_tag} {dispatcher_tag}", parse_mode="HTML")
+
+
+async def _dispatch_by_load_number(message: Message, driver, company, load_id: str):
+    """/dispatch <number> - searches the connected inbox for the RC."""
+    await message.reply(f"🔎 Checking email for load {load_id}...")
+
+    try:
+        pdf_bytes = email_service.find_rc_pdf_by_load_id(company.id, load_id)
+    except NotImplementedError as e:
+        await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
+        return
+
+    if pdf_bytes is None:
+        await message.reply(f"❌ No RC email found for load {load_id}.")
+        return
+
+    await _post_load_template(message, driver, company, load_id, pdf_bytes)
+
+
+async def _dispatch_from_pdf(message: Message, driver, company, document):
+    """Bare /dispatch (no load number) with a PDF attached or replied to -
+    builds the template directly from that PDF instead of searching email.
+    The load number itself comes from Gemini's own extraction (RCs list
+    their own load/order number), with a placeholder fallback if it can't
+    find one, so this never just dead-ends."""
+    if not await _validate_document(document, message):
+        return
+
+    await message.reply("🔎 Reading the attached PDF...")
+    pdf_bytes, _mime_type = await _download_document(document)
+
+    try:
+        data = gemini_service.extract_rc_data(pdf_bytes)
+    except Exception:
+        logger.exception("Failed to extract RC data from attached PDF")
+        await message.reply("⚠️ Something went wrong while reading that PDF. Please try again.")
+        return
+
+    load_id = data.get("load_id") or f"PDF-{message.message_id}"
+    if not data.get("load_id"):
+        await message.reply(
+            "⚠️ Couldn't find a load number on this PDF - using a placeholder ID "
+            f"({load_id}). Re-run with /dispatch <load number> if you know it."
+        )
+
+    await _post_load_template(message, driver, company, load_id, pdf_bytes)
+
+
+@dp.message(F.document, _command_filter("dispatch"))
+async def handle_dispatch_document(message: Message):
+    """/dispatch sent as a document caption. A load number in the caption
+    always means "search email" (the attached PDF is ignored in that case);
+    with no number, the attached PDF itself becomes the RC."""
+    resolved = await _get_driver_and_company(message)
+    if not resolved:
+        return
+    driver, company = resolved
+
+    load_id = _command_arg(message.caption or "", "dispatch")
+    if load_id:
+        await _dispatch_by_load_number(message, driver, company, load_id)
+    else:
+        await _dispatch_from_pdf(message, driver, company, message.document)
+
+
+@dp.message(_command_filter("dispatch"))
+async def handle_dispatch_text(message: Message):
+    """Plain-text /dispatch: with a load number, search email (this is the
+    original /loadid behavior, just renamed). With no number, check
+    whether this is a reply to a message with a PDF attached and build the
+    template from that instead; otherwise show usage."""
+    resolved = await _get_driver_and_company(message)
+    if not resolved:
+        return
+    driver, company = resolved
+
+    load_id = _command_arg(message.text or "", "dispatch")
+    if load_id:
+        await _dispatch_by_load_number(message, driver, company, load_id)
+        return
+
+    replied_document = message.reply_to_message.document if message.reply_to_message else None
+    if replied_document:
+        await _dispatch_from_pdf(message, driver, company, replied_document)
+        return
+
+    await message.reply(
+        "Usage: /dispatch <load number>  (e.g. /dispatch 11111)\n\n"
+        "Or attach a PDF (or reply to one) with /dispatch and no number to build "
+        "the load straight from that PDF instead of searching email."
+    )
 
 
 # These four lines are the carrier's own standing policy - they must appear
@@ -761,7 +857,7 @@ async def _run_bol(chat_id: int, trigger_message: Message, files: list[tuple[byt
         return
 
     if not load or not load.raw_extracted_json:
-        await bot.send_message(chat_id, "⚠️ Please load the RC first using /loadid.")
+        await bot.send_message(chat_id, "⚠️ Please load the RC first using /dispatch.")
         return
 
     label = "document" if len(files) == 1 else f"{len(files)} documents"
@@ -799,7 +895,7 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
         return
 
     if not load or not load.raw_extracted_json:
-        await bot.send_message(chat_id, "⚠️ Please load the RC first using /loadid.")
+        await bot.send_message(chat_id, "⚠️ Please load the RC first using /dispatch.")
         return
 
     broker_email = load.raw_extracted_json.get("broker_contact_email")
@@ -854,36 +950,40 @@ MAX_DOCUMENT_UPLOAD_BYTES = 15 * 1024 * 1024  # 15MB (Telegram bots cap download
 ALLOWED_DOCUMENT_MIME_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 
 
-async def _validate_document_or_reply(message: Message) -> bool:
-    """Returns False (having already sent a friendly reply) if the document
-    attachment fails the type/size check."""
-    doc = message.document
-    if doc.mime_type and doc.mime_type not in ALLOWED_DOCUMENT_MIME_TYPES:
-        await message.reply("⚠️ Please attach a PDF or image file - that file type isn't supported.")
+async def _validate_document(document, reply_target: Message) -> bool:
+    """Returns False (having already sent a friendly reply via reply_target)
+    if the document fails the type/size check. Takes the document object
+    directly (rather than assuming it's on reply_target) so it also works
+    for a document on a REPLIED-TO message, as /dispatch needs."""
+    if document.mime_type and document.mime_type not in ALLOWED_DOCUMENT_MIME_TYPES:
+        await reply_target.reply("⚠️ Please attach a PDF or image file - that file type isn't supported.")
         return False
-    if doc.file_size and doc.file_size > MAX_DOCUMENT_UPLOAD_BYTES:
-        await message.reply(f"⚠️ That file is too large (max {MAX_DOCUMENT_UPLOAD_BYTES // (1024 * 1024)}MB).")
+    if document.file_size and document.file_size > MAX_DOCUMENT_UPLOAD_BYTES:
+        await reply_target.reply(f"⚠️ That file is too large (max {MAX_DOCUMENT_UPLOAD_BYTES // (1024 * 1024)}MB).")
         return False
     return True
 
 
+async def _download_document(document) -> tuple[bytes, str]:
+    file = await bot.get_file(document.file_id)
+    data = (await bot.download_file(file.file_path)).read()
+    mime_type = document.mime_type or "application/pdf"
+    return data, mime_type
+
+
 @dp.message(F.document, _command_filter("bol"))
 async def handle_bol_document(message: Message):
-    if not await _validate_document_or_reply(message):
+    if not await _validate_document(message.document, message):
         return
-    file = await bot.get_file(message.document.file_id)
-    data = (await bot.download_file(file.file_path)).read()
-    mime_type = message.document.mime_type or "application/pdf"
+    data, mime_type = await _download_document(message.document)
     await _run_bol(message.chat.id, message, [(data, mime_type)])
 
 
 @dp.message(F.document, _command_filter("pod"))
 async def handle_pod_document(message: Message):
-    if not await _validate_document_or_reply(message):
+    if not await _validate_document(message.document, message):
         return
-    file = await bot.get_file(message.document.file_id)
-    data = (await bot.download_file(file.file_path)).read()
-    mime_type = message.document.mime_type or "application/pdf"
+    data, mime_type = await _download_document(message.document)
     await _run_pod(message.chat.id, message, [(data, mime_type)])
 
 
@@ -976,7 +1076,7 @@ async def main():
         BotCommand(command="dashboard", description="Open the owner/dispatcher web dashboard"),
         BotCommand(command="link", description="Direct dashboard link, for any browser"),
         BotCommand(command="verify2fa", description="Link this chat for 2FA codes"),
-        BotCommand(command="loadid", description="Find a load's RC email and post it (driver group)"),
+        BotCommand(command="dispatch", description="Find/build a load's RC and post it (driver group)"),
         BotCommand(command="loadpics", description="AI review of load photos (driver group)"),
         BotCommand(command="bol", description="Compare BOL against the RC (driver group)"),
         BotCommand(command="pod", description="Forward the POD to the broker (driver group)"),

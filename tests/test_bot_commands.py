@@ -19,7 +19,7 @@ async def test_start_replies_with_welcome_and_command_list():
     message.reply.assert_awaited_once()
     text = message.reply.await_args.args[0]
     assert "Welcome to Freight Pilot" in text
-    assert "/loadid" in text
+    assert "/dispatch" in text
     assert "/faq" in text
     assert message.reply.await_args.kwargs.get("parse_mode") == "Markdown"
 

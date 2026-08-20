@@ -98,16 +98,21 @@ All bot messages now:
 
 ## How to Test
 
-### Testing `/loadid`:
+### Testing `/dispatch`:
 ```
-1. Send: /loadid 12345
+1. Send: /dispatch 12345
 2. Bot should find and format the RC
 3. Verify the formatted message appears correctly
+
+Alternate path - no load number:
+1. Attach a PDF (or reply to one) with caption/command /dispatch, no number
+2. Bot should build the RC template directly from that PDF instead of
+   searching email
 ```
 
 ### Testing `/loadpics`:
 ```
-1. First run /loadid to load RC data
+1. First run /dispatch to load RC data
 2. Take a photo of your load
 3. Send photo with caption: /loadpics
 4. Bot should respond with:
@@ -120,7 +125,7 @@ All bot messages now:
 
 ### Testing `/bol`:
 ```
-1. First run /loadid to load RC data
+1. First run /dispatch to load RC data
 2. Take a photo or send PDF of BOL
 3. Send with caption: /bol
 4. Bot should respond with:
@@ -132,7 +137,7 @@ All bot messages now:
 
 ### Testing `/pod`:
 ```
-1. First run /loadid to load RC data
+1. First run /dispatch to load RC data
 2. Take a photo or send PDF of POD
 3. Send with caption: /pod
 4. Bot should:
