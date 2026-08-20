@@ -15,19 +15,21 @@ export default function TrustPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadStats()
-  }, [])
-
-  const loadStats = async () => {
-    try {
-      const data = await publicApi.getStats()
-      setStats(data)
-    } catch (err) {
-      console.error('Failed to load stats:', err)
-    } finally {
-      setLoading(false)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const data = await publicApi.getStats()
+        if (!cancelled) setStats(data)
+      } catch (err) {
+        console.error('Failed to load stats:', err)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }
+  }, [])
 
   return (
     <Layout>

@@ -108,19 +108,34 @@ class Load(Base):
     del_lng: Mapped[float | None] = mapped_column(Numeric(9, 6), nullable=True)
     notified_pu_near: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_del_near: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Which company-defined LocationAlertRule ids have already fired for this
+    # load - list[int], only used for scenarios where the company has custom
+    # rules configured (see LocationAlertRule below). Scenarios still on the
+    # built-in default keep using notified_pu_near/notified_del_near above.
+    alerted_rule_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     detention_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     raw_extracted_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
-class DriverEarning(Base):
-    __tablename__ = "driver_earnings"
+class LocationAlertRule(Base):
+    """A company's own rule for when to message a driver's group about GPS
+    proximity, and what to say. Several rules can stack per scenario (e.g. a
+    heads-up at 50 miles out, then again at 5) - each one fires at most once
+    per load, independently of the others, as the truck gets closer. A
+    company with no rules for a scenario gets the built-in default instead
+    (SAMSARA_NEARBY_MILES + a generic message) - see bot.py's
+    location_monitor_loop."""
+    __tablename__ = "location_alert_rules"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"))
-    load_id: Mapped[int] = mapped_column(ForeignKey("loads.id"))
-    amount: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
-    week_start_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    scenario: Mapped[str] = mapped_column(String(20))  # "pu_near" | "del_near"
+    distance_miles: Mapped[float] = mapped_column(Numeric(6, 1))
+    # None = use the built-in default wording. May reference {miles} and
+    # {load_id}; see bot.py's _render_alert_message.
+    message_template: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 

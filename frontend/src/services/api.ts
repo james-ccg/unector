@@ -11,6 +11,18 @@ function readCookie(name: string): string | null {
 
 type ApiOptions = RequestInit
 
+/** Extracts a human-readable message from something caught in a try/catch.
+ * apiRequest below always throws a real Error, but a catch clause's variable
+ * is typed unknown (TS can't statically know what a call site threw), so
+ * this is the one place that assumption lives. */
+export function errorMessage(err: unknown, fallback = 'Something went wrong.'): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
 export async function apiRequest<T>(
   path: string,
   options: ApiOptions = {}
@@ -49,7 +61,7 @@ export async function apiRequest<T>(
 
     clearTimeout(timeout)
 
-    let data: any = {}
+    let data: unknown = {}
     const contentType = response.headers.get('content-type')
     if (contentType?.includes('application/json')) {
       try {
@@ -60,14 +72,19 @@ export async function apiRequest<T>(
     }
 
     if (!response.ok) {
-      let errorMsg = data.detail || data.message || 'Request failed'
+      const body = asRecord(data)
+      let errorMsg = (body.detail as string) || (body.message as string) || 'Request failed'
 
       switch (response.status) {
         case 401:
           errorMsg = 'Session expired. Please log in again.'
+          // Lets AuthContext clear its stale user state and redirect - it
+          // ignores this while already logged out (e.g. the routine
+          // session check on a public page), so no redirect loop.
+          window.dispatchEvent(new Event('fp:session-expired'))
           break
         case 403:
-          errorMsg = data.detail || 'Access denied'
+          errorMsg = (body.detail as string) || 'Access denied'
           break
         case 404:
           errorMsg = 'Resource not found'
@@ -84,15 +101,15 @@ export async function apiRequest<T>(
     }
 
     return data as T
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timeout)
 
-    if (err.name === 'AbortError') {
-      throw new Error('Request timeout. Please check your connection.')
+    if ((err instanceof DOMException || err instanceof Error) && err.name === 'AbortError') {
+      throw new Error('Request timeout. Please check your connection.', { cause: err })
     }
 
     if (!navigator.onLine) {
-      throw new Error('No internet connection')
+      throw new Error('No internet connection', { cause: err })
     }
 
     throw err
@@ -148,21 +165,23 @@ export const authApi = {
   me: () => apiRequest<LoginSuccess>('/api/me'),
 }
 
+export interface TwoFaStatus {
+  totp_enabled: boolean
+  email_otp_enabled: boolean
+  contact_email: string | null
+  sms_otp_enabled: boolean
+  phone_number: string | null
+  telegram_otp_enabled: boolean
+  telegram_linked: boolean
+  webauthn_count: number
+  recovery_codes_remaining: number
+  any_enabled: boolean
+}
+
 export const twoFaApi = {
   // ---- while already logged in: Settings > Security ----
   getStatus: () =>
-    apiRequest<{
-      totp_enabled: boolean
-      email_otp_enabled: boolean
-      contact_email: string | null
-      sms_otp_enabled: boolean
-      phone_number: string | null
-      telegram_otp_enabled: boolean
-      telegram_linked: boolean
-      webauthn_count: number
-      recovery_codes_remaining: number
-      any_enabled: boolean
-    }>('/api/2fa/status'),
+    apiRequest<TwoFaStatus>('/api/2fa/status'),
 
   totpSetup: () =>
     apiRequest<{ secret: string; qr_code: string }>('/api/2fa/totp/setup', { method: 'POST' }),
@@ -234,23 +253,89 @@ export const twoFaApi = {
     }),
 }
 
+export interface Driver {
+  id: number
+  driver_bot_id: string
+  full_name: string
+  telegram_group_title: string | null
+  dispatcher_username: string | null
+  subscription_active: boolean
+  samsara_vehicle_id: string | null
+  load_count: number
+  weekly_gross: number
+  weekly_loads: number
+}
+
+export interface DriverLoad {
+  id: number
+  load_id: string
+  broker_name: string | null
+  pu_address: string | null
+  del_address: string | null
+  pu_date: string | null
+  del_date: string | null
+  rate_amount: number | null
+  status: string
+  created_at: string | null
+}
+
+export interface DriverDetail {
+  id: number
+  driver_bot_id: string
+  full_name: string
+  telegram_group_id: number | null
+  telegram_group_title: string | null
+  telegram_username: string | null
+  dispatcher_username: string | null
+  subscription_active: boolean
+  samsara_vehicle_id: string | null
+  weekly_gross: number
+  weekly_loads: number
+  total_gross: number
+  total_loads: number
+  loads: DriverLoad[]
+}
+
+export interface DashboardData {
+  company_name: string
+  stats: {
+    total_drivers: number
+    active_drivers: number
+    total_loads: number
+    weekly_gross: number
+  }
+  drivers: Driver[]
+  billing?: BillingStatus
+}
+
+export interface Dispatcher {
+  id: number
+  username: string
+  role: string
+  created_at: string | null
+}
+
 export const dashboardApi = {
   getDashboard: () =>
-    apiRequest<any>('/api/dashboard'),
+    apiRequest<DashboardData>('/api/dashboard'),
 
-  getDriverDetails: (driverId: string) =>
-    apiRequest<any>(`/api/drivers/${driverId}`),
+  getDriverDetails: (driverId: number | string) =>
+    apiRequest<DriverDetail>(`/api/drivers/${driverId}`),
+
+  toggleSubscription: (driverId: number | string, active: boolean) =>
+    apiRequest<{ status: string; active: boolean }>(`/api/drivers/${driverId}/subscription`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active }),
+    }),
 
   addDispatcher: (username: string, password: string) =>
-    apiRequest<any>('/api/dispatchers', {
+    apiRequest<Dispatcher>('/api/dispatchers', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     }),
 
   listDispatchers: () =>
-    apiRequest<{ id: number; username: string; role: string; created_at: string | null }[]>(
-      '/api/dispatchers'
-    ),
+    apiRequest<Dispatcher[]>('/api/dispatchers'),
 
   getMonitoring: () =>
     apiRequest<{
@@ -267,14 +352,43 @@ export const dashboardApi = {
     }>('/api/monitoring'),
 }
 
+export type AlertScenario = 'pu_near' | 'del_near'
+
+export interface AlertRule {
+  id: number
+  scenario: AlertScenario
+  distance_miles: number
+  message_template: string | null
+  enabled: boolean
+}
+
+export interface CompanySettings {
+  gmail_connected: boolean
+  samsara_connected: boolean
+  company_name: string
+  mc_number: string
+}
+
 export const settingsApi = {
   getSettings: () =>
-    apiRequest<{
-      gmail_connected: boolean
-      samsara_connected: boolean
-      company_name: string
-      mc_number: string
-    }>('/api/settings'),
+    apiRequest<CompanySettings>('/api/settings'),
+
+  listAlertRules: () => apiRequest<AlertRule[]>('/api/settings/alert-rules'),
+
+  createAlertRule: (scenario: AlertScenario, distanceMiles: number, messageTemplate: string | null) =>
+    apiRequest<AlertRule>('/api/settings/alert-rules', {
+      method: 'POST',
+      body: JSON.stringify({ scenario, distance_miles: distanceMiles, message_template: messageTemplate }),
+    }),
+
+  updateAlertRule: (id: number, fields: Partial<Pick<AlertRule, 'distance_miles' | 'message_template' | 'enabled'>>) =>
+    apiRequest<AlertRule>(`/api/settings/alert-rules/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    }),
+
+  deleteAlertRule: (id: number) =>
+    apiRequest<{ deleted: boolean }>(`/api/settings/alert-rules/${id}`, { method: 'DELETE' }),
 
   // Kicks off the real Google OAuth flow: the backend returns a consent-screen
   // URL, the browser is sent there directly (no codes to copy/paste).

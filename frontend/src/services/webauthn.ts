@@ -17,6 +17,15 @@ function bufferToBase64url(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// Shape of a credential descriptor as the backend sends it (JSON, id still a
+// base64url string) - before createCredential/getCredential convert id to
+// the ArrayBuffer the real WebAuthn API needs.
+interface EncodedCredentialDescriptor {
+  id: string
+  type: string
+  transports?: string[]
+}
+
 export function isWebAuthnSupported(): boolean {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential
 }
@@ -30,7 +39,7 @@ export async function createCredential(optionsJson: string): Promise<string> {
     ...options,
     challenge: base64urlToBuffer(options.challenge),
     user: { ...options.user, id: base64urlToBuffer(options.user.id) },
-    excludeCredentials: (options.excludeCredentials || []).map((c: any) => ({
+    excludeCredentials: (options.excludeCredentials || []).map((c: EncodedCredentialDescriptor) => ({
       ...c,
       id: base64urlToBuffer(c.id),
     })),
@@ -57,7 +66,7 @@ export async function getCredential(optionsJson: string): Promise<string> {
   const publicKey: CredentialRequestOptions['publicKey'] = {
     ...options,
     challenge: base64urlToBuffer(options.challenge),
-    allowCredentials: (options.allowCredentials || []).map((c: any) => ({
+    allowCredentials: (options.allowCredentials || []).map((c: EncodedCredentialDescriptor) => ({
       ...c,
       id: base64urlToBuffer(c.id),
     })),

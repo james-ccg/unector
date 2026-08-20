@@ -350,6 +350,146 @@ class TestTenantIsolation:
         assert response.status_code == 200
 
 
+class TestAlertRules:
+    """Customizable per-scenario location alert rules (Settings > Alerts) -
+    CRUD, validation, and tenant isolation. The bot-side firing logic
+    (defaults vs. custom thresholds) is covered separately in
+    tests/test_bot_alert_rules.py."""
+
+    def _register_owner(self, client, mc_number: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Alert Rules Test Co {mc_number}",
+            "email": f"owner{mc_number}@alertruletest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        return reg.json()["company_id"]
+
+    def test_create_list_update_delete_roundtrip(self, client):
+        self._register_owner(client, "811111")
+
+        created = client.post(
+            "/api/settings/alert-rules",
+            json={"scenario": "pu_near", "distance_miles": 50, "message_template": "{miles}mi to PU on #{load_id}"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+        rule = created.json()
+        assert rule["scenario"] == "pu_near"
+        assert rule["distance_miles"] == 50.0
+        assert rule["enabled"] is True
+
+        listed = client.get("/api/settings/alert-rules")
+        assert listed.status_code == 200
+        assert [r["id"] for r in listed.json()] == [rule["id"]]
+
+        updated = client.patch(
+            f"/api/settings/alert-rules/{rule['id']}",
+            json={"distance_miles": 25, "enabled": False},
+            headers=_csrf_headers(client),
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["distance_miles"] == 25.0
+        assert updated.json()["enabled"] is False
+        # Untouched field should survive the partial update.
+        assert updated.json()["message_template"] == "{miles}mi to PU on #{load_id}"
+
+        deleted = client.delete(f"/api/settings/alert-rules/{rule['id']}", headers=_csrf_headers(client))
+        assert deleted.status_code == 200
+        assert client.get("/api/settings/alert-rules").json() == []
+
+    def test_invalid_scenario_rejected(self, client):
+        self._register_owner(client, "821111")
+        response = client.post(
+            "/api/settings/alert-rules",
+            json={"scenario": "not_a_real_scenario", "distance_miles": 10},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    def test_out_of_range_distance_rejected(self, client):
+        self._register_owner(client, "831111")
+        response = client.post(
+            "/api/settings/alert-rules",
+            json={"scenario": "pu_near", "distance_miles": 0},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    def test_dispatcher_cannot_create_rules(self, client):
+        self._register_owner(client, "841111")
+        client.post(
+            "/api/dispatchers",
+            json={"username": "alertrule_dispatcher", "password": "password123"},
+            headers=_csrf_headers(client),
+        )
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "alertrule_dispatcher", "password": "password123"})
+
+        response = client.post(
+            "/api/settings/alert-rules",
+            json={"scenario": "pu_near", "distance_miles": 10},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 403
+
+    def test_cross_tenant_update_and_delete_forbidden(self):
+        client_a = TestClient(app)
+        client_b = TestClient(app)
+        self._register_owner(client_a, "851111")
+        self._register_owner(client_b, "861111")
+
+        created = client_a.post(
+            "/api/settings/alert-rules",
+            json={"scenario": "del_near", "distance_miles": 10},
+            headers=_csrf_headers(client_a),
+        )
+        rule_id = created.json()["id"]
+
+        update = client_b.patch(
+            f"/api/settings/alert-rules/{rule_id}",
+            json={"distance_miles": 1},
+            headers=_csrf_headers(client_b),
+        )
+        assert update.status_code == 404
+
+        delete = client_b.delete(f"/api/settings/alert-rules/{rule_id}", headers=_csrf_headers(client_b))
+        assert delete.status_code == 404
+
+        # Company A's rule is untouched by B's attempts.
+        still_there = client_a.get("/api/settings/alert-rules").json()
+        assert still_there[0]["distance_miles"] == 10.0
+
+
+class TestSamsaraTestMode:
+    """SAMSARA_TEST_MODE simulates GPS without a real Samsara account - see
+    services/samsara_test_mode.py. Confirms the "Connected" status this
+    unlocks in Settings/Monitoring doesn't depend on a saved credential."""
+
+    def test_samsara_reports_disconnected_without_test_mode_or_credential(self, client):
+        client.post("/api/auth/register", json={
+            "mc_number": "871111",
+            "company_name": "Samsara Test Mode Co",
+            "email": "owner@samsaratestmode.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert client.get("/api/settings").json()["samsara_connected"] is False
+
+    def test_test_mode_reports_connected_without_a_credential(self, client, monkeypatch):
+        client.post("/api/auth/register", json={
+            "mc_number": "881111",
+            "company_name": "Samsara Test Mode Co 2",
+            "email": "owner@samsaratestmode2.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        monkeypatch.setattr(api_module, "SAMSARA_TEST_MODE", True)
+        assert client.get("/api/settings").json()["samsara_connected"] is True
+
+
 class TestMandatoryGmailOnboarding:
     """Gmail connection is mandatory for owners - the bot's core feature
     (pulling rate confirmations from email) depends on it. The frontend

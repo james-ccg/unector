@@ -6,11 +6,26 @@ Functions here convert db/models.py ORM objects into lightweight dataclasses,
 so bot.py stays independent of DB implementation details.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from config import encrypt_value, decrypt_value
 from db.database import get_session
 from db import models
+
+# A load counts toward gross revenue once it's actually been loaded, not just
+# booked/dispatched - "pod_sent" is the real terminal status set by bot.py
+# once the POD goes out; "delivered" doesn't exist anywhere else and nothing
+# ever sets it, so including it here silently excluded every completed load.
+GROSS_ELIGIBLE_STATUSES = ("loaded", "bol_ok", "pod_sent")
+
+
+def current_week_start_utc() -> datetime:
+    """Monday 00:00 UTC of the current week. Uses UTC rather than server-local
+    time since created_at is stored in UTC - comparing against local time would
+    shift the week boundary by the server's UTC offset."""
+    today = datetime.utcnow()
+    week_start = today - timedelta(days=today.weekday())
+    return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _to_float(value) -> float | None:
@@ -250,6 +265,7 @@ class MonitoredLoad:
     del_lng: float | None
     notified_pu_near: bool
     notified_del_near: bool
+    alerted_rule_ids: list[int]
 
 
 def get_active_loads_for_monitoring() -> list[MonitoredLoad]:
@@ -281,6 +297,7 @@ def get_active_loads_for_monitoring() -> list[MonitoredLoad]:
                     del_lng=float(load.del_lng) if load.del_lng is not None else None,
                     notified_pu_near=load.notified_pu_near,
                     notified_del_near=load.notified_del_near,
+                    alerted_rule_ids=load.alerted_rule_ids or [],
                 )
             )
         return result
@@ -308,6 +325,107 @@ def mark_detention_requested(load_pk: int) -> None:
         if row:
             row.detention_requested_at = models.now_utc()
             session.commit()
+
+
+def mark_alert_rule_fired(load_pk: int, rule_id: int) -> None:
+    """Records that a custom LocationAlertRule has already fired for a load,
+    so the monitor loop's next pass doesn't send it again."""
+    with get_session() as session:
+        row = session.get(models.Load, load_pk)
+        if not row:
+            return
+        fired = set(row.alerted_rule_ids or [])
+        fired.add(rule_id)
+        row.alerted_rule_ids = sorted(fired)
+        session.commit()
+
+
+# ---- Location alert rules (customizable GPS-proximity messages) ----
+def _alert_rule_to_dict(row: models.LocationAlertRule) -> dict:
+    return {
+        "id": row.id,
+        "scenario": row.scenario,
+        "distance_miles": float(row.distance_miles),
+        "message_template": row.message_template,
+        "enabled": row.enabled,
+    }
+
+
+def create_alert_rule(
+    company_id: int, scenario: str, distance_miles: float,
+    message_template: str | None, enabled: bool = True,
+) -> dict:
+    with get_session() as session:
+        row = models.LocationAlertRule(
+            company_id=company_id,
+            scenario=scenario,
+            distance_miles=distance_miles,
+            message_template=message_template,
+            enabled=enabled,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _alert_rule_to_dict(row)
+
+
+def list_alert_rules(company_id: int) -> list[dict]:
+    """All of a company's rules, for the Settings page - both scenarios,
+    furthest-out first within each."""
+    with get_session() as session:
+        rows = (
+            session.query(models.LocationAlertRule)
+            .filter(models.LocationAlertRule.company_id == company_id)
+            .order_by(
+                models.LocationAlertRule.scenario,
+                models.LocationAlertRule.distance_miles.desc(),
+            )
+            .all()
+        )
+        return [_alert_rule_to_dict(r) for r in rows]
+
+
+def get_enabled_alert_rules(company_id: int, scenario: str) -> list[dict]:
+    """Rules for the location monitor - enabled only, furthest-out first so
+    a driver's group gets the heads-up alert before the imminent-arrival one."""
+    with get_session() as session:
+        rows = (
+            session.query(models.LocationAlertRule)
+            .filter(
+                models.LocationAlertRule.company_id == company_id,
+                models.LocationAlertRule.scenario == scenario,
+                models.LocationAlertRule.enabled.is_(True),
+            )
+            .order_by(models.LocationAlertRule.distance_miles.desc())
+            .all()
+        )
+        return [_alert_rule_to_dict(r) for r in rows]
+
+
+def update_alert_rule(rule_id: int, company_id: int, fields: dict) -> dict | None:
+    """`fields` should only contain keys the caller actually wants to change
+    (e.g. a Pydantic model dumped with exclude_unset=True) - every key in it
+    is applied unconditionally, so there's no ambiguity between "leave this
+    alone" and "set it to None/False"."""
+    with get_session() as session:
+        row = session.get(models.LocationAlertRule, rule_id)
+        if not row or row.company_id != company_id:
+            return None
+        for key, value in fields.items():
+            setattr(row, key, value)
+        session.commit()
+        session.refresh(row)
+        return _alert_rule_to_dict(row)
+
+
+def delete_alert_rule(rule_id: int, company_id: int) -> bool:
+    with get_session() as session:
+        deleted = session.query(models.LocationAlertRule).filter(
+            models.LocationAlertRule.id == rule_id,
+            models.LocationAlertRule.company_id == company_id,
+        ).delete()
+        session.commit()
+        return deleted > 0
 
 
 # ------------------------------------------------------------------
@@ -365,36 +483,47 @@ def create_dispatcher(company_id: int, username: str, password_hash: str) -> int
 
 def get_drivers_by_company(company_id: int) -> list[dict]:
     """Returns every driver under a company, with a couple of useful
-    aggregates, for the Mini App's driver list screen."""
-    from datetime import datetime, timedelta
+    aggregates, for the Mini App's driver list screen. Aggregates come from
+    3 grouped queries total (not 3 queries per driver) - dispatcher.username
+    is a no-op extra query too, since Driver.dispatcher is eager-loaded."""
     from sqlalchemy import func
-    
+
     with get_session() as session:
         drivers = session.query(models.Driver).filter(models.Driver.company_id == company_id).all()
-        result = []
-        
-        # Calculate start of current week (Monday)
-        today = datetime.now()
-        week_start = today - timedelta(days=today.weekday())
-        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        for d in drivers:
-            # Total load count
-            load_count = session.query(models.Load).filter(models.Load.driver_id == d.id).count()
-            
-            # Weekly gross (sum of rate_amount for loads created this week)
-            weekly_gross = session.query(func.sum(models.Load.rate_amount)).filter(
-                models.Load.driver_id == d.id,
+        if not drivers:
+            return []
+
+        driver_ids = [d.id for d in drivers]
+        week_start = current_week_start_utc()
+
+        load_counts = dict(
+            session.query(models.Load.driver_id, func.count(models.Load.id))
+            .filter(models.Load.driver_id.in_(driver_ids))
+            .group_by(models.Load.driver_id)
+            .all()
+        )
+        weekly_gross_by_driver = dict(
+            session.query(models.Load.driver_id, func.sum(models.Load.rate_amount))
+            .filter(
+                models.Load.driver_id.in_(driver_ids),
                 models.Load.created_at >= week_start,
-                models.Load.status.in_(["loaded", "bol_ok", "delivered"])
-            ).scalar() or 0.0
-            
-            # Completed loads this week
-            weekly_loads = session.query(models.Load).filter(
-                models.Load.driver_id == d.id,
-                models.Load.created_at >= week_start
-            ).count()
-            
+                models.Load.status.in_(GROSS_ELIGIBLE_STATUSES),
+            )
+            .group_by(models.Load.driver_id)
+            .all()
+        )
+        weekly_loads_by_driver = dict(
+            session.query(models.Load.driver_id, func.count(models.Load.id))
+            .filter(
+                models.Load.driver_id.in_(driver_ids),
+                models.Load.created_at >= week_start,
+            )
+            .group_by(models.Load.driver_id)
+            .all()
+        )
+
+        result = []
+        for d in drivers:
             result.append(
                 {
                     "id": d.id,
@@ -405,9 +534,9 @@ def get_drivers_by_company(company_id: int) -> list[dict]:
                     "dispatcher_username": d.dispatcher.username if d.dispatcher else None,
                     "subscription_active": d.subscription_active,
                     "samsara_vehicle_id": d.samsara_vehicle_id,
-                    "load_count": load_count,
-                    "weekly_gross": float(weekly_gross),
-                    "weekly_loads": weekly_loads,
+                    "load_count": load_counts.get(d.id, 0),
+                    "weekly_gross": float(weekly_gross_by_driver.get(d.id) or 0.0),
+                    "weekly_loads": weekly_loads_by_driver.get(d.id, 0),
                 }
             )
         return result
@@ -423,40 +552,36 @@ def toggle_driver_subscription(driver_id: int, active: bool, company_id: int) ->
 
 def get_driver_details(driver_id: int, company_id: int) -> dict | None:
     """Returns detailed information about a specific driver including load history."""
-    from datetime import datetime, timedelta
     from sqlalchemy import func, desc
 
     with get_session() as session:
         driver = session.get(models.Driver, driver_id)
         if not driver or driver.company_id != company_id:
             return None
-        
-        # Calculate start of current week (Monday)
-        today = datetime.now()
-        week_start = today - timedelta(days=today.weekday())
-        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        
+
+        week_start = current_week_start_utc()
+
         # Get all loads for this driver
         loads = session.query(models.Load).filter(
             models.Load.driver_id == driver_id
         ).order_by(desc(models.Load.created_at)).limit(50).all()
-        
+
         # Weekly stats
         weekly_gross = session.query(func.sum(models.Load.rate_amount)).filter(
             models.Load.driver_id == driver_id,
             models.Load.created_at >= week_start,
-            models.Load.status.in_(["loaded", "bol_ok", "delivered"])
+            models.Load.status.in_(GROSS_ELIGIBLE_STATUSES)
         ).scalar() or 0.0
-        
+
         weekly_loads = session.query(models.Load).filter(
             models.Load.driver_id == driver_id,
             models.Load.created_at >= week_start
         ).count()
-        
+
         # All-time stats
         total_gross = session.query(func.sum(models.Load.rate_amount)).filter(
             models.Load.driver_id == driver_id,
-            models.Load.status.in_(["loaded", "bol_ok", "delivered"])
+            models.Load.status.in_(GROSS_ELIGIBLE_STATUSES)
         ).scalar() or 0.0
         
         load_list = []
@@ -950,14 +1075,17 @@ def update_webauthn_sign_count(credential_id: str, new_sign_count: int) -> None:
             session.commit()
 
 
-def delete_webauthn_credential(account_type: str, account_id: int, credential_pk: int) -> None:
+def delete_webauthn_credential(account_type: str, account_id: int, credential_pk: int) -> bool:
+    """Returns True if a credential was actually deleted, False if credential_pk
+    didn't exist or belonged to a different account."""
     with get_session() as session:
-        session.query(models.WebAuthnCredential).filter(
+        deleted = session.query(models.WebAuthnCredential).filter(
             models.WebAuthnCredential.id == credential_pk,
             models.WebAuthnCredential.account_type == account_type,
             models.WebAuthnCredential.account_id == account_id,
         ).delete()
         session.commit()
+        return deleted > 0
 
 
 # ---- Telegram account-linking tokens ----

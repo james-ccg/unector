@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { settingsApi } from '../services/api'
+import { settingsApi, errorMessage } from '../services/api'
 import Icon from '../components/Icon'
 import './LoginPage.css'
 
@@ -50,8 +50,8 @@ export default function OnboardingGmailPage() {
     try {
       const { auth_url } = await settingsApi.getGmailAuthUrl('onboarding')
       window.location.href = auth_url
-    } catch (err: any) {
-      setError(err.message || 'Could not start the Gmail connection.')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not start the Gmail connection.'))
       setConnecting(false)
     }
   }

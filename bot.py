@@ -62,6 +62,8 @@ from db.repository import (
     get_active_loads_for_monitoring,
     mark_notified,
     mark_detention_requested,
+    mark_alert_rule_fired,
+    get_enabled_alert_rules,
     consume_telegram_link_token,
     set_telegram_otp,
 )
@@ -1108,40 +1110,99 @@ async def location_monitor_loop():
         await asyncio.sleep(SAMSARA_POLL_INTERVAL_SECONDS)
 
 
+# Built-in wording, used for a scenario until a company configures its own
+# rules for it (see LocationAlertRule / Settings > Alerts). Kept byte-for-byte
+# identical to what this used to say unconditionally, so a company that never
+# touches the new settings sees no change at all.
+DEFAULT_ALERT_MESSAGES = {
+    "pu_near": "📍 Driver is ~{miles} miles from pickup on load #{load_id}. We'll inform you once he checks in.",
+    "del_near": "📍 Driver is ~{miles} miles from delivery on load #{load_id}. We'll inform you once he checks in.",
+}
+
+
+def _render_alert_message(template: str | None, scenario: str, distance_miles: float, load_id: str) -> str:
+    """Fills in a company's custom alert message (or the built-in default if
+    they haven't set one). Supports {miles} and {load_id} placeholders. Falls
+    back to the default wording if a company's template is malformed (e.g. a
+    typo'd placeholder) instead of silently dropping the alert."""
+    text = template or DEFAULT_ALERT_MESSAGES[scenario]
+    try:
+        return text.format(miles=round(distance_miles), load_id=load_id)
+    except (KeyError, IndexError, ValueError):
+        logger.warning("Malformed alert message template for %s: %r - using the default instead", scenario, template)
+        return DEFAULT_ALERT_MESSAGES[scenario].format(miles=round(distance_miles), load_id=load_id)
+
+
+async def _fire_scenario_alerts(load, scenario: str, distance_miles: float, rules: list[dict]) -> None:
+    """Sends every alert `load` newly qualifies for under `scenario`.
+
+    A company with no custom rules for this scenario gets the single
+    built-in default alert, exactly like before this feature existed. A
+    company that has configured rules gets each of its own distance
+    thresholds instead (the default is not also applied) - each rule fires
+    independently, at most once per load, as the truck gets closer."""
+    if not rules:
+        default_flag = "notified_pu_near" if scenario == "pu_near" else "notified_del_near"
+        if getattr(load, default_flag) or distance_miles > SAMSARA_NEARBY_MILES:
+            return
+        text = _render_alert_message(None, scenario, distance_miles, load.load_id)
+        await bot.send_message(load.telegram_group_id, text)
+        mark_notified(load.id, "pu" if scenario == "pu_near" else "del")
+        return
+
+    for rule in rules:
+        if rule["id"] in load.alerted_rule_ids or distance_miles > rule["distance_miles"]:
+            continue
+        text = _render_alert_message(rule["message_template"], scenario, distance_miles, load.load_id)
+        await bot.send_message(load.telegram_group_id, text)
+        mark_alert_rule_fired(load.id, rule["id"])
+        load.alerted_rule_ids.append(rule["id"])  # keep this pass's in-memory copy in sync
+
+
 async def _check_all_loads_once():
-    for load in get_active_loads_for_monitoring():
+    loads = get_active_loads_for_monitoring()
+    if not loads:
+        return
+
+    # Group by company so each company's fleet is fetched from Samsara in ONE
+    # request per pass, rather than one request per truck.
+    by_company: dict[int, list] = {}
+    for load in loads:
+        by_company.setdefault(load.company_id, []).append(load)
+
+    for company_id, company_loads in by_company.items():
+        vehicle_ids = sorted({ld.samsara_vehicle_id for ld in company_loads})
         try:
-            location = await samsara_service.get_vehicle_location(load.company_id, load.samsara_vehicle_id)
+            locations = await samsara_service.get_fleet_locations(company_id, vehicle_ids)
         except NotImplementedError:
             continue  # this company hasn't connected Samsara yet
         except Exception:
-            logger.exception("Failed to fetch Samsara location for vehicle %s", load.samsara_vehicle_id)
+            logger.exception("Failed to fetch Samsara locations for company %s", company_id)
             continue
 
-        if not location or location.get("lat") is None:
-            continue
+        # Loaded lazily and cached per company per pass - every load in a
+        # dispatched company shares the same pu_near rules, no need to
+        # re-query per load.
+        pu_rules = del_rules = None
 
-        # Still heading to pickup: check distance to PU, only if not already alerted.
-        if load.status == "dispatched" and not load.notified_pu_near and load.pu_lat is not None:
-            distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.pu_lat, load.pu_lng)
-            if distance <= SAMSARA_NEARBY_MILES:
-                await bot.send_message(
-                    load.telegram_group_id,
-                    f"📍 Driver is ~{distance:.0f} miles from pickup on load #{load.load_id}. "
-                    "We'll inform you once he checks in.",
-                )
-                mark_notified(load.id, "pu")
+        for load in company_loads:
+            location = locations.get(load.samsara_vehicle_id)
+            if not location or location.get("lat") is None:
+                continue
 
-        # Already loaded: check distance to delivery instead.
-        elif load.status in ("loaded", "bol_ok") and not load.notified_del_near and load.del_lat is not None:
-            distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.del_lat, load.del_lng)
-            if distance <= SAMSARA_NEARBY_MILES:
-                await bot.send_message(
-                    load.telegram_group_id,
-                    f"📍 Driver is ~{distance:.0f} miles from delivery on load #{load.load_id}. "
-                    "We'll inform you once he checks in.",
-                )
-                mark_notified(load.id, "del")
+            # Still heading to pickup: check distance to PU.
+            if load.status == "dispatched" and load.pu_lat is not None:
+                if pu_rules is None:
+                    pu_rules = get_enabled_alert_rules(company_id, "pu_near")
+                distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.pu_lat, load.pu_lng)
+                await _fire_scenario_alerts(load, "pu_near", distance, pu_rules)
+
+            # Already loaded: check distance to delivery instead.
+            elif load.status in ("loaded", "bol_ok") and load.del_lat is not None:
+                if del_rules is None:
+                    del_rules = get_enabled_alert_rules(company_id, "del_near")
+                distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.del_lat, load.del_lng)
+                await _fire_scenario_alerts(load, "del_near", distance, del_rules)
 
 
 # ------------------------------------------------------------------

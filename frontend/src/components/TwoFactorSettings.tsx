@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { twoFaApi } from '../services/api'
+import { twoFaApi, errorMessage, type TwoFaStatus } from '../services/api'
 import { isWebAuthnSupported, createCredential } from '../services/webauthn'
 import Icon from './Icon'
 
@@ -8,7 +8,7 @@ type Banner = { kind: 'success' | 'error'; text: string } | null
 
 export default function TwoFactorSettings() {
   const { user } = useAuth()
-  const [status, setStatus] = useState<any>(null)
+  const [status, setStatus] = useState<TwoFaStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [banner, setBanner] = useState<Banner>(null)
 
@@ -67,8 +67,8 @@ export default function TwoFactorSettings() {
     try {
       const { qr_code } = await twoFaApi.totpSetup()
       setTotpQr(qr_code)
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     }
   }
 
@@ -82,8 +82,8 @@ export default function TwoFactorSettings() {
       setTotpCode('')
       flash('success', 'Authenticator app enabled.')
       load()
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setTotpBusy(false)
     }
@@ -104,8 +104,8 @@ export default function TwoFactorSettings() {
       await twoFaApi.otpSend('email', emailInput.trim())
       setEmailSent(true)
       flash('success', 'Verification code sent to your email.')
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setEmailBusy(false)
     }
@@ -122,8 +122,8 @@ export default function TwoFactorSettings() {
       setEmailInput('')
       flash('success', 'Email verification enabled.')
       load()
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setEmailBusy(false)
     }
@@ -144,8 +144,8 @@ export default function TwoFactorSettings() {
       await twoFaApi.otpSend('sms', smsInput.trim())
       setSmsSent(true)
       flash('success', 'Verification code sent by text message.')
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setSmsBusy(false)
     }
@@ -162,8 +162,8 @@ export default function TwoFactorSettings() {
       setSmsInput('')
       flash('success', 'Text message verification enabled.')
       load()
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setSmsBusy(false)
     }
@@ -183,8 +183,8 @@ export default function TwoFactorSettings() {
     try {
       const { code } = await twoFaApi.telegramLinkStart()
       setTelegramCode(code)
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setTelegramBusy(false)
     }
@@ -222,8 +222,8 @@ export default function TwoFactorSettings() {
       setWebauthnLabel('')
       flash('success', 'Security key registered.')
       load()
-    } catch (err: any) {
-      flash('error', err.message || 'Could not register security key.')
+    } catch (err) {
+      flash('error', errorMessage(err, 'Could not register security key.'))
     } finally {
       setWebauthnBusy(false)
     }
@@ -245,8 +245,8 @@ export default function TwoFactorSettings() {
       setRecoveryCodes(codes)
       flash('success', 'New recovery codes generated - save them now, they will not be shown again.')
       load()
-    } catch (err: any) {
-      flash('error', err.message)
+    } catch (err) {
+      flash('error', errorMessage(err))
     } finally {
       setRecoveryBusy(false)
     }

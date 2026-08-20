@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { authApi, billingApi, publicApi } from '../services/api'
+import { authApi, billingApi, publicApi, errorMessage } from '../services/api'
 import Turnstile from '../components/Turnstile'
 import './LoginPage.css'
 
@@ -61,8 +61,8 @@ export default function RegisterPage() {
       setSuccess('Registration successful! Redirecting...')
       login(result)
       // useEffect will handle navigation
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(errorMessage(err))
       setLoading(false)
     }
   }

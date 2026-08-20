@@ -31,6 +31,15 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SAMSARA_NEARBY_MILES = float(os.getenv("SAMSARA_NEARBY_MILES", "5"))
 SAMSARA_POLL_INTERVAL_SECONDS = int(os.getenv("SAMSARA_POLL_INTERVAL_SECONDS", "120"))
 
+# Test mode: simulates a truck driving toward each load's pickup/delivery
+# instead of calling the real Samsara API - so the whole alert pipeline
+# (thresholds, custom messages, batching) can be exercised with no Samsara
+# account and no real trucks. See services/samsara_test_mode.py. Never turn
+# this on in production - every company would see simulated locations.
+SAMSARA_TEST_MODE = os.getenv("SAMSARA_TEST_MODE", "false").strip().lower() == "true"
+SAMSARA_TEST_START_MILES = float(os.getenv("SAMSARA_TEST_START_MILES", "60"))
+SAMSARA_TEST_SPEED_MPH = float(os.getenv("SAMSARA_TEST_SPEED_MPH", "600"))
+
 # Deployment environment. Set ENVIRONMENT=production on the real server -
 # this gates cookie Secure flags and HTTPS enforcement, both of which would
 # otherwise break plain-http localhost development.

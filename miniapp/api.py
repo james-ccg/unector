@@ -19,7 +19,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -30,6 +30,7 @@ from config import (
     FRONTEND_URL,
     IS_PRODUCTION,
     PLAN_LIMITS,
+    SAMSARA_TEST_MODE,
     TURNSTILE_SECRET_KEY,
     TURNSTILE_SITE_KEY,
     encrypt_value,
@@ -45,6 +46,12 @@ from db.repository import (
     get_drivers_by_company,
     get_driver_details,
     toggle_driver_subscription,
+    current_week_start_utc,
+    GROSS_ELIGIBLE_STATUSES,
+    list_alert_rules,
+    create_alert_rule,
+    update_alert_rule,
+    delete_alert_rule,
     save_company_credential,
     get_company_credential,
     delete_company_credential,
@@ -222,6 +229,59 @@ class CheckoutRequest(BaseModel):
     def _valid_interval(cls, v: str) -> str:
         if v not in ("month", "year"):
             raise ValueError("interval must be 'month' or 'year'")
+        return v
+
+
+ALERT_SCENARIOS = ("pu_near", "del_near")
+
+
+class AlertRuleCreateRequest(BaseModel):
+    scenario: str  # "pu_near" | "del_near"
+    distance_miles: float
+    message_template: str | None = None
+    enabled: bool = True
+
+    @field_validator("scenario")
+    @classmethod
+    def _valid_scenario(cls, v: str) -> str:
+        if v not in ALERT_SCENARIOS:
+            raise ValueError(f"scenario must be one of {ALERT_SCENARIOS}")
+        return v
+
+    @field_validator("distance_miles")
+    @classmethod
+    def _distance_in_range(cls, v: float) -> float:
+        if not (0 < v <= 500):
+            raise ValueError("distance_miles must be greater than 0 and at most 500")
+        return v
+
+    @field_validator("message_template")
+    @classmethod
+    def _template_reasonable_length(cls, v: str | None) -> str | None:
+        v = (v or "").strip() or None
+        if v and len(v) > 500:
+            raise ValueError("message_template must be 500 characters or fewer")
+        return v
+
+
+class AlertRuleUpdateRequest(BaseModel):
+    distance_miles: float | None = None
+    message_template: str | None = None
+    enabled: bool | None = None
+
+    @field_validator("distance_miles")
+    @classmethod
+    def _distance_in_range(cls, v: float | None) -> float | None:
+        if v is not None and not (0 < v <= 500):
+            raise ValueError("distance_miles must be greater than 0 and at most 500")
+        return v
+
+    @field_validator("message_template")
+    @classmethod
+    def _template_reasonable_length(cls, v: str | None) -> str | None:
+        v = (v or "").strip() or None
+        if v and len(v) > 500:
+            raise ValueError("message_template must be 500 characters or fewer")
         return v
 
 
@@ -441,10 +501,10 @@ def list_drivers(user: dict = Depends(get_current_user)):
     try:
         drivers = get_drivers_by_company(user["company_id"])
         return drivers if drivers is not None else []
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to fetch drivers for company %s", user["company_id"])
-        raise HTTPException(500, f"Failed to load drivers: {str(e)}")
+        raise HTTPException(500, "Failed to load drivers.")
 
 
 @app.get("/api/drivers/{driver_id}")
@@ -467,10 +527,10 @@ def get_driver(driver_id: int, user: dict = Depends(get_current_user)):
         return driver
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to fetch driver details for driver %s", driver_id)
-        raise HTTPException(500, f"Failed to load driver details: {str(e)}")
+        raise HTTPException(500, "Failed to load driver details.")
 
 
 @app.patch("/api/drivers/{driver_id}/subscription")
@@ -507,10 +567,10 @@ def update_subscription(
         return {"status": "updated", "active": body.active}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to toggle subscription for driver %s", driver_id)
-        raise HTTPException(500, f"Failed to update subscription: {str(e)}")
+        raise HTTPException(500, "Failed to update subscription.")
 
 
 # ------------------------------------------------------------------
@@ -560,7 +620,7 @@ def get_settings(user: dict = Depends(get_current_user)):
 
     return {
         "gmail_connected": bool(gmail_token),
-        "samsara_connected": bool(samsara_key),
+        "samsara_connected": bool(samsara_key) or SAMSARA_TEST_MODE,
         "company_name": company.company_name,
         "mc_number": company.mc_number
     }
@@ -650,8 +710,10 @@ def connect_samsara(
     try:
         save_company_credential(company_id, "samsara_api_key", body.api_key)
         return {"success": True, "message": "Samsara connected successfully"}
-    except Exception as e:
-        raise HTTPException(500, f"Failed to connect Samsara: {str(e)}")
+    except Exception:
+        import logging
+        logging.exception("Failed to save Samsara credential for company %s", company_id)
+        raise HTTPException(500, "Failed to connect Samsara.")
 
 @app.delete("/api/settings/samsara")
 def disconnect_samsara(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
@@ -661,6 +723,45 @@ def disconnect_samsara(user: dict = Depends(require_owner), _csrf: None = Depend
     company_id = user.get("company_id")
     delete_company_credential(company_id, "samsara_api_key")
     return {"success": True}
+
+
+# ------------------------------------------------------------------
+# Customizable GPS-proximity alert rules (owner only). A company with none
+# configured for a scenario keeps getting the bot's built-in default alert -
+# see bot.py's _fire_scenario_alerts.
+# ------------------------------------------------------------------
+@app.get("/api/settings/alert-rules")
+def get_alert_rules(user: dict = Depends(require_owner)):
+    return list_alert_rules(user["company_id"])
+
+
+@app.post("/api/settings/alert-rules")
+def create_alert_rule_endpoint(
+    body: AlertRuleCreateRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    return create_alert_rule(
+        user["company_id"], body.scenario, body.distance_miles, body.message_template, body.enabled,
+    )
+
+
+@app.patch("/api/settings/alert-rules/{rule_id}")
+def update_alert_rule_endpoint(
+    rule_id: int, body: AlertRuleUpdateRequest,
+    user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    updated = update_alert_rule(rule_id, user["company_id"], body.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(404, "Alert rule not found")
+    return updated
+
+
+@app.delete("/api/settings/alert-rules/{rule_id}")
+def delete_alert_rule_endpoint(
+    rule_id: int, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    if not delete_alert_rule(rule_id, user["company_id"]):
+        raise HTTPException(404, "Alert rule not found")
+    return {"deleted": True}
 
 
 # ------------------------------------------------------------------
@@ -697,10 +798,10 @@ def create_billing_checkout(
         return {"url": url}
     except (ValueError, RuntimeError) as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to create checkout session for company %s", user["company_id"])
-        raise HTTPException(500, f"Failed to start checkout: {str(e)}")
+        raise HTTPException(500, "Failed to start checkout.")
 
 
 @app.post("/api/billing/portal")
@@ -714,10 +815,10 @@ def create_billing_portal(user: dict = Depends(require_owner), _csrf: None = Dep
         return {"url": url}
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to create billing portal session for company %s", user["company_id"])
-        raise HTTPException(500, f"Failed to open billing portal: {str(e)}")
+        raise HTTPException(500, "Failed to open billing portal.")
 
 
 @app.post("/api/billing/webhook")
@@ -745,14 +846,13 @@ async def stripe_webhook(request: Request):
 # ------------------------------------------------------------------
 @app.get("/api/monitoring")
 async def get_monitoring(user: dict = Depends(get_current_user)):
-    import asyncio
     from db.database import get_session
     from db import models
     from services import samsara_service
     from db.repository import get_company_credential
 
     company_id = user["company_id"]
-    samsara_connected = bool(get_company_credential(company_id, "samsara_api_key"))
+    samsara_connected = bool(get_company_credential(company_id, "samsara_api_key")) or SAMSARA_TEST_MODE
 
     with get_session() as session:
         drivers = (
@@ -761,30 +861,39 @@ async def get_monitoring(user: dict = Depends(get_current_user)):
             .all()
         )
 
+        # One query for every driver's loads instead of one query per driver,
+        # ordered newest-first so the first load seen per driver_id is their
+        # latest one.
+        driver_ids = [d.id for d in drivers]
+        latest_by_driver: dict[int, models.Load] = {}
+        if driver_ids:
+            all_loads = (
+                session.query(models.Load)
+                .filter(models.Load.driver_id.in_(driver_ids))
+                .order_by(models.Load.created_at.desc())
+                .all()
+            )
+            for load in all_loads:
+                latest_by_driver.setdefault(load.driver_id, load)
+
+        # One batched Samsara call for the whole fleet instead of one per
+        # vehicle - see samsara_service.get_fleet_locations.
+        vehicle_ids = sorted({d.samsara_vehicle_id for d in drivers if d.samsara_vehicle_id})
+        locations: dict[str, dict] = {}
+        if samsara_connected and vehicle_ids:
+            try:
+                locations = await samsara_service.get_fleet_locations(company_id, vehicle_ids)
+            except NotImplementedError:
+                locations = {}
+            except Exception:
+                import logging
+                logging.exception("Failed to fetch Samsara locations for company %s", company_id)
+                locations = {}
+
         vehicles = []
         for driver in drivers:
-            # Most recent load for this driver, if any, to show route/status.
-            latest_load = (
-                session.query(models.Load)
-                .filter(models.Load.driver_id == driver.id)
-                .order_by(models.Load.created_at.desc())
-                .first()
-            )
-
-            location = None
-            if samsara_connected and driver.samsara_vehicle_id:
-                try:
-                    location = await samsara_service.get_vehicle_location(
-                        company_id, driver.samsara_vehicle_id
-                    )
-                except NotImplementedError:
-                    location = None
-                except Exception:
-                    import logging
-                    logging.exception(
-                        "Failed to fetch Samsara location for vehicle %s", driver.samsara_vehicle_id
-                    )
-                    location = None
+            latest_load = latest_by_driver.get(driver.id)
+            location = locations.get(driver.samsara_vehicle_id) if driver.samsara_vehicle_id else None
 
             vehicles.append(
                 {
@@ -842,12 +951,12 @@ def get_dashboard(user: dict = Depends(get_current_user)):
                 models.Load.company_id == user["company_id"]
             ).scalar() or 0
             
-            # Calculate weekly gross (last 7 days)
-            from datetime import datetime, timedelta
-            week_ago = datetime.utcnow() - timedelta(days=7)
+            # Calculate weekly gross - same definition (calendar week, gross-eligible
+            # statuses only) as the per-driver figures below, so the two reconcile.
             weekly_gross = session.query(func.sum(models.Load.rate_amount)).filter(
                 models.Load.company_id == user["company_id"],
-                models.Load.created_at >= week_ago
+                models.Load.created_at >= current_week_start_utc(),
+                models.Load.status.in_(GROSS_ELIGIBLE_STATUSES)
             ).scalar() or 0
             
             result = {
@@ -879,10 +988,10 @@ def get_dashboard(user: dict = Depends(get_current_user)):
             
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         import logging
         logging.exception("Failed to load dashboard for company %s", user["company_id"])
-        raise HTTPException(500, f"Failed to load dashboard: {str(e)}")
+        raise HTTPException(500, "Failed to load dashboard.")
 
 
 # ------------------------------------------------------------------
@@ -1157,7 +1266,8 @@ def webauthn_delete(
     credential_pk: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     account_type, account_id = _self_account(user)
-    delete_webauthn_credential(account_type, account_id, credential_pk)
+    if not delete_webauthn_credential(account_type, account_id, credential_pk):
+        raise HTTPException(404, "Security key not found")
     return {"deleted": True}
 
 
@@ -1303,11 +1413,19 @@ if react_build_path.exists():
         # Otherwise serve index.html (React Router handles the route)
         return FileResponse("frontend/dist/index.html")
 else:
-    # Fallback to old static files if React build doesn't exist
+    # frontend/dist doesn't exist yet (fresh clone, npm run build not run
+    # yet) - miniapp/static/public/ (the old pre-React marketing site) was
+    # never finished and isn't on disk either, so there's nothing to fall
+    # back to. Say so instead of a bare FileNotFoundError/500.
     app.mount("/static", StaticFiles(directory="miniapp/static"), name="static")
-    
-    @app.get("/", response_class=FileResponse)
-    def serve_old_homepage():
-        return FileResponse("miniapp/static/public/index.html")
+
+    @app.get("/", response_class=HTMLResponse)
+    def serve_missing_frontend_notice():
+        return (
+            "<h1>Freight Pilot</h1>"
+            "<p>The web dashboard hasn't been built yet. Run "
+            "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code>, "
+            "then restart this server.</p>"
+        )
 
 

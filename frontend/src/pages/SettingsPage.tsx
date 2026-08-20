@@ -5,22 +5,18 @@ import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import { useAuth } from '../context/AuthContext'
-import { settingsApi, dashboardApi, billingApi, type BillingStatus } from '../services/api'
+import {
+  settingsApi, dashboardApi, billingApi, errorMessage,
+  type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
+} from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 import './SettingsPage.css'
 
-interface Dispatcher {
-  id: number
-  username: string
-  role: string
-  created_at: string | null
-}
-
 export default function SettingsPage() {
   const { user, logout } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [settings, setSettings] = useState<any>(null)
+  const [settings, setSettings] = useState<CompanySettings | null>(null)
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([])
   const [loading, setLoading] = useState(true)
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
@@ -40,10 +36,44 @@ export default function SettingsPage() {
   const [addDispatcherError, setAddDispatcherError] = useState('')
   const [addDispatcherBusy, setAddDispatcherBusy] = useState(false)
 
+  // Location alert rules
+  const [alertRules, setAlertRules] = useState<AlertRule[]>([])
+  const [newRuleScenario, setNewRuleScenario] = useState<AlertScenario>('pu_near')
+  const [newRuleDistance, setNewRuleDistance] = useState('5')
+  const [newRuleMessage, setNewRuleMessage] = useState('')
+  const [alertRuleError, setAlertRuleError] = useState('')
+  const [alertRuleBusy, setAlertRuleBusy] = useState(false)
+
   const isOwner = user?.role === 'owner'
 
+  const loadAll = async () => {
+    if (!user) return
+    try {
+      const settingsData = await settingsApi.getSettings()
+      setSettings(settingsData)
+      if (user.role === 'owner') {
+        const dispatcherData = await dashboardApi.listDispatchers()
+        setDispatchers(dispatcherData)
+        const billingData = await billingApi.getStatus()
+        setBilling(billingData)
+        const alertRuleData = await settingsApi.listAlertRules()
+        setAlertRules(alertRuleData)
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
+    // loadAll is a shared refresh function (also called after every
+    // mutation below - connect Gmail, add dispatcher, toggle an alert rule,
+    // etc.), not something that only ever runs on mount - inlining it here
+    // would duplicate that logic for no benefit.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Handle the redirect back from Google's OAuth consent screen
@@ -52,19 +82,24 @@ export default function SettingsPage() {
     const gmailStatus = searchParams.get('gmail')
     if (!gmailStatus) return
 
-    if (gmailStatus === 'connected') {
-      setBanner({ kind: 'success', text: 'Gmail connected successfully.' })
-      loadAll()
-    } else if (gmailStatus === 'error_no_refresh_token') {
-      setBanner({
-        kind: 'error',
-        text:
-          'Google didn\u2019t return a refresh token (this happens if the account was already connected before). ' +
-          'Revoke access at myaccount.google.com/permissions and try connecting again.',
-      })
-    } else {
-      setBanner({ kind: 'error', text: 'Something went wrong connecting Gmail. Please try again.' })
-    }
+    // Deferred a tick so the banner update isn't a same-render-cycle setState
+    // (react-hooks/set-state-in-effect) - purely cosmetic timing-wise, since
+    // a microtask still runs before the next paint.
+    queueMicrotask(() => {
+      if (gmailStatus === 'connected') {
+        setBanner({ kind: 'success', text: 'Gmail connected successfully.' })
+        loadAll()
+      } else if (gmailStatus === 'error_no_refresh_token') {
+        setBanner({
+          kind: 'error',
+          text:
+            'Google didn\u2019t return a refresh token (this happens if the account was already connected before). ' +
+            'Revoke access at myaccount.google.com/permissions and try connecting again.',
+        })
+      } else {
+        setBanner({ kind: 'error', text: 'Something went wrong connecting Gmail. Please try again.' })
+      }
+    })
 
     searchParams.delete('gmail')
     setSearchParams(searchParams, { replace: true })
@@ -77,8 +112,10 @@ export default function SettingsPage() {
     if (!billingStatus) return
 
     if (billingStatus === 'success') {
-      setBanner({ kind: 'success', text: 'Subscription started. It may take a few seconds to appear below.' })
-      loadAll()
+      queueMicrotask(() => {
+        setBanner({ kind: 'success', text: 'Subscription started. It may take a few seconds to appear below.' })
+        loadAll()
+      })
     }
 
     searchParams.delete('billing')
@@ -86,32 +123,14 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const loadAll = async () => {
-    if (!user) return
-    try {
-      const settingsData = await settingsApi.getSettings()
-      setSettings(settingsData)
-      if (user.role === 'owner') {
-        const dispatcherData = await dashboardApi.listDispatchers()
-        setDispatchers(dispatcherData)
-        const billingData = await billingApi.getStatus()
-        setBilling(billingData)
-      }
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleManageBilling = async () => {
     if (!user) return
     setBillingBusy(true)
     try {
       const { url } = await billingApi.openPortal()
       window.location.href = url
-    } catch (err: any) {
-      setBanner({ kind: 'error', text: err.message || 'Could not open the billing portal.' })
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not open the billing portal.') })
       setBillingBusy(false)
     }
   }
@@ -122,8 +141,8 @@ export default function SettingsPage() {
       const { auth_url } = await settingsApi.getGmailAuthUrl()
       // Full-page redirect to Google's own consent screen - no code to copy/paste.
       window.location.href = auth_url
-    } catch (err: any) {
-      setBanner({ kind: 'error', text: err.message || 'Could not start the Gmail connection.' })
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not start the Gmail connection.') })
     }
   }
 
@@ -134,8 +153,8 @@ export default function SettingsPage() {
       await settingsApi.disconnectGmail()
       setBanner({ kind: 'success', text: 'Gmail disconnected.' })
       loadAll()
-    } catch (err: any) {
-      setBanner({ kind: 'error', text: err.message })
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err) })
     }
   }
 
@@ -149,8 +168,8 @@ export default function SettingsPage() {
       setSamsaraKey('')
       setBanner({ kind: 'success', text: 'Samsara connected successfully.' })
       loadAll()
-    } catch (err: any) {
-      setSamsaraError(err.message || 'Could not connect Samsara. Double-check the API token.')
+    } catch (err) {
+      setSamsaraError(errorMessage(err, 'Could not connect Samsara. Double-check the API token.'))
     } finally {
       setSamsaraBusy(false)
     }
@@ -163,8 +182,8 @@ export default function SettingsPage() {
       await settingsApi.disconnectSamsara()
       setBanner({ kind: 'success', text: 'Samsara disconnected.' })
       loadAll()
-    } catch (err: any) {
-      setBanner({ kind: 'error', text: err.message })
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err) })
     }
   }
 
@@ -183,10 +202,51 @@ export default function SettingsPage() {
       setNewPassword('')
       setBanner({ kind: 'success', text: 'Dispatcher login created.' })
       loadAll()
-    } catch (err: any) {
-      setAddDispatcherError(err.message || 'Could not create that dispatcher login.')
+    } catch (err) {
+      setAddDispatcherError(errorMessage(err, 'Could not create that dispatcher login.'))
     } finally {
       setAddDispatcherBusy(false)
+    }
+  }
+
+  const handleAddAlertRule = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setAlertRuleError('')
+    const distance = parseFloat(newRuleDistance)
+    if (!distance || distance <= 0 || distance > 500) {
+      setAlertRuleError('Enter a distance between 0 and 500 miles.')
+      return
+    }
+    setAlertRuleBusy(true)
+    try {
+      const rule = await settingsApi.createAlertRule(newRuleScenario, distance, newRuleMessage.trim() || null)
+      setAlertRules((prev) => [...prev, rule])
+      setNewRuleDistance('5')
+      setNewRuleMessage('')
+    } catch (err) {
+      setAlertRuleError(errorMessage(err, 'Could not create that rule.'))
+    } finally {
+      setAlertRuleBusy(false)
+    }
+  }
+
+  const handleToggleAlertRule = async (rule: AlertRule) => {
+    try {
+      const updated = await settingsApi.updateAlertRule(rule.id, { enabled: !rule.enabled })
+      setAlertRules((prev) => prev.map((r) => (r.id === rule.id ? updated : r)))
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not update that rule.') })
+    }
+  }
+
+  const handleDeleteAlertRule = async (rule: AlertRule) => {
+    if (!confirm(`Delete this ${rule.distance_miles}mi alert rule?`)) return
+    try {
+      await settingsApi.deleteAlertRule(rule.id)
+      setAlertRules((prev) => prev.filter((r) => r.id !== rule.id))
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not delete that rule.') })
     }
   }
 
@@ -202,6 +262,22 @@ export default function SettingsPage() {
       </Layout>
     )
   }
+
+  const puAlertRules = alertRules.filter((r) => r.scenario === 'pu_near').sort((a, b) => b.distance_miles - a.distance_miles)
+  const delAlertRules = alertRules.filter((r) => r.scenario === 'del_near').sort((a, b) => b.distance_miles - a.distance_miles)
+
+  const renderAlertRuleRow = (rule: AlertRule) => (
+    <div key={rule.id} className={`alert-rule-row ${rule.enabled ? '' : 'is-disabled'}`}>
+      <span className="alert-rule-distance">{rule.distance_miles} mi</span>
+      <span className="alert-rule-message">{rule.message_template || 'Standard message'}</span>
+      <button className="btn btn-ghost btn-sm" onClick={() => handleToggleAlertRule(rule)}>
+        {rule.enabled ? 'Disable' : 'Enable'}
+      </button>
+      <button className="btn btn-danger-ghost btn-sm" onClick={() => handleDeleteAlertRule(rule)}>
+        Remove
+      </button>
+    </div>
+  )
 
   return (
     <Layout>
@@ -345,6 +421,75 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* ---------------- Location alerts ---------------- */}
+        {isOwner && (
+          <section className="settings-section">
+            <h2 className="section-title">Location alerts</h2>
+            <div className="card">
+              <p className="settings-hint">
+                Choose what the driver's group is told as the truck nears pickup or delivery. Add more than
+                one distance per scenario (e.g. a heads-up at 50 miles, then again at 5) - each fires once,
+                independently, as the truck gets closer. A scenario with no rules keeps the default: one alert
+                with a standard message.
+              </p>
+
+              <div className="alert-rule-group">
+                <h3 className="settings-subtitle">Near pickup</h3>
+                {puAlertRules.length === 0 ? (
+                  <p className="empty">Using the default alert.</p>
+                ) : (
+                  <div className="alert-rule-list">{puAlertRules.map(renderAlertRuleRow)}</div>
+                )}
+              </div>
+
+              <div className="alert-rule-group">
+                <h3 className="settings-subtitle">Near delivery</h3>
+                {delAlertRules.length === 0 ? (
+                  <p className="empty">Using the default alert.</p>
+                ) : (
+                  <div className="alert-rule-list">{delAlertRules.map(renderAlertRuleRow)}</div>
+                )}
+              </div>
+
+              <form className="form alert-rule-form" onSubmit={handleAddAlertRule}>
+                <h3 className="settings-subtitle">Add a rule</h3>
+                <label>
+                  <span>Scenario</span>
+                  <select value={newRuleScenario} onChange={(e) => setNewRuleScenario(e.target.value as AlertScenario)}>
+                    <option value="pu_near">Near pickup</option>
+                    <option value="del_near">Near delivery</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Distance (miles)</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="500"
+                    step="0.5"
+                    value={newRuleDistance}
+                    onChange={(e) => setNewRuleDistance(e.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Custom message (optional)</span>
+                  <textarea
+                    value={newRuleMessage}
+                    onChange={(e) => setNewRuleMessage(e.target.value)}
+                    placeholder="Use {miles} and {load_id} - leave blank for the standard message"
+                    rows={2}
+                  />
+                </label>
+                {alertRuleError && <p className="form-error">{alertRuleError}</p>}
+                <button className="btn btn-primary" type="submit" disabled={alertRuleBusy}>
+                  {alertRuleBusy ? 'Adding...' : 'Add rule'}
+                </button>
+              </form>
+            </div>
+          </section>
+        )}
 
         {/* ---------------- Dispatchers ---------------- */}
         {isOwner && (

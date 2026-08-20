@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { motion, AnimatePresence } from 'motion/react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
-import { dashboardApi } from '../services/api'
+import { dashboardApi, errorMessage, type Driver, type DashboardData, type DriverDetail } from '../services/api'
 import { PLAN_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 
@@ -20,12 +21,19 @@ const CHART_COLORS = {
   tooltipBg: '#201f17',
 }
 
-function ChartTooltip({ active, payload, label, formatter }: any) {
+interface ChartTooltipProps {
+  active?: boolean
+  payload?: { dataKey: string | number; value: number }[]
+  label?: string | number
+  formatter?: (value: number) => string
+}
+
+function ChartTooltip({ active, payload, label, formatter }: ChartTooltipProps) {
   if (!active || !payload?.length) return null
   return (
     <div className="chart-tooltip">
       {label && <p className="chart-tooltip-label">{label}</p>}
-      {payload.map((p: any) => (
+      {payload.map((p) => (
         <p key={p.dataKey} className="chart-tooltip-value">
           {formatter ? formatter(p.value) : p.value}
         </p>
@@ -34,30 +42,72 @@ function ChartTooltip({ active, payload, label, formatter }: any) {
   )
 }
 
-interface Driver {
-  id: number
-  driver_bot_id: string
-  full_name: string
-  telegram_group_title: string | null
-  dispatcher_username: string | null
-  subscription_active: boolean
-  samsara_vehicle_id: string | null
-  load_count: number
-  weekly_gross: number
-  weekly_loads: number
-}
-
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const [loading, setLoading] = useState(true)
-  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null)
+  const [driverDetail, setDriverDetail] = useState<DriverDetail | null>(null)
+  const [driverDetailLoading, setDriverDetailLoading] = useState(false)
+  const [driverDetailError, setDriverDetailError] = useState('')
+  const [toggleBusy, setToggleBusy] = useState(false)
 
   useEffect(() => {
     loadDashboard()
   }, [])
+
+  useEffect(() => {
+    if (selectedDriverId === null) return
+    let cancelled = false
+    setDriverDetail(null)
+    setDriverDetailError('')
+    setDriverDetailLoading(true)
+    dashboardApi
+      .getDriverDetails(selectedDriverId)
+      .then((data) => {
+        if (!cancelled) setDriverDetail(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setDriverDetailError(errorMessage(err))
+      })
+      .finally(() => {
+        if (!cancelled) setDriverDetailLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDriverId])
+
+  const closeDriverDetail = () => setSelectedDriverId(null)
+
+  const handleToggleSubscription = async () => {
+    if (!driverDetail) return
+    const nextActive = !driverDetail.subscription_active
+    setToggleBusy(true)
+    setDriverDetailError('')
+    try {
+      await dashboardApi.toggleSubscription(driverDetail.id, nextActive)
+      setDriverDetail({ ...driverDetail, subscription_active: nextActive })
+      // Keep the list behind the modal in sync without a full reload.
+      setDashboardData((prev) =>
+        prev
+          ? {
+              ...prev,
+              drivers: prev.drivers.map((d) =>
+                d.id === driverDetail.id ? { ...d, subscription_active: nextActive } : d
+              ),
+            }
+          : prev
+      )
+    } catch (err) {
+      setDriverDetailError(errorMessage(err))
+    } finally {
+      setToggleBusy(false)
+    }
+  }
 
   const loadDashboard = async () => {
     if (!user) return
@@ -66,8 +116,8 @@ export default function DashboardPage() {
       const data = await dashboardApi.getDashboard()
       setDashboardData(data)
       setError('')
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -332,7 +382,16 @@ export default function DashboardPage() {
           <div className="driver-list">
             {filteredDrivers.length > 0 ? (
               filteredDrivers.map((driver) => (
-                <div key={driver.id} className="driver-card card">
+                <div
+                  key={driver.id}
+                  className="driver-card card"
+                  onClick={() => setSelectedDriverId(driver.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') setSelectedDriverId(driver.id)
+                  }}
+                >
                   <div className="driver-header">
                     <div className="driver-name-row">
                       <span className={`status-dot ${driver.subscription_active ? 'on' : 'off'}`} />
@@ -372,6 +431,127 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {selectedDriverId !== null && (
+          <motion.div
+            className="modal-overlay"
+            onClick={closeDriverDetail}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div
+              className="modal-card driver-detail-card"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <button className="modal-close" onClick={closeDriverDetail} aria-label="Close">
+                <Icon name="close" size={18} />
+              </button>
+
+              {driverDetailLoading && (
+                <div className="loading-state">
+                  <div className="spinner"></div>
+                  <p>Loading driver...</p>
+                </div>
+              )}
+
+              {!driverDetailLoading && driverDetailError && !driverDetail && (
+                <p className="form-error">{driverDetailError}</p>
+              )}
+
+              {driverDetail && (
+                <>
+                  <h3>{driverDetail.full_name || driverDetail.driver_bot_id}</h3>
+                  <div className="driver-meta-row">
+                    <span className="mono">#{driverDetail.driver_bot_id}</span>
+                    {driverDetail.dispatcher_username && <span>· {driverDetail.dispatcher_username}</span>}
+                    {driverDetail.telegram_group_title && <span>· {driverDetail.telegram_group_title}</span>}
+                    {!driverDetail.samsara_vehicle_id && <span className="text-warn">· no GPS vehicle linked</span>}
+                  </div>
+
+                  <div className="driver-stats driver-detail-stats">
+                    <div className="driver-stat">
+                      <span className="label">Weekly gross</span>
+                      <span className="value">${Math.round(driverDetail.weekly_gross).toLocaleString()}</span>
+                    </div>
+                    <div className="driver-stat">
+                      <span className="label">Total gross</span>
+                      <span className="value">${Math.round(driverDetail.total_gross).toLocaleString()}</span>
+                    </div>
+                    <div className="driver-stat">
+                      <span className="label">This week</span>
+                      <span className="value">{driverDetail.weekly_loads}</span>
+                    </div>
+                    <div className="driver-stat">
+                      <span className="label">Total loads</span>
+                      <span className="value">{driverDetail.total_loads}</span>
+                    </div>
+                  </div>
+
+                  {user?.role === 'owner' && (
+                    <div className="subscription-toggle-row">
+                      <span className={`driver-status ${driverDetail.subscription_active ? 'active' : 'inactive'}`}>
+                        {driverDetail.subscription_active ? 'Subscription active' : 'Subscription inactive'}
+                      </span>
+                      <button
+                        className={`btn ${driverDetail.subscription_active ? 'btn-ghost' : 'btn-primary'}`}
+                        onClick={handleToggleSubscription}
+                        disabled={toggleBusy}
+                      >
+                        {toggleBusy
+                          ? 'Updating...'
+                          : driverDetail.subscription_active
+                          ? 'Deactivate billing'
+                          : 'Activate billing'}
+                      </button>
+                    </div>
+                  )}
+
+                  {driverDetailError && <p className="form-error">{driverDetailError}</p>}
+
+                  <h4 className="load-history-title">Load history</h4>
+                  {driverDetail.loads.length === 0 ? (
+                    <p className="empty">No loads yet.</p>
+                  ) : (
+                    <div className="load-history-table-wrap">
+                      <table className="load-history-table">
+                        <thead>
+                          <tr>
+                            <th>Load</th>
+                            <th>Broker</th>
+                            <th>Pickup</th>
+                            <th>Delivery</th>
+                            <th>Rate</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {driverDetail.loads.map((load) => (
+                            <tr key={load.id}>
+                              <td className="mono">{load.load_id}</td>
+                              <td>{load.broker_name || '—'}</td>
+                              <td>{load.pu_date || '—'}</td>
+                              <td>{load.del_date || '—'}</td>
+                              <td>{load.rate_amount ? `$${Math.round(load.rate_amount).toLocaleString()}` : '—'}</td>
+                              <td>{load.status}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Layout>
   )
 }

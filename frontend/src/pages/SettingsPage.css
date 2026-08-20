@@ -183,7 +183,9 @@
   font-size: 13px;
   color: var(--hint);
 }
-.form input {
+.form input,
+.form select,
+.form textarea {
   font-family: var(--font-mono);
   font-size: 15px;
   color: var(--text);
@@ -192,39 +194,75 @@
   border-radius: 8px;
   padding: 10px 12px;
 }
-.form input:focus {
+.form textarea {
+  font-family: inherit;
+  resize: vertical;
+}
+.form input:focus,
+.form select:focus,
+.form textarea:focus {
   outline: none;
   border-color: var(--amber);
 }
-.form-error {
-  color: var(--red);
+/* .form-error, .modal-overlay, .modal-card are shared with the dashboard -
+   defined once in DashboardPage.css, which this page also imports. */
+
+/* ---------- Location alert rules ---------- */
+.settings-hint {
   font-size: 13px;
-  margin: 0;
+  color: var(--hint);
+  line-height: 1.6;
+  margin: 0 0 18px;
+}
+.alert-rule-group {
+  margin-bottom: 18px;
+}
+.alert-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.alert-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.alert-rule-row:last-child {
+  border-bottom: none;
+}
+.alert-rule-row.is-disabled {
+  opacity: 0.5;
+}
+.alert-rule-distance {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+  min-width: 52px;
+}
+.alert-rule-message {
+  flex: 1;
+  font-size: 13px;
+  color: var(--hint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-rule-form {
+  margin-top: 4px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 /* ---------- Samsara connect modal ---------- */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 20px;
-}
-.modal-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 420px;
-  width: 100%;
-}
-.modal-card h3 {
-  font-size: 18px;
-  margin: 0 0 10px;
-}
 .modal-hint {
   font-size: 13px;
   color: var(--hint);

@@ -12,6 +12,7 @@ FastAPI endpoint and removing the polling loop; this function stays the same.
 """
 import aiohttp
 
+from config import SAMSARA_TEST_MODE
 from db.repository import get_company_credential
 
 API_BASE = "https://api.samsara.com"
@@ -20,6 +21,25 @@ API_BASE = "https://api.samsara.com"
 async def get_vehicle_location(company_id: int, vehicle_id: str) -> dict | None:
     """Returns {"lat": float, "lng": float, "updated_at": str} for a vehicle,
     or None if the vehicle has no recent GPS fix or the request fails."""
+    locations = await get_fleet_locations(company_id, [vehicle_id])
+    return locations.get(vehicle_id)
+
+
+async def get_fleet_locations(company_id: int, vehicle_ids: list[str]) -> dict[str, dict]:
+    """Same as get_vehicle_location, but for many vehicles in ONE request -
+    Samsara's stats endpoint accepts a comma-separated vehicleIds filter, so
+    checking a whole fleet doesn't need one HTTP round-trip per truck. Used
+    by the location monitor and the /api/monitoring dashboard.
+
+    Returns {vehicle_id: {"lat":..., "lng":..., "updated_at":...}} - vehicles
+    with no recent GPS fix are simply absent from the result."""
+    if not vehicle_ids:
+        return {}
+
+    if SAMSARA_TEST_MODE:
+        from services import samsara_test_mode
+        return await samsara_test_mode.get_fleet_locations(vehicle_ids)
+
     api_key = get_company_credential(company_id, "samsara_api_key")
     if not api_key:
         raise NotImplementedError(
@@ -28,26 +48,24 @@ async def get_vehicle_location(company_id: int, vehicle_id: str) -> dict | None:
         )
 
     headers = {"Authorization": f"Bearer {api_key}"}
-    params = {"types": "gps", "vehicleIds": vehicle_id}
+    params = {"types": "gps", "vehicleIds": ",".join(vehicle_ids)}
 
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(
-            f"{API_BASE}/fleet/vehicles/stats", params=params, timeout=aiohttp.ClientTimeout(total=15)
+            f"{API_BASE}/fleet/vehicles/stats", params=params, timeout=aiohttp.ClientTimeout(total=20)
         ) as resp:
             if resp.status != 200:
-                return None
+                return {}
             payload = await resp.json()
 
-    vehicles = payload.get("data", [])
-    if not vehicles:
-        return None
-
-    gps = vehicles[0].get("gps")
-    if not gps:
-        return None
-
-    return {
-        "lat": gps.get("latitude"),
-        "lng": gps.get("longitude"),
-        "updated_at": gps.get("time"),
-    }
+    result = {}
+    for vehicle in payload.get("data", []):
+        vid, gps = vehicle.get("id"), vehicle.get("gps")
+        if not vid or not gps:
+            continue
+        result[vid] = {
+            "lat": gps.get("latitude"),
+            "lng": gps.get("longitude"),
+            "updated_at": gps.get("time"),
+        }
+    return result

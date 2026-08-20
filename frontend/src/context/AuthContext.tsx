@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authApi, type LoginSuccess } from '../services/api'
 
@@ -36,6 +36,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const navigate = useNavigate()
+  const userRef = useRef<User | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
 
   useEffect(() => {
     // The session lives in an httpOnly cookie the frontend can't read directly,
@@ -46,6 +50,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false))
   }, [])
+
+  useEffect(() => {
+    // Fired by api.ts on any 401. Only acts if we currently think we're
+    // logged in - otherwise this also fires for the routine session check
+    // on public pages (anonymous visitor, no session yet), which must NOT
+    // redirect to /login.
+    const onSessionExpired = () => {
+      if (userRef.current === null) return
+      setUser(null)
+      navigate('/login')
+    }
+    window.addEventListener('fp:session-expired', onSessionExpired)
+    return () => window.removeEventListener('fp:session-expired', onSessionExpired)
+  }, [navigate])
 
   const login = (session: LoginSuccess) => {
     // The session/CSRF cookies are already set by the browser from the

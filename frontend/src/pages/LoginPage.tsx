@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { authApi, twoFaApi, publicApi } from '../services/api'
+import { authApi, twoFaApi, publicApi, errorMessage } from '../services/api'
 import type { LoginSuccess, TwoFaChallenge } from '../services/api'
 import { isWebAuthnSupported, getCredential } from '../services/webauthn'
 import Turnstile from '../components/Turnstile'
@@ -62,8 +62,8 @@ export default function LoginPage() {
       } else {
         finishLogin(data)
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -84,8 +84,8 @@ export default function LoginPage() {
       } else {
         finishLogin(data)
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -101,8 +101,8 @@ export default function LoginPage() {
       try {
         await twoFaApi.loginChallenge(m as 'email' | 'sms' | 'telegram', challenge.pending_token)
         setCodeSent(true)
-      } catch (err: any) {
-        setError(err.message)
+      } catch (err) {
+        setError(errorMessage(err))
       }
     }
   }
@@ -115,8 +115,8 @@ export default function LoginPage() {
     try {
       const data = await twoFaApi.loginVerify(challenge.pending_token, method, code)
       finishLogin(data)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(errorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -131,8 +131,8 @@ export default function LoginPage() {
       const credentialJson = await getCredential(options)
       const data = await twoFaApi.loginWebauthnVerify(challenge.pending_token, credentialJson, rawChallenge)
       finishLogin(data)
-    } catch (err: any) {
-      setError(err.message || 'Security key verification failed.')
+    } catch (err) {
+      setError(errorMessage(err, 'Security key verification failed.'))
     } finally {
       setLoading(false)
     }
