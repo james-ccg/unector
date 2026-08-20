@@ -11,8 +11,19 @@ cookie pattern requires - see _csrf_headers().
 """
 import pytest
 from fastapi.testclient import TestClient
+import miniapp.api as api_module
 from miniapp.api import app
 from miniapp.auth import CSRF_COOKIE_NAME
+
+
+@pytest.fixture(autouse=True)
+def _disable_turnstile(monkeypatch):
+    """Register/login call out to Cloudflare's live siteverify endpoint
+    whenever TURNSTILE_SECRET_KEY is set - which breaks these tests (no
+    token to send) as soon as a real key is configured in .env. Tests
+    shouldn't depend on a live external service or on what's in .env, so
+    force it off here regardless of the environment's actual config."""
+    monkeypatch.setattr(api_module, "TURNSTILE_SECRET_KEY", None)
 
 
 @pytest.fixture

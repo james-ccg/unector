@@ -461,7 +461,7 @@ def get_driver(driver_id: int, user: dict = Depends(get_current_user)):
             if driver_record.company_id != user["company_id"]:
                 raise HTTPException(403, "Access denied")
         
-        driver = get_driver_details(driver_id)
+        driver = get_driver_details(driver_id, user["company_id"])
         if not driver:
             raise HTTPException(404, "Driver details not available")
         return driver
@@ -503,7 +503,7 @@ def update_subscription(
                         "driver(s). Upgrade your plan to activate more.",
                     )
 
-        toggle_driver_subscription(driver_id, body.active)
+        toggle_driver_subscription(driver_id, body.active, user["company_id"])
         return {"status": "updated", "active": body.active}
     except HTTPException:
         raise

@@ -400,22 +400,22 @@ def get_drivers_by_company(company_id: int) -> list[dict]:
         return result
 
 
-def toggle_driver_subscription(driver_id: int, active: bool) -> None:
+def toggle_driver_subscription(driver_id: int, active: bool, company_id: int) -> None:
     with get_session() as session:
         row = session.get(models.Driver, driver_id)
-        if row:
+        if row and row.company_id == company_id:
             row.subscription_active = active
             session.commit()
 
 
-def get_driver_details(driver_id: int) -> dict | None:
+def get_driver_details(driver_id: int, company_id: int) -> dict | None:
     """Returns detailed information about a specific driver including load history."""
     from datetime import datetime, timedelta
     from sqlalchemy import func, desc
-    
+
     with get_session() as session:
         driver = session.get(models.Driver, driver_id)
-        if not driver:
+        if not driver or driver.company_id != company_id:
             return None
         
         # Calculate start of current week (Monday)
