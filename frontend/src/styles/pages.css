@@ -137,13 +137,37 @@
   color: #16150f;
 }
 
-.billing-toggle-save {
-  font-size: 11px;
+.pricing-save-badge {
+  display: inline-block;
+  margin-left: 8px;
   font-weight: 700;
   color: var(--success);
 }
 
-.billing-toggle-option.active .billing-toggle-save {
+.pricing-multiplier {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px;
+  margin-bottom: 16px;
+}
+
+.pricing-multiplier-option {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pricing-multiplier-option.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: #16150f;
 }
 
