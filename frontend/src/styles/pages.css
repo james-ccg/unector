@@ -111,6 +111,7 @@
 
 .pricing-pill-toggle {
   display: inline-flex;
+  align-self: flex-start;
   gap: 4px;
   background: var(--bg);
   border: 1px solid var(--border);
