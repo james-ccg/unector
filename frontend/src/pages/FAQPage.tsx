@@ -24,8 +24,9 @@ export default function FAQPage() {
             <div className="faq-item card">
               <h3 className="faq-question"><CreditCard size={18} /> How does billing work?</h3>
               <p className="faq-answer">
-                You pay monthly only for active drivers via Stripe. 14-day free trial available.
-                $25/driver/month. No hidden fees.
+                Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers.
+                Max plans are $100/mo for up to 25 drivers, or $200/mo for up to 100 drivers.
+                Every paid plan starts with a 7-day free trial.
               </p>
             </div>
 
@@ -40,8 +41,8 @@ export default function FAQPage() {
             <div className="faq-item card">
               <h3 className="faq-question"><Map size={18} /> How does GPS tracking work?</h3>
               <p className="faq-answer">
-                Samsara integration. Auto notifications when driver approaches pickup/delivery.
-                Real-time tracking and ETA updates.
+                Samsara integration. Checks each vehicle's GPS position every couple of minutes
+                and automatically messages the driver's group when they're near pickup or delivery.
               </p>
             </div>
 
@@ -56,8 +57,8 @@ export default function FAQPage() {
             <div className="faq-item card">
               <h3 className="faq-question"><Users size={18} /> Can I add dispatchers?</h3>
               <p className="faq-answer">
-                Unlimited dispatchers in Professional and Enterprise plans. Each gets their own
-                dashboard login with appropriate permissions.
+                Yes - add as many dispatchers as you need, each with their own dashboard login
+                and permissions.
               </p>
             </div>
           </div>

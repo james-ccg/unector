@@ -18,9 +18,9 @@ export default function Footer() {
             </p>
             <div className="social-links">
               <a
-                href="https://t.me/FreightPilot_bot"
+                href="https://t.me/Freight_Pilot"
                 className="social-link"
-                aria-label="Telegram"
+                aria-label="Telegram channel"
                 target="_blank"
                 rel="noopener noreferrer"
               >

@@ -25,17 +25,25 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from config import FORCE_HTTPS, FRONTEND_URL, IS_PRODUCTION, TURNSTILE_SECRET_KEY, TURNSTILE_SITE_KEY, encrypt_value
+from config import (
+    FORCE_HTTPS,
+    FRONTEND_URL,
+    IS_PRODUCTION,
+    PLAN_LIMITS,
+    TURNSTILE_SECRET_KEY,
+    TURNSTILE_SITE_KEY,
+    encrypt_value,
+)
 from db.database import init_db
 from db.repository import (
     create_dispatcher,
     get_company,
     get_company_by_mc,
+    get_company_billing_info,
     get_dispatcher_by_username,
     get_dispatchers_by_company,
     get_drivers_by_company,
     get_driver_details,
-    get_billing_summary,
     toggle_driver_subscription,
     save_company_credential,
     get_company_credential,
@@ -195,6 +203,25 @@ class ConnectSamsaraRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("API key is required")
+        return v
+
+
+class CheckoutRequest(BaseModel):
+    tier: str  # "pro" | "max_5x" | "max_20x"
+    interval: str  # "month" | "year"
+
+    @field_validator("tier")
+    @classmethod
+    def _valid_tier(cls, v: str) -> str:
+        if v not in ("pro", "max_5x", "max_20x"):
+            raise ValueError("tier must be one of: pro, max_5x, max_20x")
+        return v
+
+    @field_validator("interval")
+    @classmethod
+    def _valid_interval(cls, v: str) -> str:
+        if v not in ("month", "year"):
+            raise ValueError("interval must be 'month' or 'year'")
         return v
 
 
@@ -461,7 +488,21 @@ def update_subscription(
                 raise HTTPException(404, "Driver not found")
             if driver_record.company_id != user["company_id"]:
                 raise HTTPException(403, "Access denied")
-        
+
+            # Enforce the plan's driver cap when turning a driver ON. No
+            # driver-creation endpoint exists yet (drivers are provisioned
+            # out-of-band today) - if one is added later, it needs this
+            # same check.
+            if body.active and not driver_record.subscription_active:
+                info = get_company_billing_info(user["company_id"])
+                limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info else 1
+                if info and info["active_drivers"] >= limit:
+                    raise HTTPException(
+                        402,
+                        f"Your {info['subscription_tier']} plan allows up to {limit} active "
+                        "driver(s). Upgrade your plan to activate more.",
+                    )
+
         toggle_driver_subscription(driver_id, body.active)
         return {"status": "updated", "active": body.active}
     except HTTPException:
@@ -623,22 +664,78 @@ def disconnect_samsara(user: dict = Depends(require_owner), _csrf: None = Depend
 
 
 # ------------------------------------------------------------------
-# Billing & subscription summary (owner only)
+# Billing & subscription (owner only, except the Stripe webhook below)
 # ------------------------------------------------------------------
 @app.get("/api/billing")
 def get_billing(user: dict = Depends(require_owner)):
-    """Returns billing summary with tiered pricing based on active driver count."""
+    """Returns the company's current plan, subscription status, and how
+    many of its PLAN_LIMITS driver cap is in use."""
+    info = get_company_billing_info(user["company_id"])
+    if info is None:
+        raise HTTPException(404, "Company not found")
+    tier = info["subscription_tier"]
+    return {
+        "tier": tier,
+        "status": info["subscription_status"],
+        "trial_ends_at": info["trial_ends_at"],
+        "billing_interval": info["billing_interval"],
+        "max_drivers": PLAN_LIMITS.get(tier, 1),
+        "active_drivers": info["active_drivers"],
+    }
+
+
+@app.post("/api/billing/checkout")
+def create_billing_checkout(
+    body: CheckoutRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    """Starts a Stripe Checkout session for the chosen paid plan. Returns
+    the URL to redirect the browser to."""
+    from services import stripe_service
+
     try:
-        billing = get_billing_summary(user["company_id"])
-        return billing if billing is not None else {
-            "active_drivers": 0,
-            "price_per_driver": 25.0,
-            "monthly_total": 0.0,
-        }
+        url = stripe_service.create_checkout_session(user["company_id"], body.tier, body.interval)
+        return {"url": url}
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         import logging
-        logging.exception("Failed to fetch billing for company %s", user["company_id"])
-        raise HTTPException(500, f"Failed to load billing information: {str(e)}")
+        logging.exception("Failed to create checkout session for company %s", user["company_id"])
+        raise HTTPException(500, f"Failed to start checkout: {str(e)}")
+
+
+@app.post("/api/billing/portal")
+def create_billing_portal(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
+    """Returns a URL to the Stripe-hosted billing portal (cancel, switch
+    plan, update card)."""
+    from services import stripe_service
+
+    try:
+        url = stripe_service.create_portal_session(user["company_id"])
+        return {"url": url}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        import logging
+        logging.exception("Failed to create billing portal session for company %s", user["company_id"])
+        raise HTTPException(500, f"Failed to open billing portal: {str(e)}")
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Stripe calls this server-to-server - no session cookie, no CSRF,
+    authenticated instead by verifying the Stripe-Signature header against
+    STRIPE_WEBHOOK_SECRET (see services/stripe_service.handle_webhook_event)."""
+    from services import stripe_service
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    try:
+        stripe_service.handle_webhook_event(payload, sig_header)
+    except Exception as e:
+        import logging
+        logging.exception("Stripe webhook processing failed")
+        raise HTTPException(400, f"Webhook error: {str(e)}")
+    return {"received": True}
 
 
 # ------------------------------------------------------------------
@@ -766,9 +863,17 @@ def get_dashboard(user: dict = Depends(get_current_user)):
             
             # Add billing info for owners
             if user.get("role") == "owner":
-                billing = get_billing_summary(user["company_id"])
+                billing = get_company_billing_info(user["company_id"])
                 if billing:
-                    result["billing"] = billing
+                    tier = billing["subscription_tier"]
+                    result["billing"] = {
+                        "tier": tier,
+                        "status": billing["subscription_status"],
+                        "trial_ends_at": billing["trial_ends_at"],
+                        "billing_interval": billing["billing_interval"],
+                        "max_drivers": PLAN_LIMITS.get(tier, 1),
+                        "active_drivers": billing["active_drivers"],
+                    }
             
             return result
             

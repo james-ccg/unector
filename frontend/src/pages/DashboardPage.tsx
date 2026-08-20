@@ -5,6 +5,7 @@ import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
 import { dashboardApi } from '../services/api'
+import { PLAN_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 
 // Matches index.css's dark theme tokens - recharts needs literal color
@@ -224,20 +225,21 @@ export default function DashboardPage() {
                 <Icon name="money" size={18} /> Subscription
               </h3>
               <div className="billing-row">
-                <span className="billing-label">Active drivers</span>
-                <span className="billing-value">{dashboardData.billing.active_drivers}</span>
-              </div>
-              <div className="billing-row">
-                <span className="billing-label">Price per driver</span>
-                <span className="billing-value">${dashboardData.billing.price_per_driver}</span>
+                <span className="billing-label">Plan</span>
+                <span className="billing-value">{PLAN_LABELS[dashboardData.billing.tier] || dashboardData.billing.tier}</span>
               </div>
               <div className="billing-row billing-total">
-                <span className="billing-label">Monthly total</span>
-                <span className="billing-value">${Math.round(dashboardData.billing.monthly_total).toLocaleString()}</span>
+                <span className="billing-label">Active drivers</span>
+                <span className="billing-value">
+                  {dashboardData.billing.active_drivers} / {dashboardData.billing.max_drivers}
+                </span>
               </div>
-              {dashboardData.billing.discount_applied && (
-                <p className="billing-hint">Volume discount applied for {dashboardData.billing.active_drivers}+ active drivers.</p>
+              {dashboardData.billing.status === 'trialing' && dashboardData.billing.trial_ends_at && (
+                <p className="billing-hint">
+                  Trial ends {new Date(dashboardData.billing.trial_ends_at).toLocaleDateString()}
+                </p>
               )}
+              <Link to="/settings" className="billing-manage-link">Manage billing →</Link>
             </div>
           )}
 

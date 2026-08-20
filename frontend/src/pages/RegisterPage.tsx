@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { authApi, publicApi } from '../services/api'
+import { authApi, billingApi, publicApi } from '../services/api'
 import Turnstile from '../components/Turnstile'
 import './LoginPage.css'
 
@@ -13,13 +13,28 @@ export default function RegisterPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
-  // Redirect if already logged in
+  // Once registered, either go straight to Stripe Checkout for the plan
+  // picked on the Pricing page (?plan=pro&interval=month), or - for the
+  // free tier / no plan param - the dashboard as usual.
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return
+
+    const plan = searchParams.get('plan')
+    if (!plan) {
       navigate('/dashboard')
+      return
     }
-  }, [isAuthenticated, navigate])
+
+    const interval = (searchParams.get('interval') === 'year' ? 'year' : 'month') as 'month' | 'year'
+    billingApi
+      .checkout(plan as 'pro' | 'max_5x' | 'max_20x', interval)
+      .then(({ url }) => {
+        window.location.href = url
+      })
+      .catch(() => navigate('/dashboard'))
+  }, [isAuthenticated, navigate, searchParams])
 
   useEffect(() => {
     publicApi.getConfig().then((c) => setTurnstileSiteKey(c.turnstile_site_key)).catch(() => {})

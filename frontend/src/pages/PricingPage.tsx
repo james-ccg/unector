@@ -1,7 +1,89 @@
+import { useState } from 'react'
 import { Check } from 'lucide-react'
 import Layout from '../components/Layout'
 
+type Interval = 'month' | 'year'
+type Tier = 'free' | 'pro' | 'max_5x' | 'max_20x'
+
+const MONTHLY_PRICE: Record<Tier, number> = { free: 0, pro: 20, max_5x: 100, max_20x: 200 }
+const YEARLY_PRICE: Record<Tier, number> = { free: 0, pro: 200, max_5x: 1000, max_20x: 2000 }
+
+function priceDisplay(tier: Tier, interval: Interval) {
+  if (tier === 'free') return { amount: '$0', note: null as string | null }
+  if (interval === 'month') {
+    return { amount: `$${MONTHLY_PRICE[tier]}`, note: null }
+  }
+  const perMonth = Math.round(YEARLY_PRICE[tier] / 12)
+  return { amount: `$${perMonth}`, note: `$${YEARLY_PRICE[tier]} billed yearly` }
+}
+
+interface PlanCard {
+  tier: Tier
+  name: string
+  tagline: string
+  badge?: string
+  featured?: boolean
+  features: string[]
+  cta: string
+}
+
+const PLANS: PlanCard[] = [
+  {
+    tier: 'free',
+    name: 'Free',
+    tagline: 'Look around before you commit',
+    features: [
+      'Full access to the dashboard and all pages',
+      'Up to 1 active driver',
+      'No credit card required',
+    ],
+    cta: 'Get started free',
+  },
+  {
+    tier: 'pro',
+    name: 'Pro',
+    tagline: 'For small fleets running real dispatch',
+    badge: 'Most popular',
+    featured: true,
+    features: [
+      'Up to 5 active drivers',
+      'AI load extraction from Gmail',
+      'GPS tracking via Samsara',
+      'Telegram bot for drivers',
+      'Unlimited dispatchers',
+      '7-day free trial',
+    ],
+    cta: 'Start Pro trial',
+  },
+  {
+    tier: 'max_5x',
+    name: 'Max 5x',
+    tagline: '5x more drivers than Pro',
+    features: [
+      'Up to 25 active drivers',
+      'Everything in Pro',
+      'Priority support',
+      '7-day free trial',
+    ],
+    cta: 'Start Max 5x trial',
+  },
+  {
+    tier: 'max_20x',
+    name: 'Max 20x',
+    tagline: '20x more drivers than Pro',
+    features: [
+      'Up to 100 active drivers',
+      'Everything in Max 5x',
+      'Priority support',
+      '7-day free trial',
+    ],
+    cta: 'Start Max 20x trial',
+  },
+]
+
 export default function PricingPage() {
+  const [interval, setInterval] = useState<Interval>('month')
+
   return (
     <Layout>
       <div className="page-container">
@@ -9,73 +91,66 @@ export default function PricingPage() {
           <div className="page-header">
             <h1 className="page-title">Simple, Transparent Pricing</h1>
             <p className="page-description">
-              Only pay for active drivers. 14-day free trial. Cancel anytime.
+              Start free, no card required. Every paid plan includes a 7-day free trial.
             </p>
           </div>
 
-          <div className="pricing-grid">
-            <div className="pricing-card card">
-              <div className="pricing-badge">Starter</div>
-              <div className="pricing-price">
-                <span className="price-amount">$25</span>
-                <span className="price-period">/ driver / month</span>
-              </div>
-              <p className="pricing-description">Perfect for small fleets starting out</p>
-              <ul className="pricing-features">
-                <li><Check size={16} /> Up to 5 drivers</li>
-                <li><Check size={16} /> AI load extraction</li>
-                <li><Check size={16} /> Gmail integration</li>
-                <li><Check size={16} /> GPS tracking</li>
-                <li><Check size={16} /> Telegram bot</li>
-                <li><Check size={16} /> Basic dashboard</li>
-                <li><Check size={16} /> 1 dispatcher login</li>
-              </ul>
-              <a href="/register" className="btn-primary btn-full">
-                Start Free Trial
-              </a>
-            </div>
-
-            <div className="pricing-card card featured">
-              <div className="pricing-badge featured">Most Popular</div>
-              <div className="pricing-price">
-                <span className="price-amount">$22</span>
-                <span className="price-period">/ driver / month</span>
-              </div>
-              <p className="pricing-description">Best value for growing operations</p>
-              <ul className="pricing-features">
-                <li><Check size={16} /> Up to 20 drivers</li>
-                <li><Check size={16} /> Everything in Starter</li>
-                <li><Check size={16} /> Advanced analytics</li>
-                <li><Check size={16} /> Custom notifications</li>
-                <li><Check size={16} /> Priority support</li>
-                <li><Check size={16} /> Unlimited dispatchers</li>
-                <li><Check size={16} /> API access</li>
-              </ul>
-              <a href="/register" className="btn-primary btn-full">
-                Start Free Trial
-              </a>
-            </div>
-
-            <div className="pricing-card card">
-              <div className="pricing-badge">Enterprise</div>
-              <div className="pricing-price">
-                <span className="price-amount">Custom</span>
-              </div>
-              <p className="pricing-description">For large fleets with custom needs</p>
-              <ul className="pricing-features">
-                <li><Check size={16} /> Unlimited drivers</li>
-                <li><Check size={16} /> Everything in Professional</li>
-                <li><Check size={16} /> Dedicated account manager</li>
-                <li><Check size={16} /> Custom integrations</li>
-                <li><Check size={16} /> White-label options</li>
-                <li><Check size={16} /> SLA guarantee</li>
-                <li><Check size={16} /> 24/7 phone support</li>
-              </ul>
-              <a href="#contact" className="btn-secondary btn-full">
-                Contact Sales
-              </a>
+          <div className="pricing-toggle-wrap">
+            <div className="billing-toggle">
+              <button
+                type="button"
+                className={`billing-toggle-option ${interval === 'month' ? 'active' : ''}`}
+                onClick={() => setInterval('month')}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                className={`billing-toggle-option ${interval === 'year' ? 'active' : ''}`}
+                onClick={() => setInterval('year')}
+              >
+                Yearly <span className="billing-toggle-save">Save 17%</span>
+              </button>
             </div>
           </div>
+
+          <div className="pricing-grid">
+            {PLANS.map((plan) => {
+              const price = priceDisplay(plan.tier, interval)
+              const href =
+                plan.tier === 'free' ? '/register' : `/register?plan=${plan.tier}&interval=${interval}`
+              return (
+                <div key={plan.tier} className={`pricing-card ${plan.featured ? 'featured' : ''}`}>
+                  {plan.badge && <div className="pricing-badge featured">{plan.badge}</div>}
+                  <h3 className="pricing-name">{plan.name}</h3>
+                  <div className="pricing-price">
+                    <span className="price-amount">{price.amount}</span>
+                    {plan.tier !== 'free' && <span className="price-period">/mo</span>}
+                  </div>
+                  {price.note && <p className="pricing-price-note">{price.note}</p>}
+                  <p className="pricing-description">{plan.tagline}</p>
+                  <ul className="pricing-features">
+                    {plan.features.map((f) => (
+                      <li key={f}>
+                        <Check size={16} /> {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <a
+                    href={href}
+                    className={`pricing-cta ${plan.featured ? 'btn-primary' : 'btn-secondary'}`}
+                  >
+                    {plan.cta}
+                  </a>
+                </div>
+              )
+            })}
+          </div>
+
+          <p className="pricing-footnote">
+            Prices shown do not include tax. A trial isn't available twice for the same email,
+            company, card, or connected Gmail account.
+          </p>
         </div>
       </div>
     </Layout>

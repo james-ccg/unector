@@ -102,17 +102,69 @@
 }
 
 /* Pricing Styles */
+.pricing-toggle-wrap {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.billing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+}
+
+.billing-toggle-option {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.billing-toggle-option.active {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #16150f;
+}
+
+.billing-toggle-save {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.billing-toggle-option.active .billing-toggle-save {
+  color: #16150f;
+}
+
 .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 32px;
-  max-width: 1100px;
+  max-width: 1300px;
   margin: 0 auto;
 }
 
 .pricing-card {
   position: relative;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
   transition: all 0.3s ease;
 }
 
@@ -124,6 +176,7 @@
 
 .pricing-badge {
   display: inline-block;
+  align-self: flex-start;
   background: var(--border);
   color: var(--text-muted);
   font-size: 12px;
@@ -139,8 +192,16 @@
   color: #16150f;
 }
 
+.pricing-name {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+}
+
 .pricing-price {
-  margin-bottom: 16px;
+  margin-bottom: 4px;
 }
 
 .price-amount {
@@ -156,6 +217,12 @@
   margin-left: 8px;
 }
 
+.pricing-price-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
 .pricing-description {
   color: var(--text-muted);
   margin-bottom: 24px;
@@ -168,6 +235,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
 }
 
 .pricing-features li {
@@ -181,6 +249,23 @@
 .pricing-features li svg {
   flex-shrink: 0;
   color: var(--success);
+}
+
+.pricing-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: auto;
+  text-decoration: none;
+}
+
+.pricing-footnote {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  max-width: 640px;
+  margin: 40px auto 0;
 }
 
 /* Stats Showcase */

@@ -316,3 +316,26 @@ export const publicApi = {
   // the widget just doesn't render in that case and forms submit without it.
   getConfig: () => apiRequest<{ turnstile_site_key: string | null }>('/api/public/config'),
 }
+
+export interface BillingStatus {
+  tier: 'free' | 'pro' | 'max_5x' | 'max_20x'
+  status: 'none' | 'trialing' | 'active' | 'past_due' | 'canceled'
+  trial_ends_at: string | null
+  billing_interval: 'month' | 'year' | null
+  max_drivers: number
+  active_drivers: number
+}
+
+export const billingApi = {
+  getStatus: () => apiRequest<BillingStatus>('/api/billing'),
+
+  // Both return a Stripe-hosted URL - the caller redirects the browser
+  // there with `window.location.href = url` rather than navigating in-app.
+  checkout: (tier: 'pro' | 'max_5x' | 'max_20x', interval: 'month' | 'year') =>
+    apiRequest<{ url: string }>('/api/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ tier, interval }),
+    }),
+
+  openPortal: () => apiRequest<{ url: string }>('/api/billing/portal', { method: 'POST' }),
+}

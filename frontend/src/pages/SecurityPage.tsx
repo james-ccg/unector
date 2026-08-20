@@ -1,4 +1,4 @@
-import { Lock, KeyRound, ShieldCheck, Database, Eye, Search } from 'lucide-react'
+import { Lock, KeyRound, ShieldCheck, ShieldHalf, Eye, Search } from 'lucide-react'
 import Layout from '../components/Layout'
 
 export default function SecurityPage() {
@@ -16,10 +16,10 @@ export default function SecurityPage() {
           <div className="content-grid">
             <div className="content-card card">
               <div className="content-icon"><KeyRound size={24} /></div>
-              <h3 className="content-title">End-to-End Encryption</h3>
+              <h3 className="content-title">Encrypted in Transit</h3>
               <p className="content-text">
-                All data transmitted between your devices and our servers is encrypted using
-                industry-standard TLS 1.3 protocol.
+                All data between your devices and our servers travels over HTTPS/TLS -
+                nothing is ever sent in the clear.
               </p>
             </div>
 
@@ -42,11 +42,12 @@ export default function SecurityPage() {
             </div>
 
             <div className="content-card card">
-              <div className="content-icon"><Database size={24} /></div>
-              <h3 className="content-title">Regular Backups</h3>
+              <div className="content-icon"><ShieldHalf size={24} /></div>
+              <h3 className="content-title">Two-Factor Authentication</h3>
               <p className="content-text">
-                Automated backups with point-in-time recovery, so your data is never one
-                failure away from gone.
+                Authenticator app, security keys (Touch ID, Windows Hello, YubiKey), email,
+                SMS, or Telegram - protect your login with a second factor, plus one-time
+                backup recovery codes.
               </p>
             </div>
 
@@ -61,10 +62,11 @@ export default function SecurityPage() {
 
             <div className="content-card card">
               <div className="content-icon"><Search size={24} /></div>
-              <h3 className="content-title">Ongoing Security Review</h3>
+              <h3 className="content-title">Audited Dependencies</h3>
               <p className="content-text">
-                Dependencies and code are regularly scanned and reviewed to catch and fix
-                vulnerabilities early.
+                Every backend and frontend dependency has been checked with pip-audit and
+                npm audit for known vulnerabilities, with fixes applied where available -
+                and we re-run these checks before major releases.
               </p>
             </div>
           </div>

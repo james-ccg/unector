@@ -90,6 +90,44 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 
+# ------------------------------------------------------------------
+# Billing (Stripe)
+# ------------------------------------------------------------------
+# Use TEST-mode keys (sk_test_.../whsec_test_... from a `stripe listen` tunnel
+# during local dev) until you're ready to actually charge people - see
+# stripe_setup.py to create the Products/Prices these point at.
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip() or None
+# Only needed if this deployment terminates its own webhook endpoint (it does,
+# at POST /api/billing/webhook) - `stripe listen --forward-to <url>` prints a
+# dev value; the Stripe Dashboard issues a separate one for the live endpoint.
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip() or None
+
+# Price IDs from the Stripe Dashboard (or printed by stripe_setup.py).
+STRIPE_PRICE_PRO_MONTHLY = os.getenv("STRIPE_PRICE_PRO_MONTHLY", "").strip() or None
+STRIPE_PRICE_PRO_YEARLY = os.getenv("STRIPE_PRICE_PRO_YEARLY", "").strip() or None
+STRIPE_PRICE_MAX_5X_MONTHLY = os.getenv("STRIPE_PRICE_MAX_5X_MONTHLY", "").strip() or None
+STRIPE_PRICE_MAX_5X_YEARLY = os.getenv("STRIPE_PRICE_MAX_5X_YEARLY", "").strip() or None
+STRIPE_PRICE_MAX_20X_MONTHLY = os.getenv("STRIPE_PRICE_MAX_20X_MONTHLY", "").strip() or None
+STRIPE_PRICE_MAX_20X_YEARLY = os.getenv("STRIPE_PRICE_MAX_20X_YEARLY", "").strip() or None
+
+# What each tier is allowed to have active at once. "free" needs no Stripe
+# subscription at all - it's the default for every new company. The paid
+# tiers are priced in PLAN_PRICES below (dollars, no tax - Stripe Checkout
+# adds tax at checkout, same as the reference pricing pages).
+PLAN_LIMITS = {"free": 1, "pro": 5, "max_5x": 25, "max_20x": 100}
+
+PLAN_PRICES = {
+    "pro": {"month": 20, "year": 200},
+    "max_5x": {"month": 100, "year": 1000},
+    "max_20x": {"month": 200, "year": 2000},
+}
+
+PLAN_PRICE_IDS = {
+    "pro": {"month": STRIPE_PRICE_PRO_MONTHLY, "year": STRIPE_PRICE_PRO_YEARLY},
+    "max_5x": {"month": STRIPE_PRICE_MAX_5X_MONTHLY, "year": STRIPE_PRICE_MAX_5X_YEARLY},
+    "max_20x": {"month": STRIPE_PRICE_MAX_20X_MONTHLY, "year": STRIPE_PRICE_MAX_20X_YEARLY},
+}
+
 # Master key used to encrypt/decrypt each company's credentials.
 # Keep this only in .env on the server - never commit it or paste it anywhere.
 FERNET_KEY = os.getenv("FERNET_MASTER_KEY")

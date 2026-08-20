@@ -503,37 +503,141 @@ def get_driver_details(driver_id: int) -> dict | None:
         }
 
 
-def get_billing_summary(company_id: int) -> dict:
-    """Calculates billing information for a company based on active subscriptions."""
+def get_company_billing_info(company_id: int) -> dict | None:
+    """Everything services/stripe_service.py and the /api/billing route need:
+    the company's current plan/subscription state plus how many active
+    drivers count against its PLAN_LIMITS cap."""
     with get_session() as session:
-        # Count active drivers
-        active_drivers = session.query(models.Driver).filter(
-            models.Driver.company_id == company_id,
-            models.Driver.subscription_active == True
-        ).count()
-        
-        # Base price per driver
-        base_price = 25.0
-        
-        # Volume discount tiers
-        if active_drivers >= 100:
-            per_driver_price = 17.0  # $1,700 for 100 drivers
-        elif active_drivers >= 50:
-            per_driver_price = 20.0  # $1,000 for 50 drivers
-        elif active_drivers >= 20:
-            per_driver_price = 22.0  # $440 for 20 drivers
-        else:
-            per_driver_price = base_price
-        
-        monthly_total = active_drivers * per_driver_price
-
+        row = session.get(models.Company, company_id)
+        if not row:
+            return None
+        active_drivers = (
+            session.query(models.Driver)
+            .filter(models.Driver.company_id == company_id, models.Driver.subscription_active == True)
+            .count()
+        )
         return {
+            "id": row.id,
+            "email": row.email,
+            "mc_number": row.mc_number,
+            "company_name": row.company_name,
+            "subscription_tier": row.subscription_tier,
+            "subscription_status": row.subscription_status,
+            "stripe_customer_id": row.stripe_customer_id,
+            "stripe_subscription_id": row.stripe_subscription_id,
+            "trial_ends_at": row.trial_ends_at,
+            "billing_interval": row.billing_interval,
             "active_drivers": active_drivers,
-            "price_per_driver": per_driver_price,
-            "monthly_total": monthly_total,
-            "base_price": base_price,
-            "discount_applied": per_driver_price < base_price,
         }
+
+
+def set_company_stripe_customer(company_id: int, stripe_customer_id: str) -> None:
+    with get_session() as session:
+        row = session.get(models.Company, company_id)
+        if row:
+            row.stripe_customer_id = stripe_customer_id
+            session.commit()
+
+
+_UNSET = object()
+
+
+def update_company_subscription(
+    company_id: int,
+    *,
+    tier=_UNSET,
+    status=_UNSET,
+    stripe_subscription_id=_UNSET,
+    billing_interval=_UNSET,
+    trial_ends_at=_UNSET,
+) -> None:
+    """Updates whichever subscription fields are passed, leaving the rest
+    untouched - called from the Stripe webhook handler as a subscription
+    moves through its lifecycle (trialing -> active -> canceled, etc).
+    Uses a sentinel default rather than None so callers can explicitly
+    clear trial_ends_at back to None (e.g. once a trial converts)."""
+    with get_session() as session:
+        row = session.get(models.Company, company_id)
+        if not row:
+            return
+        if tier is not _UNSET:
+            row.subscription_tier = tier
+        if status is not _UNSET:
+            row.subscription_status = status
+        if stripe_subscription_id is not _UNSET:
+            row.stripe_subscription_id = stripe_subscription_id
+        if billing_interval is not _UNSET:
+            row.billing_interval = billing_interval
+        if trial_ends_at is not _UNSET:
+            row.trial_ends_at = trial_ends_at
+        session.commit()
+
+
+def find_trial_redemption(
+    email: str | None = None,
+    mc_number: str | None = None,
+    card_fingerprint: str | None = None,
+    gmail_address: str | None = None,
+) -> dict | None:
+    """Returns an existing trial redemption matching ANY of the given
+    signals (on any company), or None if none matches - None means
+    "eligible for a free trial"."""
+    from sqlalchemy import or_
+
+    conditions = []
+    if email:
+        conditions.append(models.TrialRedemption.email == email)
+    if mc_number:
+        conditions.append(models.TrialRedemption.mc_number == mc_number)
+    if card_fingerprint:
+        conditions.append(models.TrialRedemption.card_fingerprint == card_fingerprint)
+    if gmail_address:
+        conditions.append(models.TrialRedemption.gmail_address == gmail_address)
+    if not conditions:
+        return None
+
+    with get_session() as session:
+        row = session.query(models.TrialRedemption).filter(or_(*conditions)).first()
+        if not row:
+            return None
+        return {
+            "id": row.id,
+            "company_id": row.company_id,
+            "email": row.email,
+            "mc_number": row.mc_number,
+            "card_fingerprint": row.card_fingerprint,
+            "gmail_address": row.gmail_address,
+        }
+
+
+def upsert_trial_redemption(
+    company_id: int,
+    email: str | None = None,
+    mc_number: str | None = None,
+    card_fingerprint: str | None = None,
+    gmail_address: str | None = None,
+) -> None:
+    """One row per company - inserts on that company's first trial, updates
+    in place on Stripe webhook retries or once a later signal (e.g. a
+    connected Gmail address) becomes known."""
+    with get_session() as session:
+        row = (
+            session.query(models.TrialRedemption)
+            .filter(models.TrialRedemption.company_id == company_id)
+            .first()
+        )
+        if not row:
+            row = models.TrialRedemption(company_id=company_id)
+            session.add(row)
+        if email:
+            row.email = email
+        if mc_number:
+            row.mc_number = mc_number
+        if card_fingerprint:
+            row.card_fingerprint = card_fingerprint
+        if gmail_address:
+            row.gmail_address = gmail_address
+        session.commit()
 
 
 def get_dispatchers_by_company(company_id: int) -> list[dict]:

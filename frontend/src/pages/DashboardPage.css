@@ -233,6 +233,19 @@
   font-style: italic;
 }
 
+.billing-manage-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.billing-manage-link:hover {
+  text-decoration: underline;
+}
+
 .section-title {
   font-size: 24px;
   font-weight: 700;

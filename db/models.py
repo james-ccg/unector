@@ -25,7 +25,16 @@ class Company(Base):
     telegram_group_prefix: Mapped[str] = mapped_column(String(20), unique=True)
     email: Mapped[str | None] = mapped_column(String(200), nullable=True)  # owner's contact/billing email
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)  # owner's Mini App login
-    subscription_tier: Mapped[str] = mapped_column(String(50), default="trial")
+
+    # Billing - "free" needs no Stripe objects at all. Paid tiers get a Stripe customer
+    # (and, once they've subscribed, a Stripe subscription) attached below.
+    subscription_tier: Mapped[str] = mapped_column(String(50), default="free")  # free | pro | max_5x | max_20x
+    subscription_status: Mapped[str] = mapped_column(String(20), default="none")  # none|trialing|active|past_due|canceled
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "month" | "year"
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
@@ -211,3 +220,23 @@ class TelegramLinkToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
+class TrialRedemption(Base):
+    """One row per company that has ever started a paid-plan free trial.
+    Records every identifying signal we had at the time (login email, MC
+    number, the card's Stripe fingerprint, and - once known - the connected
+    Gmail address) so a new signup that matches ANY of them on a DIFFERENT
+    company can be denied a second free week. See services/stripe_service.py
+    for how this is checked and updated."""
+    __tablename__ = "trial_redemptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id"), nullable=True)
+
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    mc_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    card_fingerprint: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    gmail_address: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    redeemed_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)

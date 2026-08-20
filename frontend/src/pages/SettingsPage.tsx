@@ -5,7 +5,8 @@ import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import { useAuth } from '../context/AuthContext'
-import { settingsApi, dashboardApi } from '../services/api'
+import { settingsApi, dashboardApi, billingApi, type BillingStatus } from '../services/api'
+import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 import './SettingsPage.css'
 
@@ -23,6 +24,9 @@ export default function SettingsPage() {
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([])
   const [loading, setLoading] = useState(true)
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+
+  const [billing, setBilling] = useState<BillingStatus | null>(null)
+  const [billingBusy, setBillingBusy] = useState(false)
 
   // Samsara "connect" modal state
   const [samsaraModalOpen, setSamsaraModalOpen] = useState(false)
@@ -67,6 +71,21 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Handle the redirect back from Stripe Checkout (?billing=success)
+  useEffect(() => {
+    const billingStatus = searchParams.get('billing')
+    if (!billingStatus) return
+
+    if (billingStatus === 'success') {
+      setBanner({ kind: 'success', text: 'Subscription started. It may take a few seconds to appear below.' })
+      loadAll()
+    }
+
+    searchParams.delete('billing')
+    setSearchParams(searchParams, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const loadAll = async () => {
     if (!user) return
     try {
@@ -75,11 +94,25 @@ export default function SettingsPage() {
       if (user.role === 'owner') {
         const dispatcherData = await dashboardApi.listDispatchers()
         setDispatchers(dispatcherData)
+        const billingData = await billingApi.getStatus()
+        setBilling(billingData)
       }
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleManageBilling = async () => {
+    if (!user) return
+    setBillingBusy(true)
+    try {
+      const { url } = await billingApi.openPortal()
+      window.location.href = url
+    } catch (err: any) {
+      setBanner({ kind: 'error', text: err.message || 'Could not open the billing portal.' })
+      setBillingBusy(false)
     }
   }
 
@@ -221,6 +254,44 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* ---------------- Billing ---------------- */}
+        {isOwner && billing && (
+          <section className="settings-section">
+            <h2 className="section-title">Billing</h2>
+            <div className="card billing-card">
+              <div className="billing-row">
+                <span className="billing-label">Plan</span>
+                <span className="billing-value">
+                  {PLAN_LABELS[billing.tier] || billing.tier}
+                  {billing.tier !== 'free' && ` — ${PLAN_PRICE_LABELS[billing.tier]}`}
+                </span>
+              </div>
+              <div className="billing-row billing-total">
+                <span className="billing-label">Active drivers</span>
+                <span className="billing-value">{billing.active_drivers} / {billing.max_drivers}</span>
+              </div>
+              {billing.status === 'trialing' && billing.trial_ends_at && (
+                <p className="billing-hint">
+                  Trial ends {new Date(billing.trial_ends_at).toLocaleDateString()} - you'll then be
+                  charged automatically unless you cancel.
+                </p>
+              )}
+              {billing.status === 'past_due' && (
+                <p className="billing-hint">Your last payment failed. Update your card to keep your plan active.</p>
+              )}
+              <div className="integration-actions" style={{ marginTop: 16 }}>
+                {billing.tier === 'free' ? (
+                  <Link to="/pages/pricing" className="btn btn-primary">Upgrade plan</Link>
+                ) : (
+                  <button className="btn btn-primary" onClick={handleManageBilling} disabled={billingBusy}>
+                    {billingBusy ? 'Opening...' : 'Manage billing'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ---------------- Integrations ---------------- */}
         <section className="settings-section">
