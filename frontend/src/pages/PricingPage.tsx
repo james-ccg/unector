@@ -23,13 +23,35 @@ const MAX_FEATURES: Record<Multiplier, { tagline: string; drivers: string; every
   '20x': { tagline: '20x more drivers than Pro', drivers: 'Up to 100 active drivers', everything: 'Everything in Max 5x' },
 }
 
+function IntervalToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
+  return (
+    <div className="pricing-pill-toggle">
+      <button
+        type="button"
+        className={`pricing-pill-option ${value === 'month' ? 'active' : ''}`}
+        onClick={() => onChange('month')}
+      >
+        Monthly
+      </button>
+      <button
+        type="button"
+        className={`pricing-pill-option ${value === 'year' ? 'active' : ''}`}
+        onClick={() => onChange('year')}
+      >
+        Yearly
+      </button>
+    </div>
+  )
+}
+
 export default function PricingPage() {
-  const [interval, setInterval] = useState<Interval>('month')
+  const [proInterval, setProInterval] = useState<Interval>('month')
+  const [maxInterval, setMaxInterval] = useState<Interval>('month')
   const [maxMultiplier, setMaxMultiplier] = useState<Multiplier>('5x')
 
-  const proPrice = priceDisplay('pro', interval)
+  const proPrice = priceDisplay('pro', proInterval)
   const maxTier: Tier = maxMultiplier === '5x' ? 'max_5x' : 'max_20x'
-  const maxPrice = priceDisplay(maxTier, interval)
+  const maxPrice = priceDisplay(maxTier, maxInterval)
   const maxInfo = MAX_FEATURES[maxMultiplier]
 
   return (
@@ -41,25 +63,6 @@ export default function PricingPage() {
             <p className="page-description">
               Start free, no card required. Every paid plan includes a 7-day free trial.
             </p>
-          </div>
-
-          <div className="pricing-toggle-wrap">
-            <div className="billing-toggle">
-              <button
-                type="button"
-                className={`billing-toggle-option ${interval === 'month' ? 'active' : ''}`}
-                onClick={() => setInterval('month')}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                className={`billing-toggle-option ${interval === 'year' ? 'active' : ''}`}
-                onClick={() => setInterval('year')}
-              >
-                Yearly
-              </button>
-            </div>
           </div>
 
           <div className="pricing-grid">
@@ -80,11 +83,12 @@ export default function PricingPage() {
             <div className="pricing-card featured">
               <div className="pricing-badge featured">Most popular</div>
               <h3 className="pricing-name">Pro</h3>
+              <IntervalToggle value={proInterval} onChange={setProInterval} />
               <div className="pricing-price">
                 <span className="price-amount">{proPrice.amount}</span>
                 <span className="price-period">/mo</span>
               </div>
-              {interval === 'year' && (
+              {proInterval === 'year' && (
                 <p className="pricing-price-note">
                   {proPrice.note}
                   <span className="pricing-save-badge">Save 17%</span>
@@ -99,34 +103,40 @@ export default function PricingPage() {
                 <li><Check size={16} /> Unlimited dispatchers</li>
                 <li><Check size={16} /> 7-day free trial</li>
               </ul>
-              <a href={`/register?plan=pro&interval=${interval}`} className="pricing-cta btn-primary">
+              <a href={`/register?plan=pro&interval=${proInterval}`} className="pricing-cta btn-primary">
                 Start Pro trial
               </a>
             </div>
 
             <div className="pricing-card">
               <h3 className="pricing-name">Max</h3>
-              <div className="pricing-multiplier">
+              <div className="pricing-pill-toggle">
                 <button
                   type="button"
-                  className={`pricing-multiplier-option ${maxMultiplier === '5x' ? 'active' : ''}`}
+                  className={`pricing-pill-option ${maxMultiplier === '5x' ? 'active' : ''}`}
                   onClick={() => setMaxMultiplier('5x')}
                 >
                   5x
                 </button>
                 <button
                   type="button"
-                  className={`pricing-multiplier-option ${maxMultiplier === '20x' ? 'active' : ''}`}
+                  className={`pricing-pill-option ${maxMultiplier === '20x' ? 'active' : ''}`}
                   onClick={() => setMaxMultiplier('20x')}
                 >
                   20x
                 </button>
               </div>
+              <IntervalToggle value={maxInterval} onChange={setMaxInterval} />
               <div className="pricing-price">
                 <span className="price-amount">{maxPrice.amount}</span>
                 <span className="price-period">/mo</span>
               </div>
-              {maxPrice.note && <p className="pricing-price-note">{maxPrice.note}</p>}
+              {maxInterval === 'year' && (
+                <p className="pricing-price-note">
+                  {maxPrice.note}
+                  <span className="pricing-save-badge">Save 17%</span>
+                </p>
+              )}
               <p className="pricing-description">{maxInfo.tagline}</p>
               <ul className="pricing-features">
                 <li><Check size={16} /> {maxInfo.drivers}</li>
@@ -134,7 +144,7 @@ export default function PricingPage() {
                 <li><Check size={16} /> Priority support</li>
                 <li><Check size={16} /> 7-day free trial</li>
               </ul>
-              <a href={`/register?plan=${maxTier}&interval=${interval}`} className="pricing-cta btn-secondary">
+              <a href={`/register?plan=${maxTier}&interval=${maxInterval}`} className="pricing-cta btn-secondary">
                 Start Max {maxMultiplier} trial
               </a>
             </div>
