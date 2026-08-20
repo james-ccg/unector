@@ -77,7 +77,11 @@ export default function RegisterPage() {
               <span className="logo-text">Freight Pilot</span>
             </Link>
             <h1 className="page-hero-title">Register Your Company</h1>
-            <p className="page-hero-description">Start your 14-day free trial today</p>
+            <p className="page-hero-description">
+              {searchParams.get('plan')
+                ? 'Start your 7-day free trial today'
+                : "Get started free - no card required"}
+            </p>
           </div>
         </div>
       </section>
