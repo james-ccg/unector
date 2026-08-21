@@ -1,6 +1,8 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
+import { PreferencesProvider } from './context/PreferencesContext'
 import PrivateRoute from './components/PrivateRoute'
 import RequireGmailConnected from './components/RequireGmailConnected'
 import HomePage from './pages/HomePage'
@@ -32,56 +34,60 @@ function RouteFallback() {
 
 function App() {
   return (
-    <AuthProvider>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/pages/faq" element={<FAQPage />} />
-          <Route path="/pages/pricing" element={<PricingPage />} />
-          <Route path="/pages/security" element={<SecurityPage />} />
-          <Route path="/pages/trust" element={<TrustPage />} />
-          <Route path="/pages/updates" element={<UpdatesPage />} />
-          <Route
-            path="/onboarding/connect-gmail"
-            element={
-              <PrivateRoute>
-                <OnboardingGmailPage />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute>
-                <RequireGmailConnected>
-                  <DashboardPage />
-                </RequireGmailConnected>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <PrivateRoute>
-                <SettingsPage />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/monitoring"
-            element={
-              <PrivateRoute>
-                <RequireGmailConnected>
-                  <MonitoringPage />
-                </RequireGmailConnected>
-              </PrivateRoute>
-            }
-          />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
+    <ThemeProvider>
+      <PreferencesProvider>
+      <AuthProvider>
+        <Suspense fallback={<RouteFallback />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/pages/faq" element={<FAQPage />} />
+            <Route path="/pages/pricing" element={<PricingPage />} />
+            <Route path="/pages/security" element={<SecurityPage />} />
+            <Route path="/pages/trust" element={<TrustPage />} />
+            <Route path="/pages/updates" element={<UpdatesPage />} />
+            <Route
+              path="/onboarding/connect-gmail"
+              element={
+                <PrivateRoute>
+                  <OnboardingGmailPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <PrivateRoute>
+                  <RequireGmailConnected>
+                    <DashboardPage />
+                  </RequireGmailConnected>
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <PrivateRoute>
+                  <SettingsPage />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/monitoring"
+              element={
+                <PrivateRoute>
+                  <RequireGmailConnected>
+                    <MonitoringPage />
+                  </RequireGmailConnected>
+                </PrivateRoute>
+              }
+            />
+          </Routes>
+        </Suspense>
+      </AuthProvider>
+      </PreferencesProvider>
+    </ThemeProvider>
   )
 }
 

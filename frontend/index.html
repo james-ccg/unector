@@ -6,6 +6,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Freight Pilot - Telegram bot for trucking dispatch management" />
     <title>Freight Pilot - Dispatch Management</title>
+    <script>
+      // Applies the saved theme/font-size/motion prefs before React (or even
+      // the CSS) loads, so there's no flash of the wrong appearance on first
+      // paint. "system"/"medium" (the defaults) set no attribute at all -
+      // index.css's prefers-color-scheme media query and the implicit 1x
+      // zoom handle those cases on their own. Reduce-motion has no
+      // attribute-less default: with nothing stored yet, it falls back to
+      // the OS accessibility setting, mirroring PreferencesContext's own
+      // first-run logic.
+      (function () {
+        var theme = localStorage.getItem('fp-theme');
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+
+        var fontSize = localStorage.getItem('fp-font-size');
+        if (fontSize === 'small' || fontSize === 'large') {
+          document.documentElement.setAttribute('data-font-size', fontSize);
+        }
+
+        var reduceMotion = localStorage.getItem('fp-reduce-motion');
+        if (reduceMotion === null) {
+          reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'true' : 'false';
+        }
+        document.documentElement.setAttribute('data-reduce-motion', reduceMotion);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

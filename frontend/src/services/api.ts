@@ -75,13 +75,21 @@ export async function apiRequest<T>(
       const body = asRecord(data)
       let errorMsg = (body.detail as string) || (body.message as string) || 'Request failed'
 
+      // A 401 from a login/register/2FA-challenge call just means THAT
+      // attempt was rejected (wrong password, wrong code, ...) - there was
+      // no prior session to "expire". Only an authenticated call failing
+      // with 401 actually means the session lapsed.
+      const isLoginAttempt = path.startsWith('/api/auth/') || path.startsWith('/api/2fa/login/')
+
       switch (response.status) {
         case 401:
-          errorMsg = 'Session expired. Please log in again.'
-          // Lets AuthContext clear its stale user state and redirect - it
-          // ignores this while already logged out (e.g. the routine
-          // session check on a public page), so no redirect loop.
-          window.dispatchEvent(new Event('fp:session-expired'))
+          if (!isLoginAttempt) {
+            errorMsg = 'Session expired. Please log in again.'
+            // Lets AuthContext clear its stale user state and redirect - it
+            // ignores this while already logged out (e.g. the routine
+            // session check on a public page), so no redirect loop.
+            window.dispatchEvent(new Event('fp:session-expired'))
+          }
           break
         case 403:
           errorMsg = (body.detail as string) || 'Access denied'

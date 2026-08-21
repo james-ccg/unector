@@ -23,7 +23,7 @@ def current_week_start_utc() -> datetime:
     """Monday 00:00 UTC of the current week. Uses UTC rather than server-local
     time since created_at is stored in UTC - comparing against local time would
     shift the week boundary by the server's UTC offset."""
-    today = datetime.utcnow()
+    today = models.now_utc()
     week_start = today - timedelta(days=today.weekday())
     return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -638,7 +638,12 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             models.Load.driver_id == driver_id,
             models.Load.status.in_(GROSS_ELIGIBLE_STATUSES)
         ).scalar() or 0.0
-        
+
+        # A real count, not len(loads) - the load-history list above is
+        # capped at 50, so a driver with more than that would otherwise be
+        # shown a "total loads" figure stuck at 50 forever.
+        total_loads = session.query(models.Load).filter(models.Load.driver_id == driver_id).count()
+
         load_list = []
         for load in loads:
             # Format dates in dd-MM-yyyy HH:mm:ss format
@@ -691,7 +696,7 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             "weekly_gross": float(weekly_gross),
             "weekly_loads": weekly_loads,
             "total_gross": float(total_gross),
-            "total_loads": len(loads),
+            "total_loads": total_loads,
             "loads": load_list,
         }
 

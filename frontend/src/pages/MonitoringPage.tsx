@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import { useAuth } from '../context/AuthContext'
-import { dashboardApi } from '../services/api'
+import { dashboardApi, errorMessage } from '../services/api'
 import './MonitoringPage.css'
 
 type Vehicle = { id: number; name: string; driver_id: string; vehicle_id: string | null; active: boolean; location?: { lat?: number; lng?: number; updated_at?: string } | null; load?: { load_id: string; status: string; pickup: string; delivery: string; rate: number } | null }
@@ -17,6 +17,7 @@ export default function MonitoringPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     if (!user) return
@@ -26,6 +27,13 @@ export default function MonitoringPage() {
       setConnected(data.samsara_connected)
       setSelectedId((current) => current ?? data.vehicles?.[0]?.id ?? null)
       setUpdatedAt(new Date())
+      setError('')
+    } catch (err) {
+      // Keep whatever vehicles/map we already have on screen (a stale view
+      // beats a blank one) - just surface that the last refresh failed,
+      // since otherwise this silently retries forever with no indication
+      // the data could be minutes out of date.
+      setError(errorMessage(err, 'Could not refresh live GPS data.'))
     } finally {
       setLoading(false)
     }
@@ -77,6 +85,11 @@ export default function MonitoringPage() {
                 <Icon name="clock" size={17} />
               </button>
             </div>
+            {error && (
+              <p className="monitoring-error">
+                <Icon name="warning" size={13} /> {error}
+              </p>
+            )}
             <div className="vehicle-tabs">
               <button className="active">
                 In transit <span>{vehicles.filter((item) => item.load).length}</span>

@@ -4,7 +4,7 @@
   top: 0;
   left: 0;
   width: 100%;
-  background: rgba(22, 21, 15, 0.92);
+  background: var(--header-bg-transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
   z-index: 1000;
@@ -17,7 +17,7 @@
 }
 
 .header-scrolled {
-  background: rgba(22, 21, 15, 0.97);
+  background: var(--header-bg-scrolled);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
@@ -194,6 +194,19 @@
 
 .nav-item-mobile-only {
   display: none;
+}
+
+/* The toggle lives in nav-actions on desktop, and inside the mobile drawer
+   (as a nav-item-mobile-only row) below 968px - never both at once. */
+.nav-theme-mobile {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+@media screen and (max-width: 968px) {
+  .nav-theme-desktop {
+    display: none;
+  }
 }
 
 /* Mobile Responsive */

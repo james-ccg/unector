@@ -67,8 +67,15 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
     if not company:
         raise ValueError(f"No company with id={company_id}")
 
-    if company["subscription_status"] in ("active", "trialing"):
-        raise RuntimeError("This company already has an active subscription - use Manage Billing instead")
+    # Any status where a Stripe subscription object still exists and might
+    # still be billing - block a second checkout on the same customer so it
+    # can't end up with two live subscriptions (the DB row only ever tracks
+    # one stripe_subscription_id, so the older one would keep charging the
+    # card with nothing left pointing at it). None (never subscribed) and
+    # "canceled"/"incomplete_expired" (no live subscription) fall through
+    # to a normal fresh checkout.
+    if company["subscription_status"] in ("active", "trialing", "past_due", "unpaid", "incomplete"):
+        raise RuntimeError("This company already has a subscription - use Manage Billing instead")
 
     customer_id = company["stripe_customer_id"]
     if not customer_id:

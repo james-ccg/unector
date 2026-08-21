@@ -15,6 +15,7 @@ a tool like ngrok during development (`ngrok http 8000`), then register that
 URL with @BotFather (see README's Mini App section) and set MINIAPP_URL in .env.
 """
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,7 +71,13 @@ from miniapp.auth import (
     verify_password,
 )
 
-app = FastAPI(title="Freight Pilot Mini App API")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Freight Pilot Mini App API", lifespan=_lifespan)
 
 # Brute-force / abuse protection on auth and OTP endpoints. In-memory storage
 # is fine for this single-process deployment - no Redis needed.
@@ -126,11 +133,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup():
-    init_db()
 
 
 # ------------------------------------------------------------------
@@ -808,15 +810,41 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
 def connect_samsara(
     body: ConnectSamsaraRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
 ):
-    """Connect Samsara GPS account (for owners only)"""
+    """Connect Samsara GPS account (for owners only). Runs as a sync `def`
+    route (FastAPI offloads it to a threadpool), so the blocking validation
+    request below doesn't block the event loop."""
+    import logging
+    import requests
     from db.repository import save_company_credential
+    from services import samsara_service
 
     company_id = user.get("company_id")
+
+    # Quick sanity check against the real API before saving - otherwise a
+    # copy-pasted/revoked/wrong-scope token just sits there looking
+    # "Connected" in Settings until it silently fails during background GPS
+    # polling, with nothing surfaced to the owner. Only a clear 401/403
+    # (definitely-bad token) is treated as a hard failure - a timeout or any
+    # other error just skips validation and saves anyway, so a Samsara
+    # outage can't block someone from connecting a good key.
+    try:
+        resp = requests.get(
+            f"{samsara_service.API_BASE}/fleet/vehicles/stats",
+            headers={"Authorization": f"Bearer {body.api_key}"},
+            params={"types": "gps"},
+            timeout=8,
+        )
+        if resp.status_code in (401, 403):
+            raise HTTPException(400, "That Samsara API token was rejected - double-check it and try again.")
+    except HTTPException:
+        raise
+    except requests.RequestException:
+        logging.exception("Samsara token validation request failed for company %s - saving anyway", company_id)
+
     try:
         save_company_credential(company_id, "samsara_api_key", body.api_key)
         return {"success": True, "message": "Samsara connected successfully"}
     except Exception:
-        import logging
         logging.exception("Failed to save Samsara credential for company %s", company_id)
         raise HTTPException(500, "Failed to connect Samsara.")
 
