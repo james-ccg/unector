@@ -95,6 +95,34 @@ def get_driver_by_group(telegram_group_id: int) -> Driver | None:
         )
 
 
+def link_driver_group(driver_id: int, telegram_group_id: int, telegram_group_title: str | None) -> str:
+    """Links a driver to the Telegram group /linkdriver was just sent in -
+    the other half of the one-time-code flow started by create_driver's
+    caller (see miniapp/api.py's POST /api/drivers and
+    /api/drivers/{id}/link-token, and bot.py's handle_linkdriver). Returns
+    "ok", "not_found" (bad driver_id - the driver was deleted after the code
+    was generated), or "already_linked_elsewhere" (telegram_group_id is
+    unique - this group already belongs to a different driver) rather than
+    letting a raw IntegrityError surface to the bot handler."""
+    with get_session() as session:
+        driver = session.get(models.Driver, driver_id)
+        if not driver:
+            return "not_found"
+
+        conflict = (
+            session.query(models.Driver)
+            .filter(models.Driver.telegram_group_id == telegram_group_id, models.Driver.id != driver_id)
+            .first()
+        )
+        if conflict:
+            return "already_linked_elsewhere"
+
+        driver.telegram_group_id = telegram_group_id
+        driver.telegram_group_title = telegram_group_title
+        session.commit()
+        return "ok"
+
+
 def get_company(company_id: int) -> Company | None:
     with get_session() as session:
         row = session.get(models.Company, company_id)
@@ -479,6 +507,33 @@ def create_dispatcher(company_id: int, username: str, password_hash: str) -> int
         session.commit()
         session.refresh(row)
         return row.id
+
+
+def create_driver(company_id: int, full_name: str) -> dict:
+    """Creates a driver with no Telegram group linked yet - the owner links
+    it afterward via a one-time code (see link_driver_group). driver_bot_id
+    is auto-assigned as "D<n>" from how many drivers this company already
+    has; it's only ever shown as a friendly label (bot.py and the dashboard
+    both fall back to it when full_name is blank), never used to look
+    anything up, so a collision from a since-deleted driver is harmless."""
+    with get_session() as session:
+        existing = session.query(models.Driver).filter(models.Driver.company_id == company_id).count()
+        row = models.Driver(
+            company_id=company_id,
+            driver_bot_id=f"D{existing + 1:03d}",
+            full_name=full_name,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {
+            "id": row.id,
+            "driver_bot_id": row.driver_bot_id,
+            "full_name": row.full_name,
+            "telegram_group_id": row.telegram_group_id,
+            "telegram_group_title": row.telegram_group_title,
+            "subscription_active": row.subscription_active,
+        }
 
 
 def get_drivers_by_company(company_id: int) -> list[dict]:
