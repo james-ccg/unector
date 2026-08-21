@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { twoFaApi, errorMessage, type TwoFaStatus } from '../services/api'
 import { isWebAuthnSupported, createCredential } from '../services/webauthn'
@@ -36,11 +36,7 @@ export default function TwoFactorSettings() {
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
   const [recoveryBusy, setRecoveryBusy] = useState(false)
 
-  useEffect(() => {
-    load()
-  }, [])
-
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!user) return
     try {
       const [statusData, creds] = await Promise.all([
@@ -54,7 +50,12 @@ export default function TwoFactorSettings() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load()
+  }, [load])
 
   const flash = (kind: 'success' | 'error', text: string) => {
     setBanner({ kind, text })

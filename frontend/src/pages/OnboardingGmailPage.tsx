@@ -31,14 +31,20 @@ export default function OnboardingGmailPage() {
       refreshUser().then(() => navigate('/dashboard', { replace: true }))
       return
     }
-    if (gmailStatus === 'error_no_refresh_token') {
-      setError(
-        'Google didn’t return a refresh token (this happens if the account was already ' +
-          'connected before). Revoke access at myaccount.google.com/permissions and try again.'
-      )
-    } else {
-      setError('Something went wrong connecting Gmail. Please try again.')
-    }
+    // Deferred a tick so this isn't a same-render-cycle setState
+    // (react-hooks/set-state-in-effect) - purely cosmetic timing-wise,
+    // since a microtask still runs before the next paint. Same pattern as
+    // SettingsPage's gmail-redirect handling.
+    queueMicrotask(() => {
+      if (gmailStatus === 'error_no_refresh_token') {
+        setError(
+          'Google didn’t return a refresh token (this happens if the account was already ' +
+            'connected before). Revoke access at myaccount.google.com/permissions and try again.'
+        )
+      } else {
+        setError('Something went wrong connecting Gmail. Please try again.')
+      }
+    })
     searchParams.delete('gmail')
     setSearchParams(searchParams, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps

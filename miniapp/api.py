@@ -399,6 +399,13 @@ def register_company(request: Request, body: RegisterRequest, response: Response
         raise HTTPException(400, "Passwords do not match")
     if len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
+    # bcrypt only hashes the first 72 bytes of a password - older bcrypt
+    # versions silently truncated anything past that, but bcrypt>=5 raises
+    # ValueError instead. hash_password() below isn't wrapped in a
+    # try/except that would turn that into a clear message, so reject it
+    # here with one instead of letting it fall through to a generic 500.
+    if len(body.password.encode("utf-8")) > 72:
+        raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
 
     try:
         with get_session() as session:
@@ -698,6 +705,10 @@ def add_dispatcher(
     username = body.username.strip()
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
+    # See register_company's identical check for why - bcrypt only hashes
+    # the first 72 bytes, and bcrypt>=5 raises instead of truncating.
+    if len(body.password.encode("utf-8")) > 72:
+        raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
     if not username:
         raise HTTPException(400, "Username cannot be empty")
     if get_dispatcher_by_username(username):

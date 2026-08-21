@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -55,13 +55,32 @@ export default function DashboardPage() {
   const [driverDetailError, setDriverDetailError] = useState('')
   const [toggleBusy, setToggleBusy] = useState(false)
 
+  const loadDashboard = useCallback(async () => {
+    if (!user) return
+    try {
+      setLoading(true)
+      const data = await dashboardApi.getDashboard()
+      setDashboardData(data)
+      setError('')
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDashboard()
-  }, [])
+  }, [loadDashboard])
 
   useEffect(() => {
     if (selectedDriverId === null) return
     let cancelled = false
+    // Resetting the previous driver's detail/error/loading state before
+    // starting the new fetch, not a side effect on external state - same
+    // pattern as SettingsPage's loadAll.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDriverDetail(null)
     setDriverDetailError('')
     setDriverDetailLoading(true)
@@ -109,21 +128,11 @@ export default function DashboardPage() {
     }
   }
 
-  const loadDashboard = async () => {
-    if (!user) return
-    try {
-      setLoading(true)
-      const data = await dashboardApi.getDashboard()
-      setDashboardData(data)
-      setError('')
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const drivers: Driver[] = dashboardData?.drivers || []
+  // Memoized so filteredDrivers/topDriver/unassignedCount/earningsChartData
+  // below don't invalidate on every render - `dashboardData?.drivers || []`
+  // would otherwise create a brand-new array reference each time
+  // dashboardData is null, even though the "value" hasn't changed.
+  const drivers: Driver[] = useMemo(() => dashboardData?.drivers || [], [dashboardData])
 
   const filteredDrivers = useMemo(() => {
     return drivers

@@ -86,6 +86,22 @@ class TestAuth:
         assert response.status_code == 400
         assert "8 characters" in response.json()["detail"].lower()
 
+    def test_register_password_over_72_bytes_rejected(self, client):
+        """bcrypt only hashes the first 72 bytes of a password - bcrypt>=5
+        raises instead of silently truncating like older versions did, so
+        this must be caught with a clear message before it ever reaches
+        hash_password()."""
+        long_password = "a" * 73
+        response = client.post("/api/auth/register", json={
+            "mc_number": "444555",
+            "company_name": "Test Co",
+            "email": "owner@longpasswordtest.com",
+            "password": long_password,
+            "confirm_password": long_password,
+        })
+        assert response.status_code == 400
+        assert "72 bytes" in response.json()["detail"]
+
     def test_register_invalid_mc(self, client):
         """Test registration with non-numeric MC - rejected by request validation (422)"""
         response = client.post("/api/auth/register", json={
@@ -317,6 +333,24 @@ class TestDispatcherAuth:
 
         status = client.get("/api/2fa/status")
         assert status.status_code == 200, status.text
+
+    def test_add_dispatcher_rejects_password_over_72_bytes(self, client):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": "445566",
+            "company_name": "Long Dispatcher Password Co",
+            "email": "owner@longdispatcherpass.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+        response = client.post(
+            "/api/dispatchers",
+            json={"username": "long_password_dispatcher", "password": "a" * 73},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 400
+        assert "72 bytes" in response.json()["detail"]
 
 
 class TestTenantIsolation:
