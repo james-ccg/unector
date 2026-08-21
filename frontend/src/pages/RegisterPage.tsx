@@ -11,6 +11,10 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState('')
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  // Bumped to force the Turnstile widget to remount after a failed attempt -
+  // Cloudflare tokens are single-use, so retrying with the same one (e.g.
+  // after "MC number already registered") always fails Turnstile too.
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -63,6 +67,8 @@ export default function RegisterPage() {
       // useEffect will handle navigation
     } catch (err) {
       setError(errorMessage(err))
+      setTurnstileToken(null)
+      setTurnstileNonce((n) => n + 1)
       setLoading(false)
     }
   }
@@ -109,7 +115,7 @@ export default function RegisterPage() {
               <span>Confirm Password</span>
               <input type="password" name="confirm_password" placeholder="Repeat password" required minLength={8} />
             </label>
-            <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+            <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
             <button
               type="submit"
               className="btn-primary btn-full"

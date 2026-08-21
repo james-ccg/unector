@@ -91,9 +91,13 @@ export default function TwoFactorSettings() {
 
   const disableTotp = async () => {
     if (!user) return
-    await twoFaApi.totpDisable()
-    flash('success', 'Authenticator app disabled.')
-    load()
+    try {
+      await twoFaApi.totpDisable()
+      flash('success', 'Authenticator app disabled.')
+      load()
+    } catch (err) {
+      flash('error', errorMessage(err))
+    }
   }
 
   // ---------------- Email ----------------
@@ -131,9 +135,13 @@ export default function TwoFactorSettings() {
 
   const disableEmail = async () => {
     if (!user) return
-    await twoFaApi.otpDisable('email')
-    flash('success', 'Email verification disabled.')
-    load()
+    try {
+      await twoFaApi.otpDisable('email')
+      flash('success', 'Email verification disabled.')
+      load()
+    } catch (err) {
+      flash('error', errorMessage(err))
+    }
   }
 
   // ---------------- SMS ----------------
@@ -171,9 +179,13 @@ export default function TwoFactorSettings() {
 
   const disableSms = async () => {
     if (!user) return
-    await twoFaApi.otpDisable('sms')
-    flash('success', 'Text message verification disabled.')
-    load()
+    try {
+      await twoFaApi.otpDisable('sms')
+      flash('success', 'Text message verification disabled.')
+      load()
+    } catch (err) {
+      flash('error', errorMessage(err))
+    }
   }
 
   // ---------------- Telegram ----------------
@@ -202,9 +214,13 @@ export default function TwoFactorSettings() {
 
   const disableTelegram = async () => {
     if (!user) return
-    await twoFaApi.otpDisable('telegram')
-    flash('success', 'Telegram verification disabled.')
-    load()
+    try {
+      await twoFaApi.otpDisable('telegram')
+      flash('success', 'Telegram verification disabled.')
+      load()
+    } catch (err) {
+      flash('error', errorMessage(err))
+    }
   }
 
   // ---------------- Security keys ----------------
@@ -216,9 +232,9 @@ export default function TwoFactorSettings() {
     }
     setWebauthnBusy(true)
     try {
-      const { options, challenge } = await twoFaApi.webauthnRegisterOptions()
+      const { options } = await twoFaApi.webauthnRegisterOptions()
       const credentialJson = await createCredential(options)
-      await twoFaApi.webauthnRegisterVerify(credentialJson, challenge, webauthnLabel || 'Security key')
+      await twoFaApi.webauthnRegisterVerify(credentialJson, webauthnLabel || 'Security key')
       setWebauthnLabel('')
       flash('success', 'Security key registered.')
       load()
@@ -231,9 +247,13 @@ export default function TwoFactorSettings() {
 
   const removeSecurityKey = async (id: number) => {
     if (!user) return
-    await twoFaApi.webauthnDelete(id)
-    flash('success', 'Security key removed.')
-    load()
+    try {
+      await twoFaApi.webauthnDelete(id)
+      flash('success', 'Security key removed.')
+      load()
+    } catch (err) {
+      flash('error', errorMessage(err))
+    }
   }
 
   // ---------------- Recovery codes ----------------

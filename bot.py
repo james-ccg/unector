@@ -37,6 +37,7 @@ import asyncio
 import html
 import logging
 import re
+import time
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -375,26 +376,30 @@ async def _get_driver_and_company(message: Message) -> tuple | None:
     return driver, get_company(driver.company_id)
 
 
-async def _post_load_template(message: Message, driver, company, load_id: str, pdf_bytes: bytes):
-    """Extracts RC data from `pdf_bytes`, geocodes, saves the load, and
-    posts the formatted template to the group - the tail end both the
-    email-search and direct-PDF paths share."""
+async def _post_load_template(message: Message, driver, company, load_id: str, data: dict):
+    """Geocodes, saves the load, and posts the formatted template to the
+    group - the tail end both the email-search and direct-PDF paths share.
+    Takes already-Gemini-extracted `data` (rather than raw PDF bytes and
+    extracting here) so a direct-PDF /dispatch with no load number - which
+    needs to peek at the extracted load_id before it can even call this -
+    doesn't end up paying for two Gemini calls on the same document."""
     try:
-        data = gemini_service.extract_rc_data(pdf_bytes)
-
         # Geocode the pickup/delivery addresses now, so the location monitor
         # has coordinates to compare against later - no need to re-geocode
-        # every time we poll Samsara.
-        pu_coords = await geo_utils.geocode_address(data.get("pu_address"))
+        # every time we poll Samsara. The two lookups are independent, so
+        # run them concurrently instead of waiting on one then the other.
+        pu_coords, del_coords = await asyncio.gather(
+            geo_utils.geocode_address(data.get("pu_address")),
+            geo_utils.geocode_address(data.get("del_address")),
+        )
         if pu_coords:
             data["pu_lat"], data["pu_lng"] = pu_coords
-        del_coords = await geo_utils.geocode_address(data.get("del_address"))
         if del_coords:
             data["del_lat"], data["del_lng"] = del_coords
 
         save_load(company.id, driver.id, load_id, data)
     except Exception:
-        logger.exception("Failed to extract/save RC data for load %s", load_id)
+        logger.exception("Failed to save RC data for load %s", load_id)
         await message.reply(
             f"⚠️ Found the RC, but something went wrong while processing it "
             f"(load {load_id}). Please try again, or check the logs."
@@ -408,12 +413,24 @@ async def _post_load_template(message: Message, driver, company, load_id: str, p
     await message.answer(f"{text}\n\n{driver_tag} {dispatcher_tag}", parse_mode="HTML")
 
 
+async def _extract_rc_data_or_reply(message: Message, pdf_bytes: bytes, context: str) -> dict | None:
+    """Runs Gemini extraction (off the event loop, since the SDK call is
+    synchronous) and replies with a friendly error instead of raising if it
+    fails. Returns None on failure - callers should just return afterward."""
+    try:
+        return await asyncio.to_thread(gemini_service.extract_rc_data, pdf_bytes)
+    except Exception:
+        logger.exception("Failed to extract RC data (%s)", context)
+        await message.reply(f"⚠️ Something went wrong while reading {context}. Please try again.")
+        return None
+
+
 async def _dispatch_by_load_number(message: Message, driver, company, load_id: str):
     """/dispatch <number> - searches the connected inbox for the RC."""
     await message.reply(f"🔎 Checking email for load {load_id}...")
 
     try:
-        pdf_bytes = email_service.find_rc_pdf_by_load_id(company.id, load_id)
+        pdf_bytes = await asyncio.to_thread(email_service.find_rc_pdf_by_load_id, company.id, load_id)
     except NotImplementedError as e:
         await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
         return
@@ -422,7 +439,11 @@ async def _dispatch_by_load_number(message: Message, driver, company, load_id: s
         await message.reply(f"❌ No RC email found for load {load_id}.")
         return
 
-    await _post_load_template(message, driver, company, load_id, pdf_bytes)
+    data = await _extract_rc_data_or_reply(message, pdf_bytes, "that RC email")
+    if data is None:
+        return
+
+    await _post_load_template(message, driver, company, load_id, data)
 
 
 async def _dispatch_from_pdf(message: Message, driver, company, document):
@@ -437,11 +458,8 @@ async def _dispatch_from_pdf(message: Message, driver, company, document):
     await message.reply("🔎 Reading the attached PDF...")
     pdf_bytes, _mime_type = await _download_document(document)
 
-    try:
-        data = gemini_service.extract_rc_data(pdf_bytes)
-    except Exception:
-        logger.exception("Failed to extract RC data from attached PDF")
-        await message.reply("⚠️ Something went wrong while reading that PDF. Please try again.")
+    data = await _extract_rc_data_or_reply(message, pdf_bytes, "that PDF")
+    if data is None:
         return
 
     load_id = data.get("load_id") or f"PDF-{message.message_id}"
@@ -451,7 +469,7 @@ async def _dispatch_from_pdf(message: Message, driver, company, document):
             f"({load_id}). Re-run with /dispatch <load number> if you know it."
         )
 
-    await _post_load_template(message, driver, company, load_id, pdf_bytes)
+    await _post_load_template(message, driver, company, load_id, data)
 
 
 @dp.message(F.document, _command_filter("dispatch"))
@@ -525,12 +543,36 @@ def _normalize_time(value: str) -> str:
     return re.sub(r"(?<!\d)\d{3,4}(?!\d)", add_colon, value)
 
 
+def _format_stop_block(emoji: str, label: str, number: int, stop: dict) -> list[str]:
+    """One PU or DEL stop's block: numbered header, address, date/time, and
+    (if present) a reference number - shared by a load's primary pickup/
+    delivery and any extra stops from additional_pu_stops/additional_del_stops,
+    so a multi-stop RC renders PU :1, PU :2, DEL :1, DEL :2, etc. the same way."""
+    e = html.escape
+    lines = [f"<b>{emoji}{label} :{number}</b>"]
+    lines.append(f"<pre><code class='language-PERFORMANCE'>{e(stop.get('address') or '—')}</code></pre>")
+    lines.append("")
+    date_time_bold = f"📅date: {e(stop.get('date') or '—')}\n🕔time:"
+    lines.append(f"<b>{date_time_bold}</b> {e(_normalize_time(stop.get('time')) or '—')}")
+    if stop.get("reference"):
+        lines.append(f"Ref#: {e(stop['reference'])}")
+    lines.append("")
+    return lines
+
+
 def format_load_template(load_id: str, data: dict) -> str:
     """Turns the JSON extracted from the RC into the dispatch group's message template.
     Uses Telegram HTML formatting - bold for section headers and value-carrying labels,
     blockquote for address/detail boxes, italic for the AI-generated summary. Every
     dynamic value is HTML-escaped, which is safer against special characters than
     Markdown mode.
+
+    A load's PRIMARY pickup/delivery (pu_address/del_address, from the RC's main
+    fields) is what the GPS location monitor tracks for proximity alerts - see
+    LocationAlertRule. Any additional stops (additional_pu_stops/additional_del_stops,
+    for multi-stop RCs) are shown to the driver here but aren't geocoded or tracked;
+    full multi-stop GPS tracking would need the monitor rebuilt around a stop list
+    instead of a single pu/del pair, which is a bigger change than just rendering them.
 
     Note: Telegram only supports one visual style of blockquote - it can't be colored
     differently per section, so the PU address, the weight/commodity box, and the DEL
@@ -548,15 +590,14 @@ def format_load_template(load_id: str, data: dict) -> str:
     lines = [f"<b>{header_bold}</b> {e(load_id)}"]
     lines.append("")
 
-    # --- PU section ---
-    lines.append("<b>🟢PU :1</b>")
-    lines.append(f"<pre><code class='language-PERFORMANCE'>{e(data.get('pu_address') or '—')}</code></pre>")
-    lines.append("")
-    pu_date_time_bold = f"📅date: {e(data.get('pu_date') or '—')}\n🕔time:"
-    lines.append(f"<b>{pu_date_time_bold}</b> {e(_normalize_time(data.get('pu_time')) or '—')}")
-    lines.append("")
+    # --- PU section(s) ---
+    lines.extend(_format_stop_block("🟢", "PU", 1, {
+        "address": data.get("pu_address"), "date": data.get("pu_date"), "time": data.get("pu_time"),
+    }))
+    for i, stop in enumerate(data.get("additional_pu_stops") or [], start=2):
+        lines.extend(_format_stop_block("🟢", "PU", i, stop))
 
-    # --- Weight / Commodity / PU# box ---
+    # --- Weight / Commodity / PU# box (always the primary pickup's reference) ---
     box_lines = []
     if data.get("weight"):
         box_lines.append(f"<b>⚖️Weight: {e(data['weight'])}</b>")
@@ -570,13 +611,12 @@ def format_load_template(load_id: str, data: dict) -> str:
     lines.append("")
     lines.append("")
 
-    # --- DEL section ---
-    lines.append("<b>🔴DEL:</b>")
-    lines.append(f"<pre><code class='language-PERFORMANCE'>{e(data.get('del_address') or '—')}</code></pre>")
-    lines.append("")
-    del_date_time_bold = f"📅date: {e(data.get('del_date') or '—')}\n🕔time:"
-    lines.append(f"<b>{del_date_time_bold}</b> {e(_normalize_time(data.get('del_time')) or '—')}")
-    lines.append("")
+    # --- DEL section(s) ---
+    lines.extend(_format_stop_block("🔴", "DEL", 1, {
+        "address": data.get("del_address"), "date": data.get("del_date"), "time": data.get("del_time"),
+    }))
+    for i, stop in enumerate(data.get("additional_del_stops") or [], start=2):
+        lines.extend(_format_stop_block("🔴", "DEL", i, stop))
 
     # --- Mandatory standing-policy notes: always the same, always bold ---
     mandatory_block = "\n\n".join(MANDATORY_NOTES)
@@ -607,6 +647,17 @@ def format_load_template(load_id: str, data: dict) -> str:
 _pending_photo_groups: dict[str, dict] = {}
 GROUP_DEBOUNCE_SECONDS = 1.5
 
+# If a photo for an album arrives more than GROUP_DEBOUNCE_SECONDS after its
+# predecessor (a slow upload on a big album), the debounce fires and the
+# album gets processed before the straggler shows up. Without this, that
+# late photo would silently start a brand-new one-photo group under the
+# same media_group_id - which almost never carries the caption (Telegram
+# puts it on the first photo), so it'd just be dropped with no trace once
+# ITS debounce fires and finds no command. This tracks recently-completed
+# groups for a short grace window so a straggler gets a clear reply instead.
+_recently_flushed_groups: dict[str, float] = {}
+RECENTLY_FLUSHED_GRACE_SECONDS = 10.0
+
 
 @dp.message(F.photo)
 async def handle_photo_message(message: Message):
@@ -616,6 +667,15 @@ async def handle_photo_message(message: Message):
         # Not part of an album - handle it right away as a single-photo group.
         await _process_photo_group([message])
         return
+
+    if group_id not in _pending_photo_groups:
+        flushed_at = _recently_flushed_groups.get(group_id)
+        if flushed_at is not None and time.monotonic() - flushed_at < RECENTLY_FLUSHED_GRACE_SECONDS:
+            await message.reply(
+                "⚠️ This photo arrived after the rest of its album was already processed. "
+                "Please resend the whole album together."
+            )
+            return
 
     entry = _pending_photo_groups.setdefault(group_id, {"messages": [], "timer": None})
     entry["messages"].append(message)
@@ -632,7 +692,17 @@ async def _flush_photo_group(group_id: str):
     entry = _pending_photo_groups.pop(group_id, None)
     if not entry:
         return
+    _recently_flushed_groups[group_id] = time.monotonic()
+    asyncio.create_task(_expire_recently_flushed_group(group_id))
     await _process_photo_group(entry["messages"])
+
+
+async def _expire_recently_flushed_group(group_id: str):
+    """Keeps _recently_flushed_groups from growing forever - each entry is
+    only needed for the grace window a straggler photo could plausibly
+    still show up in."""
+    await asyncio.sleep(RECENTLY_FLUSHED_GRACE_SECONDS)
+    _recently_flushed_groups.pop(group_id, None)
 
 
 async def _process_photo_group(messages: list[Message]):
@@ -777,7 +847,7 @@ async def _run_loadpics(chat_id: int, trigger_message: Message, files: list[tupl
     rc_json = load.raw_extracted_json if load else {}
 
     try:
-        result = gemini_service.check_load_picture(rc_json, files)
+        result = await asyncio.to_thread(gemini_service.check_load_picture, rc_json, files)
     except Exception:
         logger.exception("Failed to review load photo(s) for chat %s", chat_id)
         await bot.send_message(chat_id, "⚠️ Something went wrong while reviewing the photos. Please try again.")
@@ -873,7 +943,7 @@ async def _run_bol(chat_id: int, trigger_message: Message, files: list[tuple[byt
     await bot.send_message(chat_id, f"🔍 Comparing the {label} against the rate confirmation...")
 
     try:
-        result = gemini_service.compare_bol_with_rc(load.raw_extracted_json, files)
+        result = await asyncio.to_thread(gemini_service.compare_bol_with_rc, load.raw_extracted_json, files)
     except Exception:
         logger.exception("Failed to compare BOL for load %s", load.load_id)
         await bot.send_message(chat_id, "⚠️ Something went wrong while comparing the BOL. Please try again.")
@@ -886,7 +956,8 @@ async def _run_bol(chat_id: int, trigger_message: Message, files: list[tuple[byt
         update_load_status(load.id, "bol_ok")
         # Auto email update to the broker (works once email_service is connected)
         try:
-            email_service.send_email(
+            await asyncio.to_thread(
+                email_service.send_email,
                 company_id=load.company_id,
                 to_address=load.raw_extracted_json.get("broker_contact_email", ""),
                 subject=f"Load #{load.load_id} — Loaded confirmation",
@@ -923,7 +994,8 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
     ]
 
     try:
-        email_service.send_email(
+        await asyncio.to_thread(
+            email_service.send_email,
             company_id=load.company_id,
             to_address=broker_email,
             subject=f"Load #{load.load_id} — POD",
@@ -993,7 +1065,8 @@ async def handle_detention(message: Message):
         return
 
     try:
-        email_service.send_email(
+        await asyncio.to_thread(
+            email_service.send_email,
             company_id=load.company_id,
             to_address=broker_email,
             subject=f"Load #{load.load_id} — Detention/Layover Request",
@@ -1190,19 +1263,26 @@ async def _check_all_loads_once():
             if not location or location.get("lat") is None:
                 continue
 
-            # Still heading to pickup: check distance to PU.
-            if load.status == "dispatched" and load.pu_lat is not None:
-                if pu_rules is None:
-                    pu_rules = get_enabled_alert_rules(company_id, "pu_near")
-                distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.pu_lat, load.pu_lng)
-                await _fire_scenario_alerts(load, "pu_near", distance, pu_rules)
+            try:
+                # Still heading to pickup: check distance to PU.
+                if load.status == "dispatched" and load.pu_lat is not None:
+                    if pu_rules is None:
+                        pu_rules = get_enabled_alert_rules(company_id, "pu_near")
+                    distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.pu_lat, load.pu_lng)
+                    await _fire_scenario_alerts(load, "pu_near", distance, pu_rules)
 
-            # Already loaded: check distance to delivery instead.
-            elif load.status in ("loaded", "bol_ok") and load.del_lat is not None:
-                if del_rules is None:
-                    del_rules = get_enabled_alert_rules(company_id, "del_near")
-                distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.del_lat, load.del_lng)
-                await _fire_scenario_alerts(load, "del_near", distance, del_rules)
+                # Already loaded: check distance to delivery instead.
+                elif load.status in ("loaded", "bol_ok") and load.del_lat is not None:
+                    if del_rules is None:
+                        del_rules = get_enabled_alert_rules(company_id, "del_near")
+                    distance = geo_utils.haversine_miles(location["lat"], location["lng"], load.del_lat, load.del_lng)
+                    await _fire_scenario_alerts(load, "del_near", distance, del_rules)
+            except Exception:
+                # e.g. bot.send_message raising because the bot was removed/
+                # blocked from this one load's group (TelegramForbiddenError)
+                # - must not abort the loop, or every company later in
+                # by_company.items() this pass would silently get skipped too.
+                logger.exception("Failed to check/fire alerts for load %s (company %s)", load.id, company_id)
 
 
 # ------------------------------------------------------------------

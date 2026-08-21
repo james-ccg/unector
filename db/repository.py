@@ -23,7 +23,7 @@ def current_week_start_utc() -> datetime:
     """Monday 00:00 UTC of the current week. Uses UTC rather than server-local
     time since created_at is stored in UTC - comparing against local time would
     shift the week boundary by the server's UTC offset."""
-    today = datetime.utcnow()
+    today = models.now_utc()
     week_start = today - timedelta(days=today.weekday())
     return week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -583,7 +583,12 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             models.Load.driver_id == driver_id,
             models.Load.status.in_(GROSS_ELIGIBLE_STATUSES)
         ).scalar() or 0.0
-        
+
+        # A real count, not len(loads) - the load-history list above is
+        # capped at 50, so a driver with more than that would otherwise be
+        # shown a "total loads" figure stuck at 50 forever.
+        total_loads = session.query(models.Load).filter(models.Load.driver_id == driver_id).count()
+
         load_list = []
         for load in loads:
             # Format dates in dd-MM-yyyy HH:mm:ss format
@@ -636,7 +641,7 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             "weekly_gross": float(weekly_gross),
             "weekly_loads": weekly_loads,
             "total_gross": float(total_gross),
-            "total_loads": len(loads),
+            "total_loads": total_loads,
             "loads": load_list,
         }
 
@@ -1117,3 +1122,49 @@ def consume_telegram_link_token(code: str) -> dict | None:
         row.consumed_at = datetime.now(timezone.utc)
         session.commit()
         return {"account_type": row.account_type, "account_id": row.account_id}
+
+
+# ---- WebAuthn challenges - see models.WebauthnChallenge's docstring for why
+# these exist (a client-echoed challenge alone isn't a valid anti-replay
+# control) ----
+WEBAUTHN_CHALLENGE_TTL_SECONDS = 5 * 60  # plenty of time to complete the browser/authenticator prompt
+
+
+def create_webauthn_challenge(account_type: str, account_id: int, purpose: str, challenge: str) -> None:
+    with get_session() as session:
+        session.add(
+            models.WebauthnChallenge(
+                account_type=account_type,
+                account_id=account_id,
+                purpose=purpose,
+                challenge=challenge,
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=WEBAUTHN_CHALLENGE_TTL_SECONDS),
+            )
+        )
+        session.commit()
+
+
+def consume_webauthn_challenge(account_type: str, account_id: int, purpose: str) -> str | None:
+    """Looks up the most recent unexpired, unused challenge issued for this
+    account/purpose and marks it consumed. Returns the challenge to verify
+    against, or None if there isn't a valid one - callers must treat that
+    as a hard failure (a fresh options call is required), never fall back
+    to trusting a client-supplied challenge instead."""
+    with get_session() as session:
+        row = (
+            session.query(models.WebauthnChallenge)
+            .filter(
+                models.WebauthnChallenge.account_type == account_type,
+                models.WebauthnChallenge.account_id == account_id,
+                models.WebauthnChallenge.purpose == purpose,
+                models.WebauthnChallenge.consumed_at.is_(None),
+                models.WebauthnChallenge.expires_at > datetime.now(timezone.utc),
+            )
+            .order_by(models.WebauthnChallenge.created_at.desc())
+            .first()
+        )
+        if not row:
+            return None
+        row.consumed_at = datetime.now(timezone.utc)
+        session.commit()
+        return row.challenge

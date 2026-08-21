@@ -34,6 +34,18 @@ export default function LoginPage() {
 
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  // Bumped to force the Turnstile widget to remount (and issue a fresh
+  // token) after a failed attempt or a tab switch. Cloudflare tokens are
+  // single-use - once verify_turnstile has checked one, submitting it again
+  // (e.g. retrying after a wrong password, or switching from the Owner tab
+  // to the Dispatcher tab) always fails with "Bot verification failed",
+  // regardless of whether the credentials themselves are right.
+  const [turnstileNonce, setTurnstileNonce] = useState(0)
+
+  const resetTurnstile = () => {
+    setTurnstileToken(null)
+    setTurnstileNonce((n) => n + 1)
+  }
 
   useEffect(() => {
     if (isAuthenticated) navigate('/dashboard')
@@ -64,6 +76,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError(errorMessage(err))
+      resetTurnstile()
     } finally {
       setLoading(false)
     }
@@ -86,6 +99,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       setError(errorMessage(err))
+      resetTurnstile()
     } finally {
       setLoading(false)
     }
@@ -127,9 +141,9 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const { options, challenge: rawChallenge } = await twoFaApi.loginWebauthnOptions(challenge.pending_token)
+      const { options } = await twoFaApi.loginWebauthnOptions(challenge.pending_token)
       const credentialJson = await getCredential(options)
-      const data = await twoFaApi.loginWebauthnVerify(challenge.pending_token, credentialJson, rawChallenge)
+      const data = await twoFaApi.loginWebauthnVerify(challenge.pending_token, credentialJson)
       finishLogin(data)
     } catch (err) {
       setError(errorMessage(err, 'Security key verification failed.'))
@@ -162,13 +176,13 @@ export default function LoginPage() {
               <div className="tabs">
                 <button
                   className={`tab ${activeTab === 'owner' ? 'active-tab' : ''}`}
-                  onClick={() => { setActiveTab('owner'); setError('') }}
+                  onClick={() => { setActiveTab('owner'); setError(''); resetTurnstile() }}
                 >
                   Owner
                 </button>
                 <button
                   className={`tab ${activeTab === 'dispatcher' ? 'active-tab' : ''}`}
-                  onClick={() => { setActiveTab('dispatcher'); setError('') }}
+                  onClick={() => { setActiveTab('dispatcher'); setError(''); resetTurnstile() }}
                 >
                   Dispatcher
                 </button>
@@ -184,7 +198,7 @@ export default function LoginPage() {
                     <span>Password</span>
                     <input type="password" name="password" placeholder="Password" required />
                   </label>
-                  <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
                   <button
                     type="submit"
                     className="btn-primary btn-full"
@@ -210,7 +224,7 @@ export default function LoginPage() {
                     <span>Password</span>
                     <input type="password" name="password" placeholder="Password" required />
                   </label>
-                  <Turnstile siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
                   <button
                     type="submit"
                     className="btn-primary btn-full"

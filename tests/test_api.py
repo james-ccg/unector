@@ -350,6 +350,91 @@ class TestTenantIsolation:
         assert response.status_code == 200
 
 
+class TestDriverActivationBillingGuard:
+    """PATCH /api/drivers/{id}/subscription's cap check used to key off
+    subscription_tier alone - a company stuck in "past_due" (a failed
+    renewal Stripe is still retrying, which can take weeks before it
+    actually cancels) kept its paid-tier limit the whole time, since tier
+    isn't downgraded until the subscription is actually deleted. It must
+    fall back to the free-tier cap for any NEW activation while a
+    subscription isn't in good standing - see update_subscription in
+    miniapp/api.py."""
+
+    def _register_owner(self, client, mc_number: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Billing Guard Co {mc_number}",
+            "email": f"owner{mc_number}@billingguard.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        return reg.json()["company_id"]
+
+    def _create_driver(self, company_id: int) -> int:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            # subscription_active defaults to True - explicitly OFF here so
+            # the PATCH .../subscription {"active": true} calls below
+            # actually exercise the "turning on a currently-inactive
+            # driver" cap-check path, not a no-op on an already-active one.
+            driver = models.Driver(
+                company_id=company_id, driver_bot_id=f"D{company_id}-{id(object())}",
+                full_name="Test Driver", subscription_active=False,
+            )
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+            return driver.id
+
+    def _set_billing_state(self, company_id: int, tier: str, status: str) -> None:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            company = session.get(models.Company, company_id)
+            company.subscription_tier = tier
+            company.subscription_status = status
+            session.commit()
+
+    def test_past_due_subscription_caps_new_activations_at_free_tier(self, client):
+        company_id = self._register_owner(client, "721111")
+        driver_1_id = self._create_driver(company_id)
+        driver_2_id = self._create_driver(company_id)
+        self._set_billing_state(company_id, tier="pro", status="past_due")
+
+        # First activation stays within the free-tier fallback limit (1) -
+        # must still succeed even while the subscription isn't in good
+        # standing.
+        first = client.patch(
+            f"/api/drivers/{driver_1_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
+        )
+        assert first.status_code == 200, first.text
+
+        # A second activation would be fine under the "pro" tier's real
+        # limit (5), but must be blocked here since the subscription is
+        # past_due, not active/trialing.
+        second = client.patch(
+            f"/api/drivers/{driver_2_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
+        )
+        assert second.status_code == 402
+        assert "up to 1" in second.json()["detail"]
+
+    def test_active_pro_subscription_allows_up_to_its_real_limit(self, client):
+        company_id = self._register_owner(client, "722222")
+        driver_1_id = self._create_driver(company_id)
+        driver_2_id = self._create_driver(company_id)
+        self._set_billing_state(company_id, tier="pro", status="active")
+
+        for driver_id in (driver_1_id, driver_2_id):
+            response = client.patch(
+                f"/api/drivers/{driver_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
+            )
+            assert response.status_code == 200, response.text
+
+
 class TestAlertRules:
     """Customizable per-scenario location alert rules (Settings > Alerts) -
     CRUD, validation, and tenant isolation. The bot-side firing logic
@@ -487,6 +572,226 @@ class TestSamsaraTestMode:
             "confirm_password": "ownerpass123",
         })
         monkeypatch.setattr(api_module, "SAMSARA_TEST_MODE", True)
+        assert client.get("/api/settings").json()["samsara_connected"] is True
+
+
+class FakeSamsaraResponse:
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+
+class TestWebauthnChallengeReplayProtection:
+    """WebAuthn registration/login-verify used to trust a client-supplied
+    challenge with no server-side record of what was actually issued - so
+    a captured (credential_json, challenge) pair could be replayed
+    indefinitely, completely defeating the "freshness" guarantee WebAuthn
+    depends on. The challenge is now tracked server-side and consumed
+    (single-use) on the first successful verify - see
+    db/repository.py's create_webauthn_challenge/consume_webauthn_challenge
+    and miniapp/api.py's webauthn_register_verify."""
+
+    def _register_owner(self, client, mc_number: str):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Webauthn Test Co {mc_number}",
+            "email": f"owner{mc_number}@webauthntest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def test_verify_with_no_prior_options_call_is_rejected(self, client):
+        self._register_owner(client, "951111")
+
+        response = client.post(
+            "/api/2fa/webauthn/register/verify",
+            json={"credential_json": "{}", "label": "Test key"},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 400
+        assert "expired" in response.json()["detail"].lower()
+
+    def test_replaying_a_captured_verify_request_fails_the_second_time(self, client, monkeypatch):
+        # Bypass real FIDO2 crypto verification - only the server-side
+        # challenge plumbing is under test here, not the `webauthn`
+        # library's own signature checking.
+        monkeypatch.setattr(
+            api_module.webauthn_service, "verify_registration",
+            lambda credential_json, expected_challenge: {
+                "credential_id": "cred-1", "public_key": "fake-pk", "sign_count": 0,
+            },
+        )
+        self._register_owner(client, "952222")
+
+        options = client.post("/api/2fa/webauthn/register/options", headers=_csrf_headers(client))
+        assert options.status_code == 200
+        assert "challenge" not in options.json()  # no longer handed to the client at all
+
+        first = client.post(
+            "/api/2fa/webauthn/register/verify",
+            json={"credential_json": "captured-response", "label": "Test key"},
+            headers=_csrf_headers(client),
+        )
+        assert first.status_code == 200, first.text
+
+        # An attacker replaying the exact same captured request must not
+        # succeed a second time - the challenge was already consumed.
+        replay = client.post(
+            "/api/2fa/webauthn/register/verify",
+            json={"credential_json": "captured-response", "label": "Test key"},
+            headers=_csrf_headers(client),
+        )
+        assert replay.status_code == 400
+        assert "expired" in replay.json()["detail"].lower()
+
+    def test_response_body_no_longer_accepts_a_client_supplied_challenge_field(self, client, monkeypatch):
+        """Pydantic must reject/ignore a "challenge" field on the request -
+        it's not part of WebAuthnVerifyRequest anymore, so there's no way
+        for a client to influence which challenge gets verified against."""
+        captured = {}
+
+        def fake_verify(credential_json, expected_challenge):
+            captured["expected_challenge"] = expected_challenge
+            return {"credential_id": "cred-2", "public_key": "fake-pk", "sign_count": 0}
+
+        monkeypatch.setattr(api_module.webauthn_service, "verify_registration", fake_verify)
+        self._register_owner(client, "953333")
+        client.post("/api/2fa/webauthn/register/options", headers=_csrf_headers(client))
+
+        client.post(
+            "/api/2fa/webauthn/register/verify",
+            # Even if a client tries to smuggle its own "challenge", the
+            # server-stored one must be what's actually used.
+            json={"credential_json": "x", "challenge": "attacker-supplied-value", "label": "Test key"},
+            headers=_csrf_headers(client),
+        )
+        assert captured["expected_challenge"] != "attacker-supplied-value"
+
+
+class TestOtpSendErrorHandling:
+    """POST /api/2fa/otp/send used to let a delivery failure (e.g.
+    email_otp_service.send_otp_email's NotImplementedError when SMTP isn't
+    configured) propagate uncaught, surfacing as a bare, detail-less 500 -
+    now it's a clear 400/502 depending on the failure, and no pending_otp
+    row is left behind for a code that was never actually sent. See
+    otp_send in miniapp/api.py."""
+
+    def _register_owner(self, client, mc_number: str):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Otp Send Test Co {mc_number}",
+            "email": f"owner{mc_number}@otpsendtest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def test_unconfigured_email_channel_returns_400_not_bare_500(self, client, monkeypatch):
+        monkeypatch.setattr(api_module.email_otp_service, "is_configured", lambda: False)
+        self._register_owner(client, "941111")
+
+        response = client.post(
+            "/api/2fa/otp/send",
+            json={"channel": "email", "contact": "driver@example.com"},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 400
+        assert "isn't configured" in response.json()["detail"].lower()
+
+    def test_unconfigured_email_channel_does_not_persist_a_pending_otp(self, client, monkeypatch):
+        from db.database import get_session
+        from db import models
+
+        monkeypatch.setattr(api_module.email_otp_service, "is_configured", lambda: False)
+        self._register_owner(client, "942222")
+        company_id = client.get("/api/me").json()["company_id"]
+
+        client.post(
+            "/api/2fa/otp/send",
+            json={"channel": "email", "contact": "driver@example.com"},
+            headers=_csrf_headers(client),
+        )
+
+        with get_session() as session:
+            rows = (
+                session.query(models.PendingOtp)
+                .filter(
+                    models.PendingOtp.account_type == "owner",
+                    models.PendingOtp.account_id == company_id,
+                    models.PendingOtp.channel == "email",
+                    models.PendingOtp.purpose == "enroll",
+                )
+                .all()
+            )
+        assert rows == []
+
+    def test_unexpected_send_error_returns_502_not_bare_500(self, client, monkeypatch):
+        def _boom(*args, **kwargs):
+            raise RuntimeError("simulated SMTP connection failure")
+
+        monkeypatch.setattr(api_module.email_otp_service, "is_configured", lambda: True)
+        monkeypatch.setattr(api_module.email_otp_service, "send_otp_email", _boom)
+        self._register_owner(client, "943333")
+
+        response = client.post(
+            "/api/2fa/otp/send",
+            json={"channel": "email", "contact": "driver@example.com"},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 502
+
+
+class TestConnectSamsaraValidation:
+    """POST /api/settings/samsara checks the token against the real API
+    before saving, so a copy-pasted/revoked token doesn't just sit there
+    looking "Connected" - see connect_samsara's docstring in miniapp/api.py.
+    Only a clear 401/403 is a hard failure; anything else (including the API
+    being unreachable) fails open and saves the token anyway."""
+
+    def _register_owner(self, client, mc_number: str):
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Samsara Validation Co {mc_number}",
+            "email": f"owner{mc_number}@samsaravalidation.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def test_valid_token_is_saved(self, client, monkeypatch):
+        self._register_owner(client, "891111")
+        monkeypatch.setattr("requests.get", lambda *a, **k: FakeSamsaraResponse(200))
+
+        resp = client.post(
+            "/api/settings/samsara", json={"api_key": "good-token"}, headers=_csrf_headers(client),
+        )
+        assert resp.status_code == 200, resp.text
+        assert client.get("/api/settings").json()["samsara_connected"] is True
+
+    def test_rejected_token_is_not_saved(self, client, monkeypatch):
+        self._register_owner(client, "892222")
+        monkeypatch.setattr("requests.get", lambda *a, **k: FakeSamsaraResponse(401))
+
+        resp = client.post(
+            "/api/settings/samsara", json={"api_key": "bad-token"}, headers=_csrf_headers(client),
+        )
+        assert resp.status_code == 400
+        assert client.get("/api/settings").json()["samsara_connected"] is False
+
+    def test_validation_request_failure_still_saves(self, client, monkeypatch):
+        """A Samsara outage/timeout must not block someone from connecting a good key."""
+        import requests
+
+        def _raise(*a, **k):
+            raise requests.ConnectionError("simulated network failure")
+
+        self._register_owner(client, "893333")
+        monkeypatch.setattr("requests.get", _raise)
+
+        resp = client.post(
+            "/api/settings/samsara", json={"api_key": "some-token"}, headers=_csrf_headers(client),
+        )
+        assert resp.status_code == 200, resp.text
         assert client.get("/api/settings").json()["samsara_connected"] is True
 
 

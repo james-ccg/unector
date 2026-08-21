@@ -75,13 +75,21 @@ export async function apiRequest<T>(
       const body = asRecord(data)
       let errorMsg = (body.detail as string) || (body.message as string) || 'Request failed'
 
+      // A 401 from a login/register/2FA-challenge call just means THAT
+      // attempt was rejected (wrong password, wrong code, ...) - there was
+      // no prior session to "expire". Only an authenticated call failing
+      // with 401 actually means the session lapsed.
+      const isLoginAttempt = path.startsWith('/api/auth/') || path.startsWith('/api/2fa/login/')
+
       switch (response.status) {
         case 401:
-          errorMsg = 'Session expired. Please log in again.'
-          // Lets AuthContext clear its stale user state and redirect - it
-          // ignores this while already logged out (e.g. the routine
-          // session check on a public page), so no redirect loop.
-          window.dispatchEvent(new Event('fp:session-expired'))
+          if (!isLoginAttempt) {
+            errorMsg = 'Session expired. Please log in again.'
+            // Lets AuthContext clear its stale user state and redirect - it
+            // ignores this while already logged out (e.g. the routine
+            // session check on a public page), so no redirect loop.
+            window.dispatchEvent(new Event('fp:session-expired'))
+          }
           break
         case 403:
           errorMsg = (body.detail as string) || 'Access denied'
@@ -213,13 +221,13 @@ export const twoFaApi = {
     apiRequest<{ id: number; label: string | null; created_at: string | null }[]>('/api/2fa/webauthn'),
 
   webauthnRegisterOptions: () =>
-    apiRequest<{ options: string; challenge: string }>('/api/2fa/webauthn/register/options', {
+    apiRequest<{ options: string }>('/api/2fa/webauthn/register/options', {
       method: 'POST',
     }),
-  webauthnRegisterVerify: (credentialJson: string, challenge: string, label: string) =>
+  webauthnRegisterVerify: (credentialJson: string, label: string) =>
     apiRequest<{ registered: boolean }>('/api/2fa/webauthn/register/verify', {
       method: 'POST',
-      body: JSON.stringify({ credential_json: credentialJson, challenge, label }),
+      body: JSON.stringify({ credential_json: credentialJson, label }),
     }),
   webauthnDelete: (credentialPk: number) =>
     apiRequest<{ deleted: boolean }>(`/api/2fa/webauthn/${credentialPk}`, { method: 'DELETE' }),
@@ -242,14 +250,14 @@ export const twoFaApi = {
       body: JSON.stringify({ pending_token: pendingToken, method, code }),
     }),
   loginWebauthnOptions: (pendingToken: string) =>
-    apiRequest<{ options: string; challenge: string }>('/api/2fa/login/webauthn/options', {
+    apiRequest<{ options: string }>('/api/2fa/login/webauthn/options', {
       method: 'POST',
       headers: { Authorization: `Bearer ${pendingToken}` },
     }),
-  loginWebauthnVerify: (pendingToken: string, credentialJson: string, challenge: string) =>
-    apiRequest<LoginSuccess>(`/api/2fa/login/webauthn/verify?pending_token=${encodeURIComponent(pendingToken)}`, {
+  loginWebauthnVerify: (pendingToken: string, credentialJson: string) =>
+    apiRequest<LoginSuccess>('/api/2fa/login/webauthn/verify', {
       method: 'POST',
-      body: JSON.stringify({ credential_json: credentialJson, challenge }),
+      body: JSON.stringify({ pending_token: pendingToken, credential_json: credentialJson }),
     }),
 }
 

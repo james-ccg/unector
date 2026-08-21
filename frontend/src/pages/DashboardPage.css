@@ -516,7 +516,7 @@
   }
 }
 
-/* ---------- Driver detail modal ---------- */
+/* ---------- Driver detail modal (shared with SettingsPage's Samsara-connect modal) ---------- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -524,7 +524,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  /* Above the fixed header (z-index: 1000/1001 in Header.css) - otherwise
+     the header stays visible and clickable above the dimming overlay
+     instead of being covered by what's meant to be a blocking dialog. */
+  z-index: 1100;
   padding: 20px;
 }
 

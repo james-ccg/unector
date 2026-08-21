@@ -180,3 +180,34 @@ async def test_check_all_loads_skips_company_without_samsara_connected():
         await bot._check_all_loads_once()
 
     fire_alerts.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_check_all_loads_one_bad_alert_does_not_skip_other_companies():
+    """A load whose alert send fails (e.g. the bot was removed/blocked from
+    that one driver's group - TelegramForbiddenError) must not abort the
+    whole pass. Without a per-load try/except, that exception would
+    propagate out of the `for company_id, company_loads in
+    by_company.items()` loop and silently skip every company that comes
+    after the failing one in that dict, not just the one bad load."""
+    load_a = _make_load(id=1, company_id=1, samsara_vehicle_id="veh-a", telegram_group_id=101)
+    load_b = _make_load(id=2, company_id=2, samsara_vehicle_id="veh-b", telegram_group_id=201)
+
+    locations = {
+        "veh-a": {"lat": 40.0, "lng": -75.0},
+        "veh-b": {"lat": 40.0, "lng": -75.0},
+    }
+
+    async def fire_side_effect(load, *args, **kwargs):
+        if load.id == 1:
+            raise Exception("simulated TelegramForbiddenError")
+
+    with patch.object(bot, "get_active_loads_for_monitoring", return_value=[load_a, load_b]), \
+         patch.object(bot, "get_enabled_alert_rules", return_value=[]), \
+         patch.object(bot.samsara_service, "get_fleet_locations", new_callable=AsyncMock) as get_fleet, \
+         patch.object(bot, "_fire_scenario_alerts", new_callable=AsyncMock, side_effect=fire_side_effect) as fire_alerts:
+        get_fleet.return_value = locations
+        await bot._check_all_loads_once()  # must not raise
+
+    # Company 2's load was still checked despite company 1's load raising.
+    assert fire_alerts.await_count == 2

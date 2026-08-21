@@ -238,6 +238,28 @@ class TelegramLinkToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class WebauthnChallenge(Base):
+    """Server-side record of a challenge issued for a WebAuthn
+    registration/authentication ceremony. WebAuthn's security model
+    requires the relying party (this server) to independently remember
+    the challenge it issued and verify the signed response against THAT
+    exact value, then treat it as spent - trusting whatever challenge the
+    client echoes back would let a captured (credential_json, challenge)
+    pair be replayed indefinitely, since the challenge is otherwise just
+    client-supplied data."""
+    __tablename__ = "webauthn_challenges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+
+    purpose: Mapped[str] = mapped_column(String(20))  # "register" | "login"
+    challenge: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
 class TrialRedemption(Base):
     """One row per company that has ever started a paid-plan free trial.
     Records every identifying signal we had at the time (login email, MC

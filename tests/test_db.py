@@ -100,5 +100,73 @@ class TestRepository:
         assert result is None
 
 
+class TestWebauthnChallengeRepository:
+    """create_webauthn_challenge/consume_webauthn_challenge - the
+    server-side, single-use challenge record WebAuthn's security model
+    requires (see models.WebauthnChallenge's docstring)."""
+
+    def test_consume_returns_the_stored_challenge_once(self, setup_db):
+        account_id = int(str(uuid.uuid4().int)[:8])
+        repository.create_webauthn_challenge("owner", account_id, "register", "abc123challenge")
+
+        first = repository.consume_webauthn_challenge("owner", account_id, "register")
+        assert first == "abc123challenge"
+
+        second = repository.consume_webauthn_challenge("owner", account_id, "register")
+        assert second is None
+
+    def test_consume_is_scoped_to_account_and_purpose(self, setup_db):
+        account_id = int(str(uuid.uuid4().int)[:8])
+        other_account_id = account_id + 1
+        repository.create_webauthn_challenge("owner", account_id, "register", "for-registration")
+        repository.create_webauthn_challenge("owner", account_id, "login", "for-login")
+
+        # Wrong account - nothing to consume.
+        assert repository.consume_webauthn_challenge("owner", other_account_id, "register") is None
+        # Wrong purpose - nothing to consume, and the real one is untouched.
+        assert repository.consume_webauthn_challenge("dispatcher", account_id, "register") is None
+
+        assert repository.consume_webauthn_challenge("owner", account_id, "register") == "for-registration"
+        assert repository.consume_webauthn_challenge("owner", account_id, "login") == "for-login"
+
+    def test_consume_with_no_challenge_ever_issued_returns_none(self, setup_db):
+        account_id = int(str(uuid.uuid4().int)[:8])
+        assert repository.consume_webauthn_challenge("owner", account_id, "register") is None
+
+
+class TestDriverDetailsTotalLoads:
+    """get_driver_details' total_loads used to be len(loads) - but that list
+    is capped at 50 rows for the history table, so a driver with more than
+    50 loads showed a "total loads" figure stuck at 50 forever. See
+    db/repository.py's get_driver_details."""
+
+    def test_total_loads_counts_beyond_the_50_row_history_cap(self, setup_db):
+        unique_mc = str(uuid.uuid4().int)[:6]
+        with get_session() as session:
+            company = models.Company(
+                mc_number=unique_mc,
+                company_name=f"Total Loads Test {unique_mc}",
+                telegram_group_prefix=f"T{unique_mc[:4]}",
+            )
+            session.add(company)
+            session.commit()
+            session.refresh(company)
+
+            driver = models.Driver(company_id=company.id, driver_bot_id="D001", full_name="Test Driver")
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+
+            for i in range(55):
+                session.add(models.Load(company_id=company.id, driver_id=driver.id, load_id=f"L{i}"))
+            session.commit()
+
+            company_id, driver_id = company.id, driver.id
+
+        details = repository.get_driver_details(driver_id, company_id)
+        assert details["total_loads"] == 55
+        assert len(details["loads"]) == 50  # the history table itself stays capped
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

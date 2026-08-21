@@ -15,6 +15,7 @@ a tool like ngrok during development (`ngrok http 8000`), then register that
 URL with @BotFather (see README's Mini App section) and set MINIAPP_URL in .env.
 """
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -69,7 +70,13 @@ from miniapp.auth import (
     verify_password,
 )
 
-app = FastAPI(title="Freight Pilot Mini App API")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Freight Pilot Mini App API", lifespan=_lifespan)
 
 # Brute-force / abuse protection on auth and OTP endpoints. In-memory storage
 # is fine for this single-process deployment - no Redis needed.
@@ -125,11 +132,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup():
-    init_db()
 
 
 # ------------------------------------------------------------------
@@ -553,9 +555,20 @@ def update_subscription(
             # driver-creation endpoint exists yet (drivers are provisioned
             # out-of-band today) - if one is added later, it needs this
             # same check.
+            #
+            # subscription_status matters here, not just tier: a failed
+            # renewal (past_due/unpaid) leaves `tier` as whatever paid plan
+            # the company was on - Stripe keeps retrying for weeks before
+            # actually canceling - so checking tier alone would let a
+            # lapsed-payment company keep activating new paid-tier drivers
+            # the whole time. Already-active drivers are deliberately left
+            # alone here (see _handle_subscription_deleted's docstring) -
+            # this only blocks NEW activations under a plan that isn't
+            # currently in good standing.
             if body.active and not driver_record.subscription_active:
                 info = get_company_billing_info(user["company_id"])
-                limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info else 1
+                in_good_standing = bool(info and info["subscription_status"] in ("active", "trialing"))
+                limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info and in_good_standing else 1
                 if info and info["active_drivers"] >= limit:
                     raise HTTPException(
                         402,
@@ -703,15 +716,41 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
 def connect_samsara(
     body: ConnectSamsaraRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
 ):
-    """Connect Samsara GPS account (for owners only)"""
+    """Connect Samsara GPS account (for owners only). Runs as a sync `def`
+    route (FastAPI offloads it to a threadpool), so the blocking validation
+    request below doesn't block the event loop."""
+    import logging
+    import requests
     from db.repository import save_company_credential
+    from services import samsara_service
 
     company_id = user.get("company_id")
+
+    # Quick sanity check against the real API before saving - otherwise a
+    # copy-pasted/revoked/wrong-scope token just sits there looking
+    # "Connected" in Settings until it silently fails during background GPS
+    # polling, with nothing surfaced to the owner. Only a clear 401/403
+    # (definitely-bad token) is treated as a hard failure - a timeout or any
+    # other error just skips validation and saves anyway, so a Samsara
+    # outage can't block someone from connecting a good key.
+    try:
+        resp = requests.get(
+            f"{samsara_service.API_BASE}/fleet/vehicles/stats",
+            headers={"Authorization": f"Bearer {body.api_key}"},
+            params={"types": "gps"},
+            timeout=8,
+        )
+        if resp.status_code in (401, 403):
+            raise HTTPException(400, "That Samsara API token was rejected - double-check it and try again.")
+    except HTTPException:
+        raise
+    except requests.RequestException:
+        logging.exception("Samsara token validation request failed for company %s - saving anyway", company_id)
+
     try:
         save_company_credential(company_id, "samsara_api_key", body.api_key)
         return {"success": True, "message": "Samsara connected successfully"}
     except Exception:
-        import logging
         logging.exception("Failed to save Samsara credential for company %s", company_id)
         raise HTTPException(500, "Failed to connect Samsara.")
 
@@ -1073,6 +1112,8 @@ from db.repository import (
     update_webauthn_sign_count,
     delete_webauthn_credential,
     create_telegram_link_token,
+    create_webauthn_challenge,
+    consume_webauthn_challenge,
 )
 from services import twofactor_service, email_otp_service, sms_service, telegram_otp_service, webauthn_service
 
@@ -1095,8 +1136,12 @@ class TwoFaLoginVerifyRequest(BaseModel):
 
 class WebAuthnVerifyRequest(BaseModel):
     credential_json: str
-    challenge: str
     label: str | None = None
+
+
+class WebAuthnLoginVerifyRequest(BaseModel):
+    pending_token: str
+    credential_json: str
 
 
 def get_pending_2fa_claims(authorization: str = Header(default="")) -> dict:
@@ -1162,26 +1207,41 @@ async def otp_send(
 ):
     account_type, account_id = _self_account(user)
     code = twofactor_service.generate_otp_code()
+
+    # Send BEFORE persisting the pending code - a delivery failure here
+    # (SMTP/SMS_PROVIDER unconfigured, a real send error, the user blocked
+    # the bot, ...) previously propagated as a bare, detail-less 500 with
+    # no indication of what went wrong, AND still left a pending_otp row
+    # for a code that was never actually delivered.
+    try:
+        if body.channel == "email":
+            if not body.contact:
+                raise HTTPException(400, "Email address is required")
+            email_otp_service.send_otp_email(body.contact, code)
+        elif body.channel == "sms":
+            if not body.contact:
+                raise HTTPException(400, "Phone number is required")
+            sms_service.send_otp_sms(body.contact, code)
+        elif body.channel == "telegram":
+            info = get_2fa_delivery_info(account_type, account_id)
+            if not info or not info["telegram_user_id"]:
+                raise HTTPException(400, "Link your Telegram account first (see the Telegram tab)")
+            await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
+        else:
+            raise HTTPException(400, "Unknown channel")
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        import logging
+        logging.exception("Failed to send %s OTP enrollment code for %s %s", body.channel, account_type, account_id)
+        raise HTTPException(502, "Could not send the verification code. Please try again.")
+
     create_pending_otp(
         account_type, account_id, body.channel, "enroll",
         twofactor_service.hash_otp_code(code), twofactor_service.otp_expiry(),
     )
-
-    if body.channel == "email":
-        if not body.contact:
-            raise HTTPException(400, "Email address is required")
-        email_otp_service.send_otp_email(body.contact, code)
-    elif body.channel == "sms":
-        if not body.contact:
-            raise HTTPException(400, "Phone number is required")
-        sms_service.send_otp_sms(body.contact, code)
-    elif body.channel == "telegram":
-        info = get_2fa_delivery_info(account_type, account_id)
-        if not info or not info["telegram_user_id"]:
-            raise HTTPException(400, "Link your Telegram account first (see the Telegram tab)")
-        await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
-    else:
-        raise HTTPException(400, "Unknown channel")
 
     return {"sent": True}
 
@@ -1243,7 +1303,11 @@ def webauthn_register_options(user: dict = Depends(get_current_user), _csrf: Non
     existing = [c["credential_id"] for c in list_webauthn_credentials(account_type, account_id)]
     label = user.get("company_name") or f"{account_type}-{account_id}"
     options_json, challenge = webauthn_service.build_registration_options(f"{account_type}:{account_id}", label, existing)
-    return {"options": options_json, "challenge": challenge}
+    # Stored server-side and consumed on verify below - the challenge is
+    # NOT sent back to the client to echo back (see WebauthnChallenge's
+    # docstring for why trusting a client-supplied challenge is unsafe).
+    create_webauthn_challenge(account_type, account_id, "register", challenge)
+    return {"options": options_json}
 
 
 @app.post("/api/2fa/webauthn/register/verify")
@@ -1251,8 +1315,11 @@ def webauthn_register_verify(
     body: WebAuthnVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     account_type, account_id = _self_account(user)
+    expected_challenge = consume_webauthn_challenge(account_type, account_id, "register")
+    if not expected_challenge:
+        raise HTTPException(400, "This registration attempt has expired - please try again.")
     try:
-        result = webauthn_service.verify_registration(body.credential_json, body.challenge)
+        result = webauthn_service.verify_registration(body.credential_json, expected_challenge)
     except Exception as e:
         raise HTTPException(400, f"Could not verify security key: {e}")
     add_webauthn_credential(
@@ -1290,19 +1357,33 @@ async def login_2fa_challenge(
         raise HTTPException(400, "Two-factor auth is not set up for this account")
 
     code = twofactor_service.generate_otp_code()
+
+    # Send BEFORE persisting the pending code - see otp_send's comment for
+    # why: an unhandled delivery failure here used to surface as a bare,
+    # detail-less 500 and still leave a pending_otp row for a code that was
+    # never actually delivered.
+    try:
+        if body.channel == "email" and info["email_otp_enabled"] and info["contact_email"]:
+            email_otp_service.send_otp_email(info["contact_email"], code)
+        elif body.channel == "sms" and info["sms_otp_enabled"] and info["phone_number"]:
+            sms_service.send_otp_sms(info["phone_number"], code)
+        elif body.channel == "telegram" and info["telegram_otp_enabled"] and info["telegram_user_id"]:
+            await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
+        else:
+            raise HTTPException(400, "That method isn't enabled for this account")
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        import logging
+        logging.exception("Failed to send %s OTP login code for %s %s", body.channel, account_type, account_id)
+        raise HTTPException(502, "Could not send the verification code. Please try again.")
+
     create_pending_otp(
         account_type, account_id, body.channel, "login",
         twofactor_service.hash_otp_code(code), twofactor_service.otp_expiry(),
     )
-
-    if body.channel == "email" and info["email_otp_enabled"] and info["contact_email"]:
-        email_otp_service.send_otp_email(info["contact_email"], code)
-    elif body.channel == "sms" and info["sms_otp_enabled"] and info["phone_number"]:
-        sms_service.send_otp_sms(info["phone_number"], code)
-    elif body.channel == "telegram" and info["telegram_otp_enabled"] and info["telegram_user_id"]:
-        await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
-    else:
-        raise HTTPException(400, "That method isn't enabled for this account")
 
     return {"sent": True}
 
@@ -1314,7 +1395,8 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
     if not credentials:
         raise HTTPException(400, "No security keys registered for this account")
     options_json, challenge = webauthn_service.build_authentication_options(credentials)
-    return {"options": options_json, "challenge": challenge}
+    create_webauthn_challenge(account_type, account_id, "login", challenge)
+    return {"options": options_json}
 
 
 @app.post("/api/2fa/login/verify")
@@ -1352,9 +1434,9 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
 @app.post("/api/2fa/login/webauthn/verify")
 @limiter.limit("10/minute")
 async def login_2fa_webauthn_verify(
-    request: Request, body: WebAuthnVerifyRequest, pending_token: str, response: Response,
+    request: Request, body: WebAuthnLoginVerifyRequest, response: Response,
 ):
-    claims = decode_token(pending_token)
+    claims = decode_token(body.pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
 
@@ -1363,11 +1445,15 @@ async def login_2fa_webauthn_verify(
     if not credentials:
         raise HTTPException(400, "No security keys registered for this account")
 
+    expected_challenge = consume_webauthn_challenge(account_type, account_id, "login")
+    if not expected_challenge:
+        raise HTTPException(400, "This sign-in attempt has expired - please try again.")
+
     verified_any = False
     for cred in credentials:
         try:
             new_count = webauthn_service.verify_authentication(
-                body.credential_json, body.challenge, cred["public_key"], cred["sign_count"]
+                body.credential_json, expected_challenge, cred["public_key"], cred["sign_count"]
             )
             update_webauthn_sign_count(cred["credential_id"], new_count)
             verified_any = True
