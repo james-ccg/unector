@@ -38,6 +38,7 @@ from config import (
 from db.database import init_db
 from db.repository import (
     create_dispatcher,
+    create_driver,
     get_company,
     get_company_by_mc,
     get_company_billing_info,
@@ -175,6 +176,20 @@ class DispatcherLoginRequest(BaseModel):
 class CreateDispatcherRequest(BaseModel):
     username: str
     password: str
+
+
+class CreateDriverRequest(BaseModel):
+    full_name: str
+
+    @field_validator("full_name")
+    @classmethod
+    def _full_name_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Driver name is required")
+        if len(v) > 150:
+            raise ValueError("Driver name must be 150 characters or fewer")
+        return v
 
 
 class SubscriptionToggleRequest(BaseModel):
@@ -571,6 +586,83 @@ def update_subscription(
         import logging
         logging.exception("Failed to toggle subscription for driver %s", driver_id)
         raise HTTPException(500, "Failed to update subscription.")
+
+
+def _issue_driver_link_code(driver_id: int) -> dict:
+    """Generates a one-time code for linking a driver's Telegram group,
+    reusing the same TelegramLinkToken table/pattern
+    /api/2fa/telegram/link/start uses for 2FA account linking -
+    account_type="driver_group" (instead of "owner"/"dispatcher") keeps the
+    two uses from ever being confused, see bot.py's handle_linkdriver and
+    handle_verify2fa. Good for 24 hours rather than the 15 minutes 2FA codes
+    get, since this one requires the owner to go create/configure an actual
+    Telegram group in between generating the code and using it."""
+    import secrets
+    from datetime import datetime, timezone, timedelta
+    from db.repository import create_telegram_link_token
+
+    code = secrets.token_hex(3).upper()
+    create_telegram_link_token("driver_group", driver_id, code, datetime.now(timezone.utc) + timedelta(hours=24))
+    return {"code": code, "bot_command": f"/linkdriver {code}"}
+
+
+@app.post("/api/drivers")
+def add_driver(
+    body: CreateDriverRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    """Creates a driver (active immediately, same as seed.py's path) and
+    returns a one-time code to link it to a Telegram group - see
+    handle_linkdriver in bot.py. New drivers count against the plan's
+    active-driver cap right away, same check update_subscription enforces
+    when reactivating one - including falling back to the free-tier cap
+    while the subscription isn't in good standing (past_due/unpaid), not
+    just checking subscription_tier - see update_subscription's docstring
+    for why tier alone isn't enough."""
+    info = get_company_billing_info(user["company_id"])
+    in_good_standing = bool(info and info["subscription_status"] in ("active", "trialing"))
+    limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info and in_good_standing else 1
+    if info and info["active_drivers"] >= limit:
+        raise HTTPException(
+            402,
+            f"Your {info['subscription_tier']} plan allows up to {limit} active "
+            "driver(s). Upgrade your plan to add more.",
+        )
+
+    try:
+        driver = create_driver(user["company_id"], body.full_name)
+        link = _issue_driver_link_code(driver["id"])
+        # NewDriver (frontend/src/services/api.ts) names this field
+        # "link_code", not "code" - it's embedded alongside full_name/
+        # driver_bot_id/etc. on the combined driver+code response, where
+        # "code" would be ambiguous. The standalone regenerate-link-token
+        # response below has no such ambiguity, so it keeps "code" as-is
+        # (matches the DriverLinkCode type).
+        return {**driver, "link_code": link["code"], "bot_command": link["bot_command"]}
+    except HTTPException:
+        raise
+    except Exception:
+        import logging
+        logging.exception("Failed to create driver for company %s", user["company_id"])
+        raise HTTPException(500, "Failed to create driver. Please try again.")
+
+
+@app.post("/api/drivers/{driver_id}/link-token")
+def regenerate_driver_link_code(
+    driver_id: int, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    """Issues a fresh linking code for an existing driver - e.g. the first
+    code expired, or the driver needs to be (re)linked to a different group."""
+    from db.database import get_session
+    from db import models
+
+    with get_session() as session:
+        driver_record = session.get(models.Driver, driver_id)
+        if not driver_record:
+            raise HTTPException(404, "Driver not found")
+        if driver_record.company_id != user["company_id"]:
+            raise HTTPException(403, "Access denied")
+
+    return _issue_driver_link_code(driver_id)
 
 
 # ------------------------------------------------------------------
