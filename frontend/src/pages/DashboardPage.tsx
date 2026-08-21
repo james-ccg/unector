@@ -424,7 +424,13 @@ export default function DashboardPage() {
                 </div>
               ))
             ) : drivers.length === 0 ? (
-              <p className="empty">No drivers yet. Add one from the Telegram bot with <code>seed.py</code>, or contact your admin.</p>
+              <p className="empty">
+                {user?.role === 'owner' ? (
+                  <>No drivers yet. <Link to="/settings">Add your first driver</Link> from Settings.</>
+                ) : (
+                  'No drivers yet. Ask your company owner to add one from Settings.'
+                )}
+              </p>
             ) : (
               <p className="empty">No drivers match your search.</p>
             )}

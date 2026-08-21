@@ -11,6 +11,7 @@ import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, errorMessage,
   type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
+  type Driver, type DriverLinkCode,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
@@ -40,6 +41,15 @@ export default function SettingsPage() {
   const [addDispatcherError, setAddDispatcherError] = useState('')
   const [addDispatcherBusy, setAddDispatcherBusy] = useState(false)
 
+  // Drivers - self-service creation + Telegram group linking
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [newDriverName, setNewDriverName] = useState('')
+  const [addDriverError, setAddDriverError] = useState('')
+  const [addDriverBusy, setAddDriverBusy] = useState(false)
+  const [linkDriverId, setLinkDriverId] = useState<number | null>(null)
+  const [linkCode, setLinkCode] = useState<DriverLinkCode | null>(null)
+  const [linkBusy, setLinkBusy] = useState(false)
+
   // Location alert rules
   const [alertRules, setAlertRules] = useState<AlertRule[]>([])
   const [newRuleScenario, setNewRuleScenario] = useState<AlertScenario>('pu_near')
@@ -62,6 +72,8 @@ export default function SettingsPage() {
         setBilling(billingData)
         const alertRuleData = await settingsApi.listAlertRules()
         setAlertRules(alertRuleData)
+        const driverData = await dashboardApi.listDrivers()
+        setDrivers(driverData)
       }
     } catch (err) {
       console.error(err)
@@ -210,6 +222,61 @@ export default function SettingsPage() {
       setAddDispatcherError(errorMessage(err, 'Could not create that dispatcher login.'))
     } finally {
       setAddDispatcherBusy(false)
+    }
+  }
+
+  const handleAddDriver = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user) return
+    setAddDriverError('')
+    const name = newDriverName.trim()
+    if (!name) {
+      setAddDriverError('Driver name is required.')
+      return
+    }
+    setAddDriverBusy(true)
+    try {
+      const created = await dashboardApi.createDriver(name)
+      setNewDriverName('')
+      setBanner({ kind: 'success', text: `${created.full_name} added.` })
+      setDrivers((prev) => [...prev, { ...created, dispatcher_username: null, samsara_vehicle_id: null, load_count: 0, weekly_gross: 0, weekly_loads: 0 }])
+      setLinkDriverId(created.id)
+      setLinkCode({ code: created.link_code, bot_command: created.bot_command })
+    } catch (err) {
+      setAddDriverError(errorMessage(err, 'Could not add that driver.'))
+    } finally {
+      setAddDriverBusy(false)
+    }
+  }
+
+  const handleShowLinkCode = async (driverId: number) => {
+    setLinkBusy(true)
+    try {
+      const code = await dashboardApi.createDriverLinkToken(driverId)
+      setLinkDriverId(driverId)
+      setLinkCode(code)
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not generate a linking code.') })
+    } finally {
+      setLinkBusy(false)
+    }
+  }
+
+  const handleCheckDriverLinked = async (driverId: number) => {
+    setLinkBusy(true)
+    try {
+      const fresh = await dashboardApi.listDrivers()
+      setDrivers(fresh)
+      const updated = fresh.find((d) => d.id === driverId)
+      if (updated?.telegram_group_id) {
+        setLinkDriverId(null)
+        setLinkCode(null)
+        setBanner({ kind: 'success', text: `${updated.full_name} is linked to ${updated.telegram_group_title || 'its Telegram group'}.` })
+      }
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err) })
+    } finally {
+      setLinkBusy(false)
     }
   }
 
@@ -525,6 +592,84 @@ export default function SettingsPage() {
                 {alertRuleError && <p className="form-error">{alertRuleError}</p>}
                 <button className="btn btn-primary" type="submit" disabled={alertRuleBusy}>
                   {alertRuleBusy ? 'Adding...' : 'Add rule'}
+                </button>
+              </form>
+            </div>
+          </section>
+        )}
+
+        {/* ---------------- Drivers ---------------- */}
+        {isOwner && (
+          <section className="settings-section">
+            <h2 className="section-title">Drivers</h2>
+            <div className="card">
+              {drivers.length > 0 ? (
+                <div className="dispatcher-list">
+                  {drivers.map((d) => (
+                    <div key={d.id}>
+                      <div className="dispatcher-row">
+                        <span className={`status-dot ${d.telegram_group_id ? 'on' : 'off'}`} />
+                        <span className="dispatcher-username">{d.full_name}</span>
+                        <span className="dispatcher-role mono">#{d.driver_bot_id}</span>
+                        <span className={`status-badge ${d.telegram_group_id ? 'is-connected' : 'is-disconnected'}`}>
+                          {d.telegram_group_id ? d.telegram_group_title || 'Linked' : 'Not linked yet'}
+                        </span>
+                        {!d.telegram_group_id && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => handleShowLinkCode(d.id)}
+                            disabled={linkBusy}
+                          >
+                            {linkDriverId === d.id && linkCode ? 'New code' : 'Get linking code'}
+                          </button>
+                        )}
+                      </div>
+                      {linkDriverId === d.id && linkCode && (
+                        <div className="twofa-enroll">
+                          <p className="method-hint">
+                            Add the Freight Pilot bot to {d.full_name}'s Telegram group, then send in that
+                            group: <code className="mono">{linkCode.bot_command}</code>
+                          </p>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleCheckDriverLinked(d.id)}
+                            disabled={linkBusy}
+                          >
+                            {linkBusy ? 'Checking...' : "I've sent it - check now"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="empty">No drivers yet - add one below.</p>
+              )}
+            </div>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <h3 className="settings-subtitle">Add a driver</h3>
+              {billing && billing.active_drivers >= billing.max_drivers && (
+                <p className="settings-hint">
+                  You're at your plan's driver limit ({billing.active_drivers}/{billing.max_drivers}).{' '}
+                  <Link to="/pages/pricing">Upgrade your plan</Link> to add more.
+                </p>
+              )}
+              <form className="form" onSubmit={handleAddDriver}>
+                <label>
+                  <span>Driver name</span>
+                  <input
+                    type="text"
+                    value={newDriverName}
+                    onChange={(e) => setNewDriverName(e.target.value)}
+                    placeholder="e.g. Jasur Karimov"
+                    maxLength={150}
+                    required
+                  />
+                </label>
+                {addDriverError && <p className="form-error">{addDriverError}</p>}
+                <button className="btn btn-primary" type="submit" disabled={addDriverBusy}>
+                  {addDriverBusy ? 'Adding...' : 'Add driver'}
                 </button>
               </form>
             </div>

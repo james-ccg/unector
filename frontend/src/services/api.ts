@@ -265,6 +265,7 @@ export interface Driver {
   id: number
   driver_bot_id: string
   full_name: string
+  telegram_group_id: number | null
   telegram_group_title: string | null
   dispatcher_username: string | null
   subscription_active: boolean
@@ -272,6 +273,25 @@ export interface Driver {
   load_count: number
   weekly_gross: number
   weekly_loads: number
+}
+
+export interface DriverLinkCode {
+  code: string
+  bot_command: string
+}
+
+// Response shape for POST /api/drivers - a freshly-created driver has none
+// of Driver's load/earnings aggregates yet, so this is its own narrower
+// type rather than extending Driver.
+export interface NewDriver {
+  id: number
+  driver_bot_id: string
+  full_name: string
+  telegram_group_id: number | null
+  telegram_group_title: string | null
+  subscription_active: boolean
+  link_code: string
+  bot_command: string
 }
 
 export interface DriverLoad {
@@ -344,6 +364,20 @@ export const dashboardApi = {
 
   listDispatchers: () =>
     apiRequest<Dispatcher[]>('/api/dispatchers'),
+
+  listDrivers: () =>
+    apiRequest<Driver[]>('/api/drivers'),
+
+  createDriver: (fullName: string) =>
+    apiRequest<NewDriver>('/api/drivers', {
+      method: 'POST',
+      body: JSON.stringify({ full_name: fullName }),
+    }),
+
+  createDriverLinkToken: (driverId: number | string) =>
+    apiRequest<DriverLinkCode>(`/api/drivers/${driverId}/link-token`, {
+      method: 'POST',
+    }),
 
   getMonitoring: () =>
     apiRequest<{

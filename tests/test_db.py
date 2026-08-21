@@ -168,5 +168,76 @@ class TestDriverDetailsTotalLoads:
         assert len(details["loads"]) == 50  # the history table itself stays capped
 
 
+class TestDriverRepository:
+    """create_driver (self-service driver creation) and link_driver_group
+    (the /linkdriver half of the code-based Telegram group linking flow -
+    see bot.py's handle_linkdriver and miniapp/api.py's POST /api/drivers)."""
+
+    def _make_company_id(self) -> int:
+        unique_mc = str(uuid.uuid4().int)[:6]
+        with get_session() as session:
+            company = models.Company(
+                mc_number=unique_mc,
+                company_name=f"Driver Repo Test {unique_mc}",
+                telegram_group_prefix=f"T{unique_mc[:4]}",
+            )
+            session.add(company)
+            session.commit()
+            session.refresh(company)
+            return company.id
+
+    def test_create_driver_auto_assigns_sequential_bot_id(self, setup_db):
+        company_id = self._make_company_id()
+
+        first = repository.create_driver(company_id, "Alice")
+        second = repository.create_driver(company_id, "Bob")
+
+        assert first["driver_bot_id"] == "D001"
+        assert second["driver_bot_id"] == "D002"
+        assert first["telegram_group_id"] is None
+        assert first["subscription_active"] is True
+
+    def test_link_driver_group_sets_group_fields(self, setup_db):
+        company_id = self._make_company_id()
+        driver = repository.create_driver(company_id, "Carol")
+
+        result = repository.link_driver_group(driver["id"], -100555, "Carol's Truck")
+        assert result == "ok"
+
+        linked = repository.get_driver_by_group(-100555)
+        assert linked is not None
+        assert linked.id == driver["id"]
+        assert linked.telegram_group_title == "Carol's Truck"
+
+    def test_link_driver_group_rejects_group_already_used_by_another_driver(self, setup_db):
+        company_id = self._make_company_id()
+        driver_a = repository.create_driver(company_id, "Dave")
+        driver_b = repository.create_driver(company_id, "Erin")
+        repository.link_driver_group(driver_a["id"], -100777, "Dave's Truck")
+
+        result = repository.link_driver_group(driver_b["id"], -100777, "Erin's Truck")
+        assert result == "already_linked_elsewhere"
+
+        # Dave's link must be untouched by Erin's failed attempt.
+        still_daves = repository.get_driver_by_group(-100777)
+        assert still_daves.id == driver_a["id"]
+
+    def test_link_driver_group_returns_not_found_for_missing_driver(self, setup_db):
+        result = repository.link_driver_group(999999999, -100888, "Ghost")
+        assert result == "not_found"
+
+    def test_relinking_same_driver_to_same_group_is_idempotent(self, setup_db):
+        company_id = self._make_company_id()
+        driver = repository.create_driver(company_id, "Frank")
+
+        first = repository.link_driver_group(driver["id"], -100999, "Frank's Truck")
+        second = repository.link_driver_group(driver["id"], -100999, "Frank's Truck (renamed)")
+
+        assert first == "ok"
+        assert second == "ok"
+        linked = repository.get_driver_by_group(-100999)
+        assert linked.telegram_group_title == "Frank's Truck (renamed)"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

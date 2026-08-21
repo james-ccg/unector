@@ -14,6 +14,8 @@ Commands:
     /dashboard     - sends a button that opens the Mini App (owner/dispatcher login)
     /link          - direct link to the Mini App, for opening in any browser
     /verify2fa <code> - links this Telegram account for 2FA codes (code from Settings > Security)
+    /linkdriver <code> - links a NEW Telegram group to a driver (code from Settings > Drivers).
+                     Must be sent inside the group being linked.
     /myid          - debug helper, prints the current chat/group ID
 
 The rest only work inside a driver+dispatch group, once it's linked to a driver:
@@ -67,6 +69,7 @@ from db.repository import (
     get_enabled_alert_rules,
     consume_telegram_link_token,
     set_telegram_otp,
+    link_driver_group,
 )
 from services import gemini_service, email_service, samsara_service, geo_utils
 
@@ -186,6 +189,8 @@ async def handle_commands(message: Message):
         "• /dashboard - open the owner/dispatcher web dashboard\n"
         "• /link - direct dashboard link, for opening in any browser\n"
         "• /verify2fa <code> - links this chat for 2FA codes (code from Settings → Security)\n"
+        "• /linkdriver <code> - links a new Telegram group to a driver (code from Settings → Drivers) - "
+        "send it inside the group being linked\n"
         "• /myid - prints the current chat/group ID\n\n"
         "**Inside a driver+dispatch group only:**\n"
         "• /dispatch <id> - finds the rate confirmation email and posts it to the group. "
@@ -251,7 +256,10 @@ async def handle_verify2fa(message: Message):
 
     code = args[1].strip().upper()
     result = consume_telegram_link_token(code)
-    if not result:
+    # account_type also covers "driver_group" codes from /linkdriver below -
+    # the two commands share this token table, so a code meant for one must
+    # never be usable in the other.
+    if not result or result["account_type"] not in ("owner", "dispatcher"):
         await message.reply("❌ That code is invalid or has expired. Generate a new one from Settings → Security.")
         return
 
@@ -259,6 +267,48 @@ async def handle_verify2fa(message: Message):
     await message.reply(
         "✅ Telegram linked! You can now receive verification codes here, and enable "
         "Telegram as a two-factor method in Settings → Security."
+    )
+
+
+@dp.message(Command("linkdriver"))
+async def handle_linkdriver(message: Message):
+    """Links THIS Telegram group to a driver record, using a one-time code
+    from the dashboard's Settings > Drivers page - the group-linking half of
+    self-service driver setup (the owner creates the driver there, then adds
+    the bot to the driver's group and sends this). Mirrors /verify2fa's use
+    of the same TelegramLinkToken table, with a distinct account_type
+    ("driver_group") so a code from one flow can't be misused in the other.
+    Usage: /linkdriver <code>"""
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply(
+            "Usage: /linkdriver <code>\n\n"
+            "Get a code from the dashboard's Settings → Drivers page, after adding the driver there."
+        )
+        return
+
+    if message.chat.type not in ("group", "supergroup"):
+        await message.reply("⚠️ Run this command inside the driver's own Telegram group, not in a private chat.")
+        return
+
+    code = args[1].strip().upper()
+    result = consume_telegram_link_token(code)
+    if not result or result["account_type"] != "driver_group":
+        await message.reply(
+            "❌ That code is invalid or has expired. Generate a new one from the dashboard's Settings → Drivers page."
+        )
+        return
+
+    status = link_driver_group(result["account_id"], message.chat.id, message.chat.title or "Unknown Group")
+    if status == "already_linked_elsewhere":
+        await message.reply("⚠️ This Telegram group is already linked to a different driver.")
+        return
+    if status == "not_found":
+        await message.reply("⚠️ That driver no longer exists - please generate a new code from Settings → Drivers.")
+        return
+
+    await message.reply(
+        "✅ This group is now linked! /dispatch, /loadpics, /bol, /pod, /detention, and /setvehicle all work here now."
     )
 
 
@@ -1298,6 +1348,7 @@ async def main():
         BotCommand(command="dashboard", description="Open the owner/dispatcher web dashboard"),
         BotCommand(command="link", description="Direct dashboard link, for any browser"),
         BotCommand(command="verify2fa", description="Link this chat for 2FA codes"),
+        BotCommand(command="linkdriver", description="Link this group to a driver (Settings → Drivers)"),
         BotCommand(command="dispatch", description="Find/build a load's RC and post it (driver group)"),
         BotCommand(command="loadpics", description="AI review of load photos (driver group)"),
         BotCommand(command="bol", description="Compare BOL against the RC (driver group)"),

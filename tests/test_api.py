@@ -548,6 +548,121 @@ class TestAlertRules:
         assert still_there[0]["distance_miles"] == 10.0
 
 
+class TestDriverCreation:
+    """Self-service driver creation (owner only) - see miniapp/api.py's
+    add_driver/regenerate_driver_link_code. The Telegram group-linking half
+    (consuming the code) is covered by bot.py's handle_linkdriver, tested in
+    tests/test_bot_linkdriver.py."""
+
+    def _register_owner(self, client, mc_number: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Driver Creation Co {mc_number}",
+            "email": f"owner{mc_number}@drivercreation.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        return reg.json()["company_id"]
+
+    def test_create_driver_returns_link_code_and_appears_in_list(self, client):
+        self._register_owner(client, "911111")
+
+        created = client.post("/api/drivers", json={"full_name": "Jasur"}, headers=_csrf_headers(client))
+        assert created.status_code == 200, created.text
+        body = created.json()
+        assert body["full_name"] == "Jasur"
+        assert body["driver_bot_id"] == "D001"
+        assert body["telegram_group_id"] is None
+        assert body["link_code"]
+        assert body["bot_command"] == f"/linkdriver {body['link_code']}"
+
+        listed = client.get("/api/drivers").json()
+        assert len(listed) == 1
+        assert listed[0]["full_name"] == "Jasur"
+
+    def test_blank_name_rejected(self, client):
+        self._register_owner(client, "921111")
+        response = client.post("/api/drivers", json={"full_name": "   "}, headers=_csrf_headers(client))
+        assert response.status_code == 422
+
+    def test_dispatcher_cannot_create_driver(self, client):
+        self._register_owner(client, "931111")
+        client.post(
+            "/api/dispatchers",
+            json={"username": "driver_creation_dispatcher", "password": "password123"},
+            headers=_csrf_headers(client),
+        )
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "driver_creation_dispatcher", "password": "password123"})
+
+        response = client.post("/api/drivers", json={"full_name": "Nope"}, headers=_csrf_headers(client))
+        assert response.status_code == 403
+
+    def test_create_driver_requires_csrf(self, client):
+        self._register_owner(client, "941111")
+        response = client.post("/api/drivers", json={"full_name": "No CSRF"})
+        assert response.status_code == 403
+
+    def test_free_plan_cap_blocks_a_second_driver(self, client):
+        self._register_owner(client, "951111")  # a brand-new company defaults to the free tier (limit 1)
+        first = client.post("/api/drivers", json={"full_name": "First"}, headers=_csrf_headers(client))
+        assert first.status_code == 200, first.text
+
+        second = client.post("/api/drivers", json={"full_name": "Second"}, headers=_csrf_headers(client))
+        assert second.status_code == 402
+        assert "plan allows up to" in second.json()["detail"].lower()
+
+    def test_link_token_regeneration_returns_a_fresh_code(self, client):
+        self._register_owner(client, "961111")
+        created = client.post("/api/drivers", json={"full_name": "Regen"}, headers=_csrf_headers(client))
+        driver_id = created.json()["id"]
+
+        regen = client.post(f"/api/drivers/{driver_id}/link-token", headers=_csrf_headers(client))
+        assert regen.status_code == 200, regen.text
+        assert regen.json()["code"]
+        assert regen.json()["bot_command"] == f"/linkdriver {regen.json()['code']}"
+
+    def test_link_token_regeneration_cross_tenant_forbidden(self):
+        client_a = TestClient(app)
+        client_b = TestClient(app)
+        self._register_owner(client_a, "971111")
+        self._register_owner(client_b, "981111")
+
+        created = client_a.post("/api/drivers", json={"full_name": "Tenant A driver"}, headers=_csrf_headers(client_a))
+        driver_id = created.json()["id"]
+
+        response = client_b.post(f"/api/drivers/{driver_id}/link-token", headers=_csrf_headers(client_b))
+        assert response.status_code == 403
+
+    def test_link_code_can_be_consumed_to_complete_linking(self, client):
+        """End-to-end: the code POST /api/drivers issues is a real
+        TelegramLinkToken row that consume_telegram_link_token/
+        link_driver_group (bot.py's handle_linkdriver) can actually redeem -
+        not just three independently-mocked layers that happen to agree."""
+        from db.repository import consume_telegram_link_token, link_driver_group
+
+        self._register_owner(client, "991111")
+        created = client.post("/api/drivers", json={"full_name": "Round Trip"}, headers=_csrf_headers(client))
+        driver_id = created.json()["id"]
+        code = created.json()["link_code"]
+
+        result = consume_telegram_link_token(code)
+        assert result == {"account_type": "driver_group", "account_id": driver_id}
+
+        status = link_driver_group(result["account_id"], -100123456789, "Round Trip's Group")
+        assert status == "ok"
+
+        listed = client.get("/api/drivers").json()
+        linked = next(d for d in listed if d["id"] == driver_id)
+        assert linked["telegram_group_id"] == -100123456789
+        assert linked["telegram_group_title"] == "Round Trip's Group"
+
+        # The code is single-use - consuming it again must fail, exactly
+        # like a driver re-sending /linkdriver with the same code twice.
+        assert consume_telegram_link_token(code) is None
+
+
 class TestSamsaraTestMode:
     """SAMSARA_TEST_MODE simulates GPS without a real Samsara account - see
     services/samsara_test_mode.py. Confirms the "Connected" status this
@@ -601,7 +716,7 @@ class TestWebauthnChallengeReplayProtection:
         assert reg.status_code == 200, reg.text
 
     def test_verify_with_no_prior_options_call_is_rejected(self, client):
-        self._register_owner(client, "951111")
+        self._register_owner(client, "955555")
 
         response = client.post(
             "/api/2fa/webauthn/register/verify",
@@ -688,7 +803,7 @@ class TestOtpSendErrorHandling:
 
     def test_unconfigured_email_channel_returns_400_not_bare_500(self, client, monkeypatch):
         monkeypatch.setattr(api_module.email_otp_service, "is_configured", lambda: False)
-        self._register_owner(client, "941111")
+        self._register_owner(client, "944444")
 
         response = client.post(
             "/api/2fa/otp/send",
