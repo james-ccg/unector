@@ -4,7 +4,10 @@ import { motion, AnimatePresence } from 'motion/react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import TwoFactorSettings from '../components/TwoFactorSettings'
+import ThemeToggle from '../components/ThemeToggle'
+import FontSizeToggle from '../components/FontSizeToggle'
 import { useAuth } from '../context/AuthContext'
+import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, errorMessage,
   type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
@@ -15,6 +18,7 @@ import './SettingsPage.css'
 
 export default function SettingsPage() {
   const { user, logout } = useAuth()
+  const { reduceMotion, setReduceMotion } = usePreferences()
   const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<CompanySettings | null>(null)
   const [dispatchers, setDispatchers] = useState<Dispatcher[]>([])
@@ -327,6 +331,42 @@ export default function SettingsPage() {
                 <p className="settings-row-label">MC number</p>
                 <p className="settings-row-value mono">{settings?.mc_number || '—'}</p>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------------- App Preferences ---------------- */}
+        <section className="settings-section">
+          <h2 className="section-title">App Preferences</h2>
+          <div className="card">
+            <div className="pref-row">
+              <div>
+                <p className="settings-row-label">Appearance</p>
+                <p className="settings-row-hint">System matches your device's setting.</p>
+              </div>
+              <ThemeToggle />
+            </div>
+            <div className="pref-row">
+              <div>
+                <p className="settings-row-label">Chat font</p>
+                <p className="settings-row-hint">Text size across the dashboard.</p>
+              </div>
+              <FontSizeToggle />
+            </div>
+            <div className="pref-row">
+              <div>
+                <p className="settings-row-label">Motion</p>
+                <p className="settings-row-hint">Reduce animation in page transitions and other interface elements.</p>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={reduceMotion}
+                  onChange={(e) => setReduceMotion(e.target.checked)}
+                  aria-label="Reduce motion"
+                />
+                <span className="switch-track"><span className="switch-thumb" /></span>
+              </label>
             </div>
           </div>
         </section>

@@ -1,0 +1,38 @@
+.font-size-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.font-size-toggle-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 600;
+  line-height: 1;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.font-size-toggle-small { font-size: 11px; }
+.font-size-toggle-medium { font-size: 14px; }
+.font-size-toggle-large { font-size: 17px; }
+
+.font-size-toggle-option:hover {
+  color: var(--text);
+}
+
+.font-size-toggle-option.is-active {
+  background: var(--amber);
+  color: #16150f;
+}
