@@ -177,6 +177,18 @@ if IS_PRODUCTION:
         )
     if not FERNET_KEY:
         _problems.append("FERNET_MASTER_KEY is not set - generate one with `python config.py`.")
+    # Billing enabled (a secret key is set) but no webhook secret means
+    # every Stripe callback - subscription created/updated/canceled,
+    # failed payments - fails signature verification and gets dropped.
+    # That's silent: checkout still works (it doesn't need the webhook),
+    # so a company could keep paid-tier access indefinitely after
+    # canceling, with nothing in the UI indicating why.
+    if STRIPE_SECRET_KEY and not STRIPE_WEBHOOK_SECRET:
+        _problems.append(
+            "STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET is not - subscription "
+            "lifecycle events (upgrades, cancellations, failed payments) would silently "
+            "fail. Set STRIPE_WEBHOOK_SECRET (see stripe_setup.py)."
+        )
     if _problems:
         raise RuntimeError(
             "Refusing to start with ENVIRONMENT=production and insecure secrets:\n- "

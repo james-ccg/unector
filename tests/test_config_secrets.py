@@ -61,3 +61,33 @@ class TestProductionSecretCheck:
             "JWT_SECRET_KEY": "dev-only-change-me-before-going-live",
         })
         assert result.returncode == 0, result.stderr
+
+    def test_refuses_to_start_with_stripe_key_but_no_webhook_secret(self):
+        """A STRIPE_SECRET_KEY with no matching STRIPE_WEBHOOK_SECRET means
+        every subscription lifecycle webhook (upgrades, cancellations,
+        failed payments) would silently fail signature verification -
+        checkout itself doesn't need the webhook, so this would look fine
+        until a company's subscription state quietly stops updating."""
+        from cryptography.fernet import Fernet
+
+        result = _run_import_config({
+            "ENVIRONMENT": "production",
+            "JWT_SECRET_KEY": "a" * 64,
+            "FERNET_MASTER_KEY": Fernet.generate_key().decode(),
+            "STRIPE_SECRET_KEY": "sk_live_fake_for_test",
+            "STRIPE_WEBHOOK_SECRET": "",
+        })
+        assert result.returncode != 0
+        assert "STRIPE_WEBHOOK_SECRET" in result.stderr
+
+    def test_starts_normally_with_stripe_billing_fully_configured(self):
+        from cryptography.fernet import Fernet
+
+        result = _run_import_config({
+            "ENVIRONMENT": "production",
+            "JWT_SECRET_KEY": "a" * 64,
+            "FERNET_MASTER_KEY": Fernet.generate_key().decode(),
+            "STRIPE_SECRET_KEY": "sk_live_fake_for_test",
+            "STRIPE_WEBHOOK_SECRET": "whsec_fake_for_test",
+        })
+        assert result.returncode == 0, result.stderr

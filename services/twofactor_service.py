@@ -10,6 +10,7 @@ service modules (email_otp_service.py, sms_service.py, telegram_otp_service.py).
 import hashlib
 import secrets
 import base64
+import time
 from datetime import datetime, timedelta, timezone
 
 import pyotp
@@ -50,11 +51,25 @@ def totp_provisioning_qr_data_url(secret: str, account_label: str, issuer: str =
     return f"data:image/png;base64,{b64}"
 
 
-def verify_totp_code(encrypted_secret: str, code: str) -> bool:
+def verify_totp_code(encrypted_secret: str, code: str, last_used_step: int | None = None) -> int | None:
     """Checks a 6-digit code against a stored (encrypted) TOTP secret,
-    allowing +/-1 time step (30s) for clock drift."""
+    allowing +/-1 time step (30s) for clock drift. Returns the matched
+    time-step number on success - the caller should persist it (see
+    db/repository.py's update_totp_last_used_step) and pass it back as
+    last_used_step on the next call, so a code that's been observed once
+    (shoulder-surfed, leaked in a log, ...) can't be replayed for the rest
+    of its ~90s validity window. Returns None if the code is wrong, OR
+    valid but already consumed (its step is <= last_used_step)."""
     secret = decrypt_value(encrypted_secret)
-    return pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
+    totp = pyotp.TOTP(secret)
+    code = code.strip()
+    current_step = int(time.time()) // totp.interval
+    for step in (current_step, current_step - 1, current_step + 1):
+        if last_used_step is not None and step <= last_used_step:
+            continue
+        if totp.at(step * totp.interval) == code:
+            return step
+    return None
 
 
 # ------------------------------------------------------------------

@@ -159,6 +159,11 @@ class TwoFactorSecret(Base):
 
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The last 30s time-step a TOTP code was successfully verified against -
+    # without this, a single observed/leaked code stays valid (and
+    # replayable) for its whole ~90s window (services/twofactor_service.py's
+    # verify_totp_code enforces the "must be newer than this" check).
+    totp_last_used_step: Mapped[int | None] = mapped_column(nullable=True)
 
     email_otp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     contact_email: Mapped[str | None] = mapped_column(String(200), nullable=True)
