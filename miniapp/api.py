@@ -564,13 +564,22 @@ def update_subscription(
             if driver_record.company_id != user["company_id"]:
                 raise HTTPException(403, "Access denied")
 
-            # Enforce the plan's driver cap when turning a driver ON. No
-            # driver-creation endpoint exists yet (drivers are provisioned
-            # out-of-band today) - if one is added later, it needs this
-            # same check.
+            # Enforce the plan's driver cap when turning a driver ON.
+            #
+            # subscription_status matters here, not just tier: a failed
+            # renewal (past_due/unpaid) leaves `tier` as whatever paid plan
+            # the company was on - Stripe keeps retrying for weeks before
+            # actually canceling - so checking tier alone would let a
+            # lapsed-payment company keep activating new paid-tier drivers
+            # the whole time. Already-active drivers are deliberately left
+            # alone here (see _handle_subscription_deleted's docstring) -
+            # this only blocks NEW activations under a plan that isn't
+            # currently in good standing. add_driver (POST /api/drivers)
+            # needs this same check - see its own docstring.
             if body.active and not driver_record.subscription_active:
                 info = get_company_billing_info(user["company_id"])
-                limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info else 1
+                in_good_standing = bool(info and info["subscription_status"] in ("active", "trialing"))
+                limit = PLAN_LIMITS.get(info["subscription_tier"], 1) if info and in_good_standing else 1
                 if info and info["active_drivers"] >= limit:
                     raise HTTPException(
                         402,
@@ -1165,6 +1174,8 @@ from db.repository import (
     update_webauthn_sign_count,
     delete_webauthn_credential,
     create_telegram_link_token,
+    create_webauthn_challenge,
+    consume_webauthn_challenge,
 )
 from services import twofactor_service, email_otp_service, sms_service, telegram_otp_service, webauthn_service
 
@@ -1187,8 +1198,12 @@ class TwoFaLoginVerifyRequest(BaseModel):
 
 class WebAuthnVerifyRequest(BaseModel):
     credential_json: str
-    challenge: str
     label: str | None = None
+
+
+class WebAuthnLoginVerifyRequest(BaseModel):
+    pending_token: str
+    credential_json: str
 
 
 def get_pending_2fa_claims(authorization: str = Header(default="")) -> dict:
@@ -1254,26 +1269,41 @@ async def otp_send(
 ):
     account_type, account_id = _self_account(user)
     code = twofactor_service.generate_otp_code()
+
+    # Send BEFORE persisting the pending code - a delivery failure here
+    # (SMTP/SMS_PROVIDER unconfigured, a real send error, the user blocked
+    # the bot, ...) previously propagated as a bare, detail-less 500 with
+    # no indication of what went wrong, AND still left a pending_otp row
+    # for a code that was never actually delivered.
+    try:
+        if body.channel == "email":
+            if not body.contact:
+                raise HTTPException(400, "Email address is required")
+            email_otp_service.send_otp_email(body.contact, code)
+        elif body.channel == "sms":
+            if not body.contact:
+                raise HTTPException(400, "Phone number is required")
+            sms_service.send_otp_sms(body.contact, code)
+        elif body.channel == "telegram":
+            info = get_2fa_delivery_info(account_type, account_id)
+            if not info or not info["telegram_user_id"]:
+                raise HTTPException(400, "Link your Telegram account first (see the Telegram tab)")
+            await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
+        else:
+            raise HTTPException(400, "Unknown channel")
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        import logging
+        logging.exception("Failed to send %s OTP enrollment code for %s %s", body.channel, account_type, account_id)
+        raise HTTPException(502, "Could not send the verification code. Please try again.")
+
     create_pending_otp(
         account_type, account_id, body.channel, "enroll",
         twofactor_service.hash_otp_code(code), twofactor_service.otp_expiry(),
     )
-
-    if body.channel == "email":
-        if not body.contact:
-            raise HTTPException(400, "Email address is required")
-        email_otp_service.send_otp_email(body.contact, code)
-    elif body.channel == "sms":
-        if not body.contact:
-            raise HTTPException(400, "Phone number is required")
-        sms_service.send_otp_sms(body.contact, code)
-    elif body.channel == "telegram":
-        info = get_2fa_delivery_info(account_type, account_id)
-        if not info or not info["telegram_user_id"]:
-            raise HTTPException(400, "Link your Telegram account first (see the Telegram tab)")
-        await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
-    else:
-        raise HTTPException(400, "Unknown channel")
 
     return {"sent": True}
 
@@ -1335,7 +1365,11 @@ def webauthn_register_options(user: dict = Depends(get_current_user), _csrf: Non
     existing = [c["credential_id"] for c in list_webauthn_credentials(account_type, account_id)]
     label = user.get("company_name") or f"{account_type}-{account_id}"
     options_json, challenge = webauthn_service.build_registration_options(f"{account_type}:{account_id}", label, existing)
-    return {"options": options_json, "challenge": challenge}
+    # Stored server-side and consumed on verify below - the challenge is
+    # NOT sent back to the client to echo back (see WebauthnChallenge's
+    # docstring for why trusting a client-supplied challenge is unsafe).
+    create_webauthn_challenge(account_type, account_id, "register", challenge)
+    return {"options": options_json}
 
 
 @app.post("/api/2fa/webauthn/register/verify")
@@ -1343,8 +1377,11 @@ def webauthn_register_verify(
     body: WebAuthnVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     account_type, account_id = _self_account(user)
+    expected_challenge = consume_webauthn_challenge(account_type, account_id, "register")
+    if not expected_challenge:
+        raise HTTPException(400, "This registration attempt has expired - please try again.")
     try:
-        result = webauthn_service.verify_registration(body.credential_json, body.challenge)
+        result = webauthn_service.verify_registration(body.credential_json, expected_challenge)
     except Exception as e:
         raise HTTPException(400, f"Could not verify security key: {e}")
     add_webauthn_credential(
@@ -1382,19 +1419,33 @@ async def login_2fa_challenge(
         raise HTTPException(400, "Two-factor auth is not set up for this account")
 
     code = twofactor_service.generate_otp_code()
+
+    # Send BEFORE persisting the pending code - see otp_send's comment for
+    # why: an unhandled delivery failure here used to surface as a bare,
+    # detail-less 500 and still leave a pending_otp row for a code that was
+    # never actually delivered.
+    try:
+        if body.channel == "email" and info["email_otp_enabled"] and info["contact_email"]:
+            email_otp_service.send_otp_email(info["contact_email"], code)
+        elif body.channel == "sms" and info["sms_otp_enabled"] and info["phone_number"]:
+            sms_service.send_otp_sms(info["phone_number"], code)
+        elif body.channel == "telegram" and info["telegram_otp_enabled"] and info["telegram_user_id"]:
+            await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
+        else:
+            raise HTTPException(400, "That method isn't enabled for this account")
+    except HTTPException:
+        raise
+    except NotImplementedError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        import logging
+        logging.exception("Failed to send %s OTP login code for %s %s", body.channel, account_type, account_id)
+        raise HTTPException(502, "Could not send the verification code. Please try again.")
+
     create_pending_otp(
         account_type, account_id, body.channel, "login",
         twofactor_service.hash_otp_code(code), twofactor_service.otp_expiry(),
     )
-
-    if body.channel == "email" and info["email_otp_enabled"] and info["contact_email"]:
-        email_otp_service.send_otp_email(info["contact_email"], code)
-    elif body.channel == "sms" and info["sms_otp_enabled"] and info["phone_number"]:
-        sms_service.send_otp_sms(info["phone_number"], code)
-    elif body.channel == "telegram" and info["telegram_otp_enabled"] and info["telegram_user_id"]:
-        await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
-    else:
-        raise HTTPException(400, "That method isn't enabled for this account")
 
     return {"sent": True}
 
@@ -1406,7 +1457,8 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
     if not credentials:
         raise HTTPException(400, "No security keys registered for this account")
     options_json, challenge = webauthn_service.build_authentication_options(credentials)
-    return {"options": options_json, "challenge": challenge}
+    create_webauthn_challenge(account_type, account_id, "login", challenge)
+    return {"options": options_json}
 
 
 @app.post("/api/2fa/login/verify")
@@ -1444,9 +1496,9 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
 @app.post("/api/2fa/login/webauthn/verify")
 @limiter.limit("10/minute")
 async def login_2fa_webauthn_verify(
-    request: Request, body: WebAuthnVerifyRequest, pending_token: str, response: Response,
+    request: Request, body: WebAuthnLoginVerifyRequest, response: Response,
 ):
-    claims = decode_token(pending_token)
+    claims = decode_token(body.pending_token)
     if not claims or claims.get("purpose") != "2fa_login":
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
 
@@ -1455,11 +1507,15 @@ async def login_2fa_webauthn_verify(
     if not credentials:
         raise HTTPException(400, "No security keys registered for this account")
 
+    expected_challenge = consume_webauthn_challenge(account_type, account_id, "login")
+    if not expected_challenge:
+        raise HTTPException(400, "This sign-in attempt has expired - please try again.")
+
     verified_any = False
     for cred in credentials:
         try:
             new_count = webauthn_service.verify_authentication(
-                body.credential_json, body.challenge, cred["public_key"], cred["sign_count"]
+                body.credential_json, expected_challenge, cred["public_key"], cred["sign_count"]
             )
             update_webauthn_sign_count(cred["credential_id"], new_count)
             verified_any = True
