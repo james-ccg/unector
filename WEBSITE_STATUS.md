@@ -52,5 +52,3 @@ owner is routed to onboarding until that's done.
 - Footer social links (Twitter/LinkedIn) and Privacy Policy/Terms are
   placeholder "Coming soon" - no real profile URLs or legal copy exist yet
   to link to.
-- `/pages/trust`'s public stats endpoint reports a fixed 99.9% uptime figure
-  rather than a measured one - there's no uptime-monitoring system wired up.

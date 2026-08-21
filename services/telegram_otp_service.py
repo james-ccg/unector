@@ -1,7 +1,7 @@
 """
 Sends 2FA one-time codes via the Telegram bot itself - no paid service
 needed at all, since we already have a working bot. Requires the account
-to have linked their Telegram account first (see the /link command in
+to have linked their Telegram account first (see the /verify2fa command in
 bot.py and the telegram-link endpoints in miniapp/api.py).
 """
 from aiogram import Bot
@@ -13,7 +13,7 @@ async def send_otp_telegram(telegram_user_id: int, code: str) -> None:
     """Sends a one-time code as a direct message from the bot.
 
     Note: Telegram only allows a bot to message a user who has started a
-    conversation with it first (which the /link flow requires anyway)."""
+    conversation with it first (which the /verify2fa flow requires anyway)."""
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
     try:
         await bot.send_message(
