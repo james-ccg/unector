@@ -395,7 +395,11 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 mc_number=body.mc_number,
                 company_name=body.company_name,
                 email=body.email,
-                telegram_group_prefix=f"FP{body.mc_number[:4]}",
+                # mc_number is already validated (digits only, <=20 chars) and unique
+                # (checked above), so keying off the full number - not a truncated
+                # prefix of it - avoids collisions between MC numbers that share a
+                # common prefix (e.g. "555000" vs "555001").
+                telegram_group_prefix=f"FP{body.mc_number}"[:20],
                 password_hash=hash_password(body.password)
             )
             session.add(new_company)

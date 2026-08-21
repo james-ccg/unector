@@ -137,6 +137,35 @@ class TestAuth:
         assert me.status_code == 401
 
 
+class TestRegisterMcPrefixCollision:
+    """Regression test: telegram_group_prefix used to be derived from just the
+    first 4 digits of the MC number, so two companies whose MC numbers shared
+    that prefix (e.g. "555000" and "555001") collided on the column's UNIQUE
+    constraint - the second registration raised an unhandled IntegrityError
+    that the endpoint's broad except turned into an opaque 500."""
+
+    def test_companies_with_colliding_mc_prefix_both_register(self, client):
+        first = client.post("/api/auth/register", json={
+            "mc_number": "555000",
+            "company_name": "Prefix Collision Co A",
+            "email": "ownerA@prefixcollision.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        assert first.status_code == 200, first.text
+
+        second_client = TestClient(app)
+        second = second_client.post("/api/auth/register", json={
+            "mc_number": "555001",
+            "company_name": "Prefix Collision Co B",
+            "email": "ownerB@prefixcollision.com",
+            "password": "password123",
+            "confirm_password": "password123",
+        })
+        assert second.status_code == 200, second.text
+        assert second.json()["company_id"] != first.json()["company_id"]
+
+
 class TestCsrfProtection:
     """State-changing requests must present a matching X-CSRF-Token header,
     even with a fully valid session cookie - otherwise a cross-site request
