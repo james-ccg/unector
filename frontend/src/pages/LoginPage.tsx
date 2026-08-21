@@ -70,7 +70,6 @@ export default function LoginPage() {
       )
       if (isChallenge(data)) {
         setChallenge(data)
-        setMethod(data.methods[0] || '')
       } else {
         finishLogin(data)
       }
@@ -93,7 +92,6 @@ export default function LoginPage() {
       )
       if (isChallenge(data)) {
         setChallenge(data)
-        setMethod(data.methods[0] || '')
       } else {
         finishLogin(data)
       }
@@ -120,6 +118,19 @@ export default function LoginPage() {
       }
     }
   }
+
+  // A fresh challenge auto-highlights its first method's tab, so it also
+  // needs to actually run selectMethod for it - otherwise an email/SMS/
+  // Telegram method (whichever comes first) never gets its code sent, and
+  // the form sits on "Sending code..." forever until the user happens to
+  // re-click the tab that already looks selected.
+  useEffect(() => {
+    if (challenge && challenge.methods.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      selectMethod(challenge.methods[0])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [challenge])
 
   const submitCode = async (e: React.FormEvent) => {
     e.preventDefault()

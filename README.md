@@ -84,15 +84,19 @@ skip all of them on a brand-new database. Only run one if you're upgrading an ex
 
 ### 5. Add a company and driver
 
-Registering a company is self-service from the dashboard (`/register`). Adding a driver and
-linking it to a Telegram group is **not yet self-service** - there's no dashboard UI for it
-today. Use the seed script instead:
+Both are self-service from the dashboard now. Registering a company is done from `/register`;
+adding a driver is done from **Settings → Drivers** once logged in as the owner - it creates the
+driver record and shows a one-time `/linkdriver <code>` command. Add the bot to the driver's
+Telegram group and send that command there to complete the link (no group ID needed - unlike
+`/setvehicle`, this doesn't require `/myid` first).
+
+`seed.py` still exists for quick local/test setup without going through the dashboard:
 
 ```bash
 python seed.py --group-id -1001234567890 --mc 123456 --company "Axle Logistics" --driver-name "Jasur"
 ```
 
-To find a group's ID: add the bot to the driver+dispatch group and send `/myid` there.
+To find a group's ID for `seed.py`: add the bot to the driver+dispatch group and send `/myid` there.
 
 ### 6. Optional integrations
 
