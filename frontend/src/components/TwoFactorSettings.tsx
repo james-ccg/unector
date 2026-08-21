@@ -216,9 +216,9 @@ export default function TwoFactorSettings() {
     }
     setWebauthnBusy(true)
     try {
-      const { options, challenge } = await twoFaApi.webauthnRegisterOptions()
+      const { options } = await twoFaApi.webauthnRegisterOptions()
       const credentialJson = await createCredential(options)
-      await twoFaApi.webauthnRegisterVerify(credentialJson, challenge, webauthnLabel || 'Security key')
+      await twoFaApi.webauthnRegisterVerify(credentialJson, webauthnLabel || 'Security key')
       setWebauthnLabel('')
       flash('success', 'Security key registered.')
       load()

@@ -1172,3 +1172,49 @@ def consume_telegram_link_token(code: str) -> dict | None:
         row.consumed_at = datetime.now(timezone.utc)
         session.commit()
         return {"account_type": row.account_type, "account_id": row.account_id}
+
+
+# ---- WebAuthn challenges - see models.WebauthnChallenge's docstring for why
+# these exist (a client-echoed challenge alone isn't a valid anti-replay
+# control) ----
+WEBAUTHN_CHALLENGE_TTL_SECONDS = 5 * 60  # plenty of time to complete the browser/authenticator prompt
+
+
+def create_webauthn_challenge(account_type: str, account_id: int, purpose: str, challenge: str) -> None:
+    with get_session() as session:
+        session.add(
+            models.WebauthnChallenge(
+                account_type=account_type,
+                account_id=account_id,
+                purpose=purpose,
+                challenge=challenge,
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=WEBAUTHN_CHALLENGE_TTL_SECONDS),
+            )
+        )
+        session.commit()
+
+
+def consume_webauthn_challenge(account_type: str, account_id: int, purpose: str) -> str | None:
+    """Looks up the most recent unexpired, unused challenge issued for this
+    account/purpose and marks it consumed. Returns the challenge to verify
+    against, or None if there isn't a valid one - callers must treat that
+    as a hard failure (a fresh options call is required), never fall back
+    to trusting a client-supplied challenge instead."""
+    with get_session() as session:
+        row = (
+            session.query(models.WebauthnChallenge)
+            .filter(
+                models.WebauthnChallenge.account_type == account_type,
+                models.WebauthnChallenge.account_id == account_id,
+                models.WebauthnChallenge.purpose == purpose,
+                models.WebauthnChallenge.consumed_at.is_(None),
+                models.WebauthnChallenge.expires_at > datetime.now(timezone.utc),
+            )
+            .order_by(models.WebauthnChallenge.created_at.desc())
+            .first()
+        )
+        if not row:
+            return None
+        row.consumed_at = datetime.now(timezone.utc)
+        session.commit()
+        return row.challenge

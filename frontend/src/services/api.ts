@@ -213,13 +213,13 @@ export const twoFaApi = {
     apiRequest<{ id: number; label: string | null; created_at: string | null }[]>('/api/2fa/webauthn'),
 
   webauthnRegisterOptions: () =>
-    apiRequest<{ options: string; challenge: string }>('/api/2fa/webauthn/register/options', {
+    apiRequest<{ options: string }>('/api/2fa/webauthn/register/options', {
       method: 'POST',
     }),
-  webauthnRegisterVerify: (credentialJson: string, challenge: string, label: string) =>
+  webauthnRegisterVerify: (credentialJson: string, label: string) =>
     apiRequest<{ registered: boolean }>('/api/2fa/webauthn/register/verify', {
       method: 'POST',
-      body: JSON.stringify({ credential_json: credentialJson, challenge, label }),
+      body: JSON.stringify({ credential_json: credentialJson, label }),
     }),
   webauthnDelete: (credentialPk: number) =>
     apiRequest<{ deleted: boolean }>(`/api/2fa/webauthn/${credentialPk}`, { method: 'DELETE' }),
@@ -242,14 +242,14 @@ export const twoFaApi = {
       body: JSON.stringify({ pending_token: pendingToken, method, code }),
     }),
   loginWebauthnOptions: (pendingToken: string) =>
-    apiRequest<{ options: string; challenge: string }>('/api/2fa/login/webauthn/options', {
+    apiRequest<{ options: string }>('/api/2fa/login/webauthn/options', {
       method: 'POST',
       headers: { Authorization: `Bearer ${pendingToken}` },
     }),
-  loginWebauthnVerify: (pendingToken: string, credentialJson: string, challenge: string) =>
-    apiRequest<LoginSuccess>(`/api/2fa/login/webauthn/verify?pending_token=${encodeURIComponent(pendingToken)}`, {
+  loginWebauthnVerify: (pendingToken: string, credentialJson: string) =>
+    apiRequest<LoginSuccess>('/api/2fa/login/webauthn/verify', {
       method: 'POST',
-      body: JSON.stringify({ credential_json: credentialJson, challenge }),
+      body: JSON.stringify({ pending_token: pendingToken, credential_json: credentialJson }),
     }),
 }
 
