@@ -40,6 +40,7 @@ export default function MonitoringPage() {
   }, [user])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
     const timer = window.setInterval(() => void refresh(), 30000)
     return () => window.clearInterval(timer)

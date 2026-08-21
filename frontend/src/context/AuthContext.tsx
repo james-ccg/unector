@@ -97,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- a context module exporting its own useX hook alongside the Provider is the standard pattern; only affects Fast Refresh granularity, not correctness.
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
