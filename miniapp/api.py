@@ -1170,16 +1170,15 @@ def get_public_stats():
             loads_value = session.query(
                 func.sum(models.Load.rate_amount)
             ).scalar() or 0
-            
-            # Average uptime (mock calculation based on company count)
-            uptime = 99.9 if total_companies > 0 else 0
-            
+
+            # No "uptime" figure here - there's no real monitoring/health-check
+            # history to compute one from, and TrustPage explicitly promises
+            # these are real database numbers, not marketing claims.
             return {
                 "companies": total_companies,
                 "active_trucks": active_drivers,
                 "loads_delivered": total_loads,
                 "loads_value": float(loads_value),
-                "uptime": uptime
             }
     except Exception:
         import logging
@@ -1191,7 +1190,6 @@ def get_public_stats():
             "active_trucks": 0,
             "loads_delivered": 0,
             "loads_value": 0,
-            "uptime": 0,
         }
 
 
@@ -1206,6 +1204,7 @@ from db.repository import (
     get_2fa_delivery_info,
     save_totp_secret,
     set_totp_enabled,
+    update_totp_last_used_step,
     set_email_otp,
     set_sms_otp,
     create_pending_otp,
@@ -1276,7 +1275,8 @@ def get_two_factor_status(user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/2fa/totp/setup")
-def totp_setup(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+@limiter.limit("10/minute")
+def totp_setup(request: Request, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     account_type, account_id = _self_account(user)
     secret = twofactor_service.generate_totp_secret()
     save_totp_secret(account_type, account_id, encrypt_value(secret))
@@ -1286,13 +1286,20 @@ def totp_setup(user: dict = Depends(get_current_user), _csrf: None = Depends(ver
 
 
 @app.post("/api/2fa/totp/verify")
-def totp_verify(body: OtpVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+@limiter.limit("10/minute")
+def totp_verify(
+    request: Request, body: OtpVerifyRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
     account_type, account_id = _self_account(user)
     info = get_2fa_delivery_info(account_type, account_id)
     if not info or not info["totp_secret_encrypted"]:
         raise HTTPException(400, "Run TOTP setup first")
-    if not twofactor_service.verify_totp_code(info["totp_secret_encrypted"], body.code):
+    step = twofactor_service.verify_totp_code(
+        info["totp_secret_encrypted"], body.code, info["totp_last_used_step"]
+    )
+    if step is None:
         raise HTTPException(400, "Incorrect code")
+    update_totp_last_used_step(account_type, account_id, step)
     set_totp_enabled(account_type, account_id, True)
     return {"enabled": True}
 
@@ -1516,10 +1523,14 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
 
     if body.method == "totp":
         info = get_2fa_delivery_info(account_type, account_id)
-        verified = bool(
-            info and info["totp_secret_encrypted"]
-            and twofactor_service.verify_totp_code(info["totp_secret_encrypted"], body.code)
-        )
+        totp_step = None
+        if info and info["totp_secret_encrypted"]:
+            totp_step = twofactor_service.verify_totp_code(
+                info["totp_secret_encrypted"], body.code, info["totp_last_used_step"]
+            )
+        verified = totp_step is not None
+        if verified:
+            update_totp_last_used_step(account_type, account_id, totp_step)
     elif body.method in ("email", "sms", "telegram"):
         verified = consume_pending_otp(account_type, account_id, body.method, "login", twofactor_service.hash_otp_code(body.code))
     elif body.method == "recovery":

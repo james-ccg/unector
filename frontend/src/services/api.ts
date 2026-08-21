@@ -465,7 +465,6 @@ export const publicApi = {
       active_trucks: number
       loads_delivered: number
       loads_value: number
-      uptime: number
     }>('/api/public/stats'),
 
   // turnstile_site_key is null when Cloudflare Turnstile isn't configured -

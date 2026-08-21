@@ -946,6 +946,7 @@ def get_2fa_delivery_info(account_type: str, account_id: int) -> dict | None:
         return {
             "totp_secret_encrypted": row.totp_secret_encrypted,
             "totp_enabled": row.totp_enabled,
+            "totp_last_used_step": row.totp_last_used_step,
             "contact_email": decrypt_value(row.contact_email) if row.contact_email else None,
             "email_otp_enabled": row.email_otp_enabled,
             "phone_number": decrypt_value(row.phone_number) if row.phone_number else None,
@@ -966,6 +967,16 @@ def set_totp_enabled(account_type: str, account_id: int, enabled: bool) -> None:
     with get_session() as session:
         row = _get_or_create_2fa_row(session, account_type, account_id)
         row.totp_enabled = enabled
+        session.commit()
+
+
+def update_totp_last_used_step(account_type: str, account_id: int, step: int) -> None:
+    """Records the time-step a TOTP code was just successfully verified
+    against, so verify_totp_code can reject that same code (or an earlier
+    one) if it's replayed within its remaining validity window."""
+    with get_session() as session:
+        row = _get_or_create_2fa_row(session, account_type, account_id)
+        row.totp_last_used_step = step
         session.commit()
 
 

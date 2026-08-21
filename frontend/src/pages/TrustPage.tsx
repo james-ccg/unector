@@ -7,7 +7,6 @@ interface Stats {
   companies: number
   active_trucks: number
   loads_delivered: number
-  uptime: number
 }
 
 export default function TrustPage() {
@@ -63,11 +62,6 @@ export default function TrustPage() {
               <p className="stat-desc">Rate confirmations extracted and tracked</p>
             </div>
 
-            <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : `${stats?.uptime ?? 0}%`}</div>
-              <div className="stat-label">Bot Uptime</div>
-              <p className="stat-desc">Telegram bot availability, with automatic reconnect</p>
-            </div>
           </div>
 
           <div className="testimonials">
