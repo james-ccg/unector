@@ -91,3 +91,19 @@ class TestProductionSecretCheck:
             "STRIPE_WEBHOOK_SECRET": "whsec_fake_for_test",
         })
         assert result.returncode == 0, result.stderr
+
+    def test_refuses_to_start_with_samsara_test_mode_enabled(self):
+        """SAMSARA_TEST_MODE fabricates GPS data - left on in production, it
+        would fire real proximity alerts to real driver Telegram groups
+        using fake coordinates, with nothing distinguishing them from
+        genuine ones."""
+        from cryptography.fernet import Fernet
+
+        result = _run_import_config({
+            "ENVIRONMENT": "production",
+            "JWT_SECRET_KEY": "a" * 64,
+            "FERNET_MASTER_KEY": Fernet.generate_key().decode(),
+            "SAMSARA_TEST_MODE": "true",
+        })
+        assert result.returncode != 0
+        assert "SAMSARA_TEST_MODE" in result.stderr

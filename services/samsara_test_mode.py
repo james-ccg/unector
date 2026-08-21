@@ -39,15 +39,20 @@ def _simulated_point(target_lat: float, target_lng: float, distance_miles: float
     return {"lat": lat, "lng": target_lng, "updated_at": None}
 
 
-async def get_fleet_locations(vehicle_ids: list[str]) -> dict[str, dict]:
+async def get_fleet_locations(company_id: int, vehicle_ids: list[str]) -> dict[str, dict]:
     if not vehicle_ids:
         return {}
 
+    # Scoped to company_id, not just vehicle_id - two different companies'
+    # test drivers can easily end up with the same vehicle_id (the setup
+    # docs literally say "give your test driver ANY samsara_vehicle_id"),
+    # and without this a collision would compute one company's simulated
+    # alerts against a different company's pickup/delivery coordinates.
     wanted = set(vehicle_ids)
     loads_by_vehicle = {
         ld.samsara_vehicle_id: ld
         for ld in get_active_loads_for_monitoring()
-        if ld.samsara_vehicle_id in wanted
+        if ld.samsara_vehicle_id in wanted and ld.company_id == company_id
     }
 
     now = time.monotonic()

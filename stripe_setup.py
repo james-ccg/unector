@@ -42,6 +42,30 @@ def _find_or_create_product(name: str) -> str:
     return product.id
 
 
+def _find_or_create_price(product_id: str, dollars: int, interval: str) -> str:
+    """Price.list (not .search) - list is strongly consistent, search has a
+    brief indexing delay that could miss a Price created moments earlier in
+    the same run. Without this, re-running after a partial failure (e.g.
+    the script dies partway through the 6-price loop) would create
+    duplicate Prices for every tier/interval that already succeeded."""
+    existing = stripe.Price.list(product=product_id, active=True, limit=100)
+    for price in existing.data:
+        if (
+            price.currency == "usd"
+            and price.unit_amount == dollars * 100
+            and price.recurring
+            and price.recurring.get("interval") == interval
+        ):
+            return price.id
+    price = stripe.Price.create(
+        product=product_id,
+        unit_amount=dollars * 100,
+        currency="usd",
+        recurring={"interval": interval},
+    )
+    return price.id
+
+
 def run_setup():
     if not STRIPE_SECRET_KEY:
         raise SystemExit("STRIPE_SECRET_KEY is not set in .env - add your Stripe test secret key first.")
@@ -53,15 +77,10 @@ def run_setup():
     for tier, amounts in PLAN_PRICES.items():
         product_id = _find_or_create_product(PRODUCT_NAMES[tier])
         for interval, dollars in amounts.items():
-            price = stripe.Price.create(
-                product=product_id,
-                unit_amount=dollars * 100,  # Stripe wants cents
-                currency="usd",
-                recurring={"interval": interval},
-            )
+            price_id = _find_or_create_price(product_id, dollars, interval)
             env_var = ENV_VAR_NAMES[(tier, interval)]
-            env_lines.append(f"{env_var}={price.id}")
-            print(f"  {PRODUCT_NAMES[tier]} / {interval}ly: ${dollars} -> {price.id}")
+            env_lines.append(f"{env_var}={price_id}")
+            print(f"  {PRODUCT_NAMES[tier]} / {interval}ly: ${dollars} -> {price_id}")
 
     print("\nDone. Paste these into your .env:\n")
     print("\n".join(env_lines))

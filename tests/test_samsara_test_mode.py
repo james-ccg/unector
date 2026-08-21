@@ -41,13 +41,13 @@ def _clear_sim_state():
 
 @pytest.mark.asyncio
 async def test_no_vehicle_ids_returns_empty():
-    assert await samsara_test_mode.get_fleet_locations([]) == {}
+    assert await samsara_test_mode.get_fleet_locations(1, []) == {}
 
 
 @pytest.mark.asyncio
 async def test_vehicle_with_no_active_load_is_absent():
     with patch.object(samsara_test_mode, "get_active_loads_for_monitoring", return_value=[]):
-        result = await samsara_test_mode.get_fleet_locations(["veh-unknown"])
+        result = await samsara_test_mode.get_fleet_locations(1, ["veh-unknown"])
     assert result == {}
 
 
@@ -58,7 +58,7 @@ async def test_starts_at_configured_distance_from_pickup():
     with patch.object(samsara_test_mode, "get_active_loads_for_monitoring", return_value=[load]), \
          patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0):
-        result = await samsara_test_mode.get_fleet_locations(["veh-1"])
+        result = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     point = result["veh-1"]
     distance = geo_utils.haversine_miles(point["lat"], point["lng"], load.pu_lat, load.pu_lng)
@@ -73,10 +73,10 @@ async def test_distance_closes_in_over_simulated_time():
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_SPEED_MPH", 600.0):
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0):
-            first = await samsara_test_mode.get_fleet_locations(["veh-1"])
+            first = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
         # 6 simulated minutes later at 600mph -> 60 miles closer.
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0 + 6 * 60):
-            second = await samsara_test_mode.get_fleet_locations(["veh-1"])
+            second = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     d1 = geo_utils.haversine_miles(first["veh-1"]["lat"], first["veh-1"]["lng"], load.pu_lat, load.pu_lng)
     d2 = geo_utils.haversine_miles(second["veh-1"]["lat"], second["veh-1"]["lng"], load.pu_lat, load.pu_lng)
@@ -92,10 +92,10 @@ async def test_distance_never_goes_negative():
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_SPEED_MPH", 600.0):
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0):
-            await samsara_test_mode.get_fleet_locations(["veh-1"])
+            await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
         # Way past arrival.
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0 + 100 * 3600):
-            result = await samsara_test_mode.get_fleet_locations(["veh-1"])
+            result = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     distance = geo_utils.haversine_miles(result["veh-1"]["lat"], result["veh-1"]["lng"], load.pu_lat, load.pu_lng)
     assert distance == pytest.approx(0.0, abs=0.5)
@@ -110,7 +110,7 @@ async def test_loaded_status_targets_delivery_not_pickup():
     with patch.object(samsara_test_mode, "get_active_loads_for_monitoring", return_value=[load]), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), \
          patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0):
-        result = await samsara_test_mode.get_fleet_locations(["veh-1"])
+        result = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     point = result["veh-1"]
     dist_to_del = geo_utils.haversine_miles(point["lat"], point["lng"], load.del_lat, load.del_lng)
@@ -127,10 +127,10 @@ async def test_new_load_id_resets_the_approach():
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_SPEED_MPH", 600.0):
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0):
-            await samsara_test_mode.get_fleet_locations(["veh-1"])
+            await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
         # Nearly arrived on load A.
         with patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0 + 6 * 60):
-            almost_arrived = await samsara_test_mode.get_fleet_locations(["veh-1"])
+            almost_arrived = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     d_almost = geo_utils.haversine_miles(
         almost_arrived["veh-1"]["lat"], almost_arrived["veh-1"]["lng"], load_a.pu_lat, load_a.pu_lng
@@ -142,9 +142,36 @@ async def test_new_load_id_resets_the_approach():
     with patch.object(samsara_test_mode, "get_active_loads_for_monitoring", return_value=[load_b]), \
          patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), \
          patch.object(samsara_test_mode.time, "monotonic", return_value=1000.0 + 6 * 60 + 1):
-        restarted = await samsara_test_mode.get_fleet_locations(["veh-1"])
+        restarted = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
 
     d_restarted = geo_utils.haversine_miles(
         restarted["veh-1"]["lat"], restarted["veh-1"]["lng"], load_b.pu_lat, load_b.pu_lng
     )
     assert d_restarted == pytest.approx(60.0, abs=0.5)
+
+
+@pytest.mark.asyncio
+async def test_same_vehicle_id_across_companies_does_not_cross_contaminate():
+    """Two different companies' test drivers can easily end up with the
+    same vehicle_id (the setup docs literally say "give your test driver
+    ANY samsara_vehicle_id") - each company must only ever see its own
+    load's simulated position, never another company's."""
+    company_a_load = _make_load(id=1, company_id=1, load_id="A-1", pu_lat=40.0, pu_lng=-75.0)
+    company_b_load = _make_load(id=2, company_id=2, load_id="B-1", pu_lat=10.0, pu_lng=-20.0)
+
+    with patch.object(
+        samsara_test_mode, "get_active_loads_for_monitoring", return_value=[company_a_load, company_b_load]
+    ), patch.object(samsara_test_mode, "SAMSARA_TEST_START_MILES", 60.0), patch.object(
+        samsara_test_mode.time, "monotonic", return_value=1000.0
+    ):
+        result_a = await samsara_test_mode.get_fleet_locations(1, ["veh-1"])
+        result_b = await samsara_test_mode.get_fleet_locations(2, ["veh-1"])
+
+    dist_a = geo_utils.haversine_miles(
+        result_a["veh-1"]["lat"], result_a["veh-1"]["lng"], company_a_load.pu_lat, company_a_load.pu_lng
+    )
+    dist_b = geo_utils.haversine_miles(
+        result_b["veh-1"]["lat"], result_b["veh-1"]["lng"], company_b_load.pu_lat, company_b_load.pu_lng
+    )
+    assert dist_a == pytest.approx(60.0, abs=0.5)
+    assert dist_b == pytest.approx(60.0, abs=0.5)

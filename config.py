@@ -189,6 +189,16 @@ if IS_PRODUCTION:
             "lifecycle events (upgrades, cancellations, failed payments) would silently "
             "fail. Set STRIPE_WEBHOOK_SECRET (see stripe_setup.py)."
         )
+    # SAMSARA_TEST_MODE fabricates GPS locations - left on in production, it
+    # would fire real "driver is near pickup/delivery" alerts to real
+    # Telegram groups using fake coordinates, with nothing distinguishing
+    # them from genuine ones, and every company would show as
+    # samsara_connected=True with no real API key configured.
+    if SAMSARA_TEST_MODE:
+        _problems.append(
+            "SAMSARA_TEST_MODE is enabled - this fabricates GPS data and would send "
+            "real driver groups fake proximity alerts. Remove it from .env before going live."
+        )
     if _problems:
         raise RuntimeError(
             "Refusing to start with ENVIRONMENT=production and insecure secrets:\n- "

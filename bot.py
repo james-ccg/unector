@@ -383,8 +383,34 @@ async def handle_setvehicle(message: Message):
         return
 
     vehicle_id = args[1].strip()
+
+    # A typo'd vehicle ID would otherwise save silently and then just never
+    # match anything in every future location-monitor poll - permanently
+    # and silently disabling GPS alerts for this driver, with nothing ever
+    # telling the owner why. Only a real "Samsara doesn't recognize this
+    # ID" result blocks/warns; if Samsara isn't connected yet or the check
+    # itself fails, save anyway rather than blocking on a check that
+    # couldn't run - same policy as Settings' Samsara-connect validation.
+    location = None
+    try:
+        location = await samsara_service.get_vehicle_location(driver.company_id, vehicle_id)
+        validated = True
+    except NotImplementedError:
+        validated = False
+    except Exception:
+        logger.exception("Failed to validate Samsara vehicle %s for company %s", vehicle_id, driver.company_id)
+        validated = False
+
     set_driver_vehicle(driver.id, vehicle_id)
-    await message.reply(f"✅ This driver is now linked to Samsara vehicle `{vehicle_id}`.", parse_mode="Markdown")
+
+    if validated and location is None:
+        await message.reply(
+            f"⚠️ Linked, but Samsara doesn't recognize vehicle ID `{vehicle_id}` (no GPS data found for it) - "
+            "double-check the ID. GPS proximity alerts won't fire until it matches a real vehicle.",
+            parse_mode="Markdown",
+        )
+    else:
+        await message.reply(f"✅ This driver is now linked to Samsara vehicle `{vehicle_id}`.", parse_mode="Markdown")
 
 
 # ------------------------------------------------------------------

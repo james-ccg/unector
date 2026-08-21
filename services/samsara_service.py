@@ -38,7 +38,7 @@ async def get_fleet_locations(company_id: int, vehicle_ids: list[str]) -> dict[s
 
     if SAMSARA_TEST_MODE:
         from services import samsara_test_mode
-        return await samsara_test_mode.get_fleet_locations(vehicle_ids)
+        return await samsara_test_mode.get_fleet_locations(company_id, vehicle_ids)
 
     api_key = get_company_credential(company_id, "samsara_api_key")
     if not api_key:
