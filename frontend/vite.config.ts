@@ -19,10 +19,14 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-              return 'react-vendor'
-            }
+          if (!id.includes('node_modules')) return
+          // Checked before the broad 'react' substring match below, since
+          // that match also fires on 'react-leaflet' - without this, Leaflet
+          // (only ever needed by the lazy-loaded Monitoring page) would ride
+          // along in the vendor chunk every other page eagerly loads too.
+          if (id.includes('leaflet')) return
+          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+            return 'react-vendor'
           }
         }
       }

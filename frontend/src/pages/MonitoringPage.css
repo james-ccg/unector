@@ -229,27 +229,14 @@
   font-size: 12px;
 }
 
-/* ---------- Right: map panel (dark "night highway" map) ---------- */
+/* ---------- Right: map panel (real live map - see components/FleetMap.tsx) ---------- */
 .map-panel {
   position: relative;
   overflow: hidden;
   min-height: 640px;
   border-radius: 0 16px 16px 0;
   border: 1px solid var(--border);
-  background: radial-gradient(ellipse at 25% 20%, #262419 0%, var(--bg) 55%);
   isolation: isolate;
-}
-
-.map-grid-lines {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background:
-    linear-gradient(90deg, transparent 49.6%, rgba(255, 255, 255, 0.04) 49.8% 50.2%, transparent 50.4%),
-    linear-gradient(0deg, transparent 49.6%, rgba(255, 255, 255, 0.04) 49.8% 50.2%, transparent 50.4%),
-    repeating-linear-gradient(28deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 45px),
-    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 62px);
 }
 
 .map-toolbar {
@@ -272,67 +259,6 @@
   border-radius: 10px;
   backdrop-filter: blur(8px);
   font: 600 11px var(--font-ui);
-}
-
-.map-label {
-  position: absolute;
-  z-index: 1;
-  color: rgba(255, 255, 255, 0.06);
-  font: 700 clamp(18px, 3.1vw, 43px) / 1 var(--font-display);
-  letter-spacing: 0.06em;
-}
-.map-label-one { top: 15%; left: 14%; }
-.map-label-two { right: 12%; bottom: 22%; font-size: clamp(12px, 1.3vw, 20px); }
-
-.route-line {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-.route-line path {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 4 10;
-  opacity: 0.55;
-}
-
-.map-vehicle {
-  position: absolute;
-  z-index: 3;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px 6px 6px;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: 0 6px 17px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-}
-.map-vehicle span {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  color: #161616;
-  background: var(--accent);
-  border-radius: 50%;
-}
-.map-vehicle b {
-  max-width: 75px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font: 700 10px var(--font-display);
-}
-.map-vehicle.focus {
-  outline: 4px solid rgba(195, 248, 50, 0.2);
 }
 
 .map-unavailable {

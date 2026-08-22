@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
+import FleetMap from '../components/FleetMap'
 import { useAuth } from '../context/AuthContext'
 import { dashboardApi, errorMessage } from '../services/api'
 import './MonitoringPage.css'
@@ -51,16 +52,6 @@ export default function MonitoringPage() {
     () => vehicles.filter((vehicle) => vehicle.location?.lat != null && vehicle.location?.lng != null),
     [vehicles]
   )
-
-  const positionFor = (vehicle: Vehicle) => {
-    if (!vehicle.location || !located.length) return { left: '50%', top: '53%' }
-    if (located.length === 1) return { left: '52%', top: '54%' }
-    const lats = located.map((item) => Number(item.location?.lat))
-    const lngs = located.map((item) => Number(item.location?.lng))
-    const left = 14 + ((Number(vehicle.location.lng) - Math.min(...lngs)) / (Math.max(...lngs) - Math.min(...lngs) || 1)) * 72
-    const top = 16 + ((Math.max(...lats) - Number(vehicle.location.lat)) / (Math.max(...lats) - Math.min(...lats) || 1)) * 67
-    return { left: `${left}%`, top: `${top}%` }
-  }
 
   return (
     <Layout>
@@ -139,6 +130,7 @@ export default function MonitoringPage() {
           </aside>
 
           <section className="map-panel" aria-label="Live vehicle map">
+            <FleetMap vehicles={vehicles} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
             <div className="map-toolbar">
               <span>
                 <span className="pulse-dot online" />
@@ -148,25 +140,6 @@ export default function MonitoringPage() {
                 <Icon name="location" size={18} />
               </button>
             </div>
-            <div className="map-label map-label-one">FREIGHT PILOT</div>
-            <div className="map-label map-label-two">LIVE OPERATIONS</div>
-            <svg className="route-line" viewBox="0 0 900 620" preserveAspectRatio="none" aria-hidden="true">
-              <path d="M120 520 C210 430, 260 500, 340 390 S450 320, 520 270 S650 245, 780 125" />
-            </svg>
-            {located.map((vehicle) => (
-              <button
-                className={`map-vehicle ${selected?.id === vehicle.id ? 'focus' : ''}`}
-                style={positionFor(vehicle)}
-                key={vehicle.id}
-                onClick={() => setSelectedId(vehicle.id)}
-                aria-label={`Show ${vehicle.name}`}
-              >
-                <span>
-                  <Icon name="truck" size={18} />
-                </span>
-                <b>{vehicle.name.split(' ')[0]}</b>
-              </button>
-            ))}
             {!located.length && (
               <div className="map-unavailable">
                 <Icon name="location" size={27} />
@@ -183,7 +156,6 @@ export default function MonitoringPage() {
                 )}
               </div>
             )}
-            <div className="map-grid-lines" />
           </section>
         </div>
 
