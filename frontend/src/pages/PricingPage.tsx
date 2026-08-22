@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useAuth } from '../context/AuthContext'
+import { billingApi, errorMessage } from '../services/api'
 
 type Interval = 'month' | 'year'
 type Multiplier = '5x' | '20x'
@@ -48,11 +51,50 @@ export default function PricingPage() {
   const [proInterval, setProInterval] = useState<Interval>('month')
   const [maxInterval, setMaxInterval] = useState<Interval>('month')
   const [maxMultiplier, setMaxMultiplier] = useState<Multiplier>('5x')
+  const [upgradeBusy, setUpgradeBusy] = useState(false)
+  const [upgradeError, setUpgradeError] = useState('')
+  const { isAuthenticated, user } = useAuth()
+  const navigate = useNavigate()
 
   const proPrice = priceDisplay('pro', proInterval)
   const maxTier: Tier = maxMultiplier === '5x' ? 'max_5x' : 'max_20x'
   const maxPrice = priceDisplay(maxTier, maxInterval)
   const maxInfo = MAX_FEATURES[maxMultiplier]
+
+  // An already-logged-in owner clicking a paid plan's CTA must go straight
+  // to Stripe Checkout, not through /register - that page is for brand-new
+  // signups (Gmail-first, then company details) and makes no sense for an
+  // account that already exists. This used to route every visitor through
+  // /register?plan=..., which for an already-authenticated user landed on
+  // that page's "Connect Gmail" step and then silently bounced back to
+  // /dashboard the moment checkout failed for any reason.
+  const handleUpgradeClick = async (tier: 'pro' | 'max_5x' | 'max_20x', interval: Interval) => {
+    if (!isAuthenticated) {
+      window.location.href = `/register?plan=${tier}&interval=${interval}`
+      return
+    }
+    if (user?.role !== 'owner') {
+      setUpgradeError('Only the company owner can upgrade the plan.')
+      return
+    }
+    setUpgradeError('')
+    setUpgradeBusy(true)
+    try {
+      const { url } = await billingApi.checkout(tier, interval)
+      window.location.href = url
+    } catch (err) {
+      setUpgradeError(errorMessage(err, 'Could not start checkout. Please try again.'))
+      setUpgradeBusy(false)
+    }
+  }
+
+  const handleFreeClick = () => {
+    if (isAuthenticated) {
+      navigate('/dashboard')
+    } else {
+      window.location.href = '/register'
+    }
+  }
 
   return (
     <Layout>
@@ -78,7 +120,9 @@ export default function PricingPage() {
                 <li><Check size={16} /> Up to 1 active driver</li>
                 <li><Check size={16} /> No credit card required</li>
               </ul>
-              <a href="/register" className="pricing-cta btn-secondary">Get started free</a>
+              <button type="button" onClick={handleFreeClick} className="pricing-cta btn-secondary">
+                {isAuthenticated ? 'Go to dashboard' : 'Get started free'}
+              </button>
             </div>
 
             <div className="pricing-card featured">
@@ -104,9 +148,14 @@ export default function PricingPage() {
                 <li><Check size={16} /> Unlimited dispatchers</li>
                 <li><Check size={16} /> 7-day free trial</li>
               </ul>
-              <a href={`/register?plan=pro&interval=${proInterval}`} className="pricing-cta btn-primary">
-                Start Pro trial
-              </a>
+              <button
+                type="button"
+                onClick={() => handleUpgradeClick('pro', proInterval)}
+                className="pricing-cta btn-primary"
+                disabled={upgradeBusy}
+              >
+                {upgradeBusy ? 'Starting checkout...' : 'Start Pro trial'}
+              </button>
             </div>
 
             <div className="pricing-card">
@@ -145,11 +194,18 @@ export default function PricingPage() {
                 <li><Check size={16} /> Priority support</li>
                 <li><Check size={16} /> 7-day free trial</li>
               </ul>
-              <a href={`/register?plan=${maxTier}&interval=${maxInterval}`} className="pricing-cta btn-secondary">
-                Start Max {maxMultiplier} trial
-              </a>
+              <button
+                type="button"
+                onClick={() => handleUpgradeClick(maxTier, maxInterval)}
+                className="pricing-cta btn-secondary"
+                disabled={upgradeBusy}
+              >
+                {upgradeBusy ? 'Starting checkout...' : `Start Max ${maxMultiplier} trial`}
+              </button>
             </div>
           </div>
+
+          {upgradeError && <p className="error" style={{ textAlign: 'center' }}>{upgradeError}</p>}
 
           <p className="pricing-footnote">
             Prices shown do not include tax. A trial isn't available twice for the same email,

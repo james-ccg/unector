@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
+import ErrorMessage from '../components/ErrorMessage'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import ThemeToggle from '../components/ThemeToggle'
 import FontSizeToggle from '../components/FontSizeToggle'
@@ -724,7 +725,7 @@ export default function SettingsPage() {
                     required
                   />
                 </label>
-                {addDriverError && <p className="form-error">{addDriverError}</p>}
+                {addDriverError && <ErrorMessage className="form-error" text={addDriverError} />}
                 <button className="btn btn-primary" type="submit" disabled={addDriverBusy}>
                   {addDriverBusy ? 'Adding...' : 'Add driver'}
                 </button>

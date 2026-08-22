@@ -19,6 +19,7 @@ export default function MonitoringPage() {
   const [loading, setLoading] = useState(true)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [error, setError] = useState('')
+  const [fleetFilter, setFleetFilter] = useState<'in_transit' | 'all'>('in_transit')
 
   const refresh = useCallback(async () => {
     if (!user) return
@@ -52,6 +53,10 @@ export default function MonitoringPage() {
     () => vehicles.filter((vehicle) => vehicle.location?.lat != null && vehicle.location?.lng != null),
     [vehicles]
   )
+  const filteredVehicles = useMemo(
+    () => (fleetFilter === 'in_transit' ? vehicles.filter((vehicle) => vehicle.load) : vehicles),
+    [vehicles, fleetFilter]
+  )
 
   return (
     <Layout>
@@ -83,18 +88,24 @@ export default function MonitoringPage() {
               </p>
             )}
             <div className="vehicle-tabs">
-              <button className="active">
+              <button
+                className={fleetFilter === 'in_transit' ? 'active' : ''}
+                onClick={() => setFleetFilter('in_transit')}
+              >
                 In transit <span>{vehicles.filter((item) => item.load).length}</span>
               </button>
-              <button disabled>
+              <button
+                className={fleetFilter === 'all' ? 'active' : ''}
+                onClick={() => setFleetFilter('all')}
+              >
                 All fleet <span>{vehicles.length}</span>
               </button>
             </div>
             <div className="vehicle-feed">
               {loading ? (
                 <p className="monitoring-empty">Loading fleet...</p>
-              ) : vehicles.length ? (
-                vehicles.map((vehicle) => (
+              ) : filteredVehicles.length ? (
+                filteredVehicles.map((vehicle) => (
                   <button
                     className={`vehicle-card ${selected?.id === vehicle.id ? 'selected' : ''}`}
                     key={vehicle.id}
@@ -123,7 +134,11 @@ export default function MonitoringPage() {
               ) : (
                 <div className="monitoring-empty">
                   <Icon name="truck" size={24} />
-                  <p>No drivers are available for monitoring.</p>
+                  <p>
+                    {vehicles.length === 0
+                      ? 'No drivers are available for monitoring.'
+                      : 'No vehicles are currently in transit.'}
+                  </p>
                 </div>
               )}
             </div>

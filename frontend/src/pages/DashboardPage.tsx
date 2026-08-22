@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
+import ErrorMessage from '../components/ErrorMessage'
 import { useAuth } from '../context/AuthContext'
 import { dashboardApi, errorMessage, type Driver, type DashboardData, type DriverDetail } from '../services/api'
 import { PLAN_LABELS } from '../lib/plans'
@@ -477,7 +478,7 @@ export default function DashboardPage() {
               )}
 
               {!driverDetailLoading && driverDetailError && !driverDetail && (
-                <p className="form-error">{driverDetailError}</p>
+                <ErrorMessage className="form-error" text={driverDetailError} />
               )}
 
               {driverDetail && (
@@ -539,7 +540,7 @@ export default function DashboardPage() {
                     )
                   })()}
 
-                  {driverDetailError && <p className="form-error">{driverDetailError}</p>}
+                  {driverDetailError && <ErrorMessage className="form-error" text={driverDetailError} />}
 
                   <h4 className="load-history-title">Load history</h4>
                   {driverDetail.loads.length === 0 ? (
