@@ -201,6 +201,11 @@ class CreateDispatcherRequest(BaseModel):
     password: str
 
 
+class UpdateDispatcherRequest(BaseModel):
+    username: str | None = None
+    password: str | None = None
+
+
 class CreateDriverRequest(BaseModel):
     full_name: str
 
@@ -637,8 +642,14 @@ def get_driver(driver_id: int, user: dict = Depends(get_current_user)):
 @app.patch("/api/drivers/{driver_id}/subscription")
 def update_subscription(
     driver_id: int, body: SubscriptionToggleRequest,
-    user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+    user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
+    # Either role can pause a driver (e.g. one who just quit) without
+    # waiting on the owner, but only the owner can activate one - that
+    # commits the company to another billable driver against its plan.
+    if body.active and user.get("role") != "owner":
+        raise HTTPException(403, "Only the company owner can activate a driver's subscription.")
+
     try:
         # Security: verify driver belongs to this company
         from db.database import get_session
@@ -793,6 +804,50 @@ def add_dispatcher(
         import logging
         logging.exception("Failed to create dispatcher for company %s", user["company_id"])
         raise HTTPException(500, "Failed to create dispatcher. Please try again.")
+
+
+@app.patch("/api/dispatchers/{dispatcher_id}")
+def update_dispatcher_account(
+    dispatcher_id: int, body: UpdateDispatcherRequest,
+    user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    """Lets an owner change a dispatcher's username and/or password - e.g.
+    the dispatcher forgot their password and has no self-service reset path
+    of their own (see PasswordResetToken's docstring for why that's owner-only)."""
+    from db.repository import update_dispatcher
+
+    username = body.username.strip() if body.username is not None else None
+    if username is not None and not username:
+        raise HTTPException(400, "Username cannot be empty")
+
+    password_hash = None
+    if body.password is not None:
+        if len(body.password) < 6:
+            raise HTTPException(400, "Password must be at least 6 characters")
+        if len(body.password.encode("utf-8")) > 72:
+            raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
+        password_hash = hash_password(body.password)
+
+    if username is None and password_hash is None:
+        raise HTTPException(400, "Provide a new username and/or password.")
+
+    result = update_dispatcher(dispatcher_id, user["company_id"], username=username, password_hash=password_hash)
+    if result == "not_found":
+        raise HTTPException(404, "Dispatcher not found")
+    if result == "username_taken":
+        raise HTTPException(400, "Username already exists")
+    return {"success": True}
+
+
+@app.delete("/api/dispatchers/{dispatcher_id}")
+def remove_dispatcher(
+    dispatcher_id: int, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import delete_dispatcher
+
+    if not delete_dispatcher(dispatcher_id, user["company_id"]):
+        raise HTTPException(404, "Dispatcher not found")
+    return {"success": True}
 
 
 # ------------------------------------------------------------------

@@ -41,6 +41,13 @@ export default function SettingsPage() {
   const [addDispatcherError, setAddDispatcherError] = useState('')
   const [addDispatcherBusy, setAddDispatcherBusy] = useState(false)
 
+  // Edit-dispatcher modal state
+  const [editDispatcher, setEditDispatcher] = useState<Dispatcher | null>(null)
+  const [editUsername, setEditUsername] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editDispatcherError, setEditDispatcherError] = useState('')
+  const [editDispatcherBusy, setEditDispatcherBusy] = useState(false)
+
   // Drivers - self-service creation + Telegram group linking
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [newDriverName, setNewDriverName] = useState('')
@@ -223,6 +230,55 @@ export default function SettingsPage() {
       setAddDispatcherError(errorMessage(err, 'Could not create that dispatcher login.'))
     } finally {
       setAddDispatcherBusy(false)
+    }
+  }
+
+  const openEditDispatcher = (d: Dispatcher) => {
+    setEditDispatcher(d)
+    setEditUsername(d.username)
+    setEditPassword('')
+    setEditDispatcherError('')
+  }
+
+  const handleSaveDispatcherEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editDispatcher) return
+    setEditDispatcherError('')
+
+    const username = editUsername.trim()
+    if (!username) {
+      setEditDispatcherError('Username cannot be empty.')
+      return
+    }
+    if (editPassword && editPassword.length < 6) {
+      setEditDispatcherError('Password must be at least 6 characters.')
+      return
+    }
+
+    setEditDispatcherBusy(true)
+    try {
+      const updates: { username?: string; password?: string } = {}
+      if (username !== editDispatcher.username) updates.username = username
+      if (editPassword) updates.password = editPassword
+      await dashboardApi.updateDispatcher(editDispatcher.id, updates)
+      setEditDispatcher(null)
+      setBanner({ kind: 'success', text: 'Dispatcher login updated.' })
+      loadAll()
+    } catch (err) {
+      setEditDispatcherError(errorMessage(err, 'Could not update that dispatcher login.'))
+    } finally {
+      setEditDispatcherBusy(false)
+    }
+  }
+
+  const handleDeleteDispatcher = async (d: Dispatcher) => {
+    if (!confirm(`Remove dispatcher login "${d.username}"? They'll lose access immediately.`)) return
+    try {
+      await dashboardApi.deleteDispatcher(d.id)
+      setBanner({ kind: 'success', text: 'Dispatcher login removed.' })
+      loadAll()
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, 'Could not remove that dispatcher login.') })
     }
   }
 
@@ -690,6 +746,12 @@ export default function SettingsPage() {
                       <span className="status-dot on" />
                       <span className="dispatcher-username">{d.username}</span>
                       <span className="dispatcher-role mono">{d.role}</span>
+                      <button className="btn btn-ghost btn-sm" onClick={() => openEditDispatcher(d)}>
+                        Edit
+                      </button>
+                      <button className="btn btn-danger-ghost btn-sm" onClick={() => handleDeleteDispatcher(d)}>
+                        Remove
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -782,6 +844,61 @@ export default function SettingsPage() {
                   {samsaraBusy ? 'Connecting...' : 'Connect'}
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editDispatcher && (
+          <motion.div
+            className="modal-overlay"
+            onClick={() => setEditDispatcher(null)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div
+              className="modal-card"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+            >
+              <h3>Edit Dispatcher</h3>
+              <form className="form" onSubmit={handleSaveDispatcherEdit}>
+                <label>
+                  <span>Username</span>
+                  <input
+                    type="text"
+                    value={editUsername}
+                    onChange={(e) => setEditUsername(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </label>
+                <label>
+                  <span>New password (optional)</span>
+                  <input
+                    type="password"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    placeholder="Leave blank to keep current password"
+                    minLength={6}
+                  />
+                </label>
+                {editDispatcherError && <p className="form-error">{editDispatcherError}</p>}
+                <div className="modal-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => setEditDispatcher(null)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={editDispatcherBusy}>
+                    {editDispatcherBusy ? 'Saving...' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

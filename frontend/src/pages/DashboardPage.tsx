@@ -509,24 +509,35 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {user?.role === 'owner' && (
-                    <div className="subscription-toggle-row">
-                      <span className={`driver-status ${driverDetail.subscription_active ? 'active' : 'inactive'}`}>
-                        {driverDetail.subscription_active ? 'Subscription active' : 'Subscription inactive'}
-                      </span>
-                      <button
-                        className={`btn ${driverDetail.subscription_active ? 'btn-ghost' : 'btn-primary'}`}
-                        onClick={handleToggleSubscription}
-                        disabled={toggleBusy}
-                      >
-                        {toggleBusy
-                          ? 'Updating...'
-                          : driverDetail.subscription_active
-                          ? 'Deactivate billing'
-                          : 'Activate billing'}
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    // Dispatchers can pause a driver (e.g. one who just quit)
+                    // without waiting on the owner, but only the owner can
+                    // activate one - that commits the company to another
+                    // billable driver against its plan. See update_subscription
+                    // in miniapp/api.py for the matching backend check.
+                    const canActivate = user?.role === 'owner'
+                    const activating = !driverDetail.subscription_active
+                    const disabled = toggleBusy || (activating && !canActivate)
+                    return (
+                      <div className="subscription-toggle-row">
+                        <span className={`driver-status ${driverDetail.subscription_active ? 'active' : 'inactive'}`}>
+                          {driverDetail.subscription_active ? 'Subscription active' : 'Subscription inactive'}
+                        </span>
+                        <button
+                          className={`btn ${driverDetail.subscription_active ? 'btn-ghost' : 'btn-primary'}`}
+                          onClick={handleToggleSubscription}
+                          disabled={disabled}
+                          title={activating && !canActivate ? 'Only the company owner can activate a driver.' : undefined}
+                        >
+                          {toggleBusy
+                            ? 'Updating...'
+                            : driverDetail.subscription_active
+                            ? 'Deactivate billing'
+                            : 'Activate billing'}
+                        </button>
+                      </div>
+                    )
+                  })()}
 
                   {driverDetailError && <p className="form-error">{driverDetailError}</p>}
 

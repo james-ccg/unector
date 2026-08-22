@@ -511,6 +511,42 @@ def create_dispatcher(company_id: int, username: str, password_hash: str) -> int
         return row.id
 
 
+def update_dispatcher(
+    dispatcher_id: int, company_id: int, *, username: str | None = None, password_hash: str | None = None,
+) -> str | None:
+    """Updates a dispatcher's username and/or password. Both the caller's
+    company_id and the dispatcher's own must match - the API layer resolves
+    the dispatcher by id alone, so this is the tenant-isolation check that
+    stops one company's owner from editing another company's dispatcher.
+    Returns "ok", "not_found" (wrong id or wrong company), or
+    "username_taken" (usernames are unique across all companies)."""
+    with get_session() as session:
+        row = session.get(models.Dispatcher, dispatcher_id)
+        if not row or row.company_id != company_id:
+            return "not_found"
+        if username is not None and username != row.username:
+            existing = session.query(models.Dispatcher).filter(models.Dispatcher.username == username).first()
+            if existing:
+                return "username_taken"
+            row.username = username
+        if password_hash is not None:
+            row.password_hash = password_hash
+        session.commit()
+        return "ok"
+
+
+def delete_dispatcher(dispatcher_id: int, company_id: int) -> bool:
+    """Deletes a dispatcher login. Returns False if it doesn't exist or
+    belongs to a different company (see update_dispatcher's docstring)."""
+    with get_session() as session:
+        row = session.get(models.Dispatcher, dispatcher_id)
+        if not row or row.company_id != company_id:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+
+
 def create_driver(company_id: int, full_name: str) -> dict:
     """Creates a driver with no Telegram group linked yet - the owner links
     it afterward via a one-time code (see link_driver_group). driver_bot_id

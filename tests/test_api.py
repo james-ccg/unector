@@ -444,11 +444,98 @@ class TestDispatcherAuth:
         assert "72 bytes" in response.json()["detail"]
 
 
+class TestDispatcherAccountManagement:
+    """PATCH/DELETE /api/dispatchers/{id} - lets an owner change a
+    dispatcher's username/password or remove the login entirely."""
+
+    def _register_owner_with_dispatcher(self, client, mc_number: str, username: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Dispatcher Mgmt Co {mc_number}",
+            "email": f"owner{mc_number}@dispatchermgmt.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+        created = client.post(
+            "/api/dispatchers", json={"username": username, "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+        return created.json()["id"]
+
+    def test_owner_can_update_dispatcher_username_and_password(self, client):
+        dispatcher_id = self._register_owner_with_dispatcher(client, "751111", "mgmt_dispatcher_1")
+
+        update = client.patch(
+            f"/api/dispatchers/{dispatcher_id}",
+            json={"username": "renamed_dispatcher_1", "password": "newpassword123"},
+            headers=_csrf_headers(client),
+        )
+        assert update.status_code == 200, update.text
+
+        old_login = client.post("/api/auth/dispatcher", json={"username": "mgmt_dispatcher_1", "password": "dispatcherpass123"})
+        assert old_login.status_code == 401
+
+        new_login = client.post("/api/auth/dispatcher", json={"username": "renamed_dispatcher_1", "password": "newpassword123"})
+        assert new_login.status_code == 200
+
+    def test_update_rejects_username_already_taken(self, client):
+        dispatcher_id = self._register_owner_with_dispatcher(client, "752222", "mgmt_dispatcher_2")
+        client.post(
+            "/api/dispatchers", json={"username": "mgmt_dispatcher_2b", "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+
+        response = client.patch(
+            f"/api/dispatchers/{dispatcher_id}", json={"username": "mgmt_dispatcher_2b"},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 400
+
+    def test_owner_can_delete_a_dispatcher(self, client):
+        dispatcher_id = self._register_owner_with_dispatcher(client, "753333", "mgmt_dispatcher_3")
+
+        delete = client.delete(f"/api/dispatchers/{dispatcher_id}", headers=_csrf_headers(client))
+        assert delete.status_code == 200, delete.text
+
+        login = client.post("/api/auth/dispatcher", json={"username": "mgmt_dispatcher_3", "password": "dispatcherpass123"})
+        assert login.status_code == 401
+
+    def test_cannot_manage_another_companys_dispatcher(self, client):
+        dispatcher_id = self._register_owner_with_dispatcher(client, "754444", "mgmt_dispatcher_4")
+
+        other_client = TestClient(app)
+        other_client.post("/api/auth/register", json={
+            "mc_number": "754445",
+            "company_name": "Other Co",
+            "email": "owner@othermgmtco.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+
+        response = other_client.patch(
+            f"/api/dispatchers/{dispatcher_id}", json={"username": "hijacked"},
+            headers=_csrf_headers(other_client),
+        )
+        assert response.status_code == 404
+
+
 class TestTenantIsolation:
     """SQLite has no row-level security, so tenant isolation is enforced
     entirely in miniapp/api.py. These tests lock in that every driver-scoped
     endpoint rejects access from a different company's owner, even with a
     valid, correctly-signed session cookie."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_limiter(self):
+        # This class builds its own TestClient pairs (it needs two logged-in
+        # clients at once, which the shared `client` fixture doesn't support)
+        # instead of using the `client` fixture - so it misses that fixture's
+        # own app.state.limiter.reset(), and accumulates rate-limit state
+        # from every other test that ran first in the same session.
+        app.state.limiter.reset()
 
     def _register_owner(self, client, mc_number: str) -> int:
         reg = client.post("/api/auth/register", json={
@@ -587,6 +674,69 @@ class TestDriverActivationBillingGuard:
                 f"/api/drivers/{driver_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
             )
             assert response.status_code == 200, response.text
+
+
+class TestDispatcherSubscriptionToggle:
+    """Both roles can pause a driver, but activating one is owner-only -
+    it commits the company to another billable driver. See
+    update_subscription in miniapp/api.py."""
+
+    def _register_owner_and_dispatcher(self, client, mc_number: str, username: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Dispatcher Toggle Co {mc_number}",
+            "email": f"owner{mc_number}@dispatchertoggle.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        company_id = reg.json()["company_id"]
+
+        created = client.post(
+            "/api/dispatchers", json={"username": username, "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+        return company_id
+
+    def _create_active_driver(self, company_id: int) -> int:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            driver = models.Driver(
+                company_id=company_id, driver_bot_id=f"D{company_id}", full_name="Test Driver",
+                subscription_active=True,
+            )
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+            return driver.id
+
+    def test_dispatcher_can_deactivate_a_driver(self, client):
+        company_id = self._register_owner_and_dispatcher(client, "731111", "toggle_dispatcher_1")
+        driver_id = self._create_active_driver(company_id)
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "toggle_dispatcher_1", "password": "dispatcherpass123"})
+
+        response = client.patch(
+            f"/api/drivers/{driver_id}/subscription", json={"active": False}, headers=_csrf_headers(client),
+        )
+        assert response.status_code == 200, response.text
+
+    def test_dispatcher_cannot_activate_a_driver(self, client):
+        company_id = self._register_owner_and_dispatcher(client, "732222", "toggle_dispatcher_2")
+        driver_id = self._create_active_driver(company_id)
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "toggle_dispatcher_2", "password": "dispatcherpass123"})
+        client.patch(f"/api/drivers/{driver_id}/subscription", json={"active": False}, headers=_csrf_headers(client))
+
+        response = client.patch(
+            f"/api/drivers/{driver_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
+        )
+        assert response.status_code == 403
 
 
 class TestAlertRules:

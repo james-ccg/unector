@@ -377,6 +377,15 @@ export const dashboardApi = {
   listDispatchers: () =>
     apiRequest<Dispatcher[]>('/api/dispatchers'),
 
+  updateDispatcher: (dispatcherId: number, updates: { username?: string; password?: string }) =>
+    apiRequest<{ success: boolean }>(`/api/dispatchers/${dispatcherId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  deleteDispatcher: (dispatcherId: number) =>
+    apiRequest<{ success: boolean }>(`/api/dispatchers/${dispatcherId}`, { method: 'DELETE' }),
+
   listDrivers: () =>
     apiRequest<Driver[]>('/api/drivers'),
 
