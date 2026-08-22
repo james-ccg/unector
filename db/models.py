@@ -282,6 +282,31 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class PendingRegistration(Base):
+    """A Gmail account connected during registration, before a Company row
+    exists to attach it to. Registration is now Gmail-first: connect Gmail,
+    confirm you own that inbox (code or link, emailed from the platform's
+    own address), THEN fill in company details - only when that final step
+    submits does a real Company get created (see /api/auth/register). If
+    the visitor abandons anywhere before then - closes the tab, never
+    verifies, never fills the form - this row just expires unused and
+    nothing is ever created."""
+    __tablename__ = "pending_registrations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True)
+
+    gmail_email: Mapped[str] = mapped_column(String(200))
+    gmail_refresh_token_encrypted: Mapped[str] = mapped_column(Text)
+
+    verify_code_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    verify_link_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
 class TrialRedemption(Base):
     """One row per company that has ever started a paid-plan free trial.
     Records every identifying signal we had at the time (login email, MC

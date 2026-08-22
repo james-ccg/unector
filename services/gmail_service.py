@@ -95,6 +95,24 @@ def exchange_code_for_refresh_token(code: str, redirect_uri: str) -> str | None:
     return flow.credentials.refresh_token
 
 
+def get_email_address(refresh_token: str) -> str:
+    """Returns the Gmail address a refresh token grants access to - used
+    right after the OAuth callback during registration, before any Company
+    row exists to look this up the normal way (_build_gmail_client keys off
+    company_id, which isn't available yet at that point)."""
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=TOKEN_URI,
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        scopes=SCOPES,
+    )
+    service = build("gmail", "v1", credentials=creds)
+    profile = service.users().getProfile(userId="me").execute()
+    return profile["emailAddress"]
+
+
 def find_rc_pdf_by_load_id(company_id: int, load_id: str) -> bytes | None:
     """Searches the inbox for a message mentioning the load ID with a PDF attached,
     returns the first matching PDF's bytes, or None if nothing is found."""

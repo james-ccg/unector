@@ -146,6 +146,11 @@ class RegisterRequest(BaseModel):
     password: str
     confirm_password: str
     turnstile_token: str | None = None
+    # From /api/auth/register/gmail/callback, once that inbox has been
+    # verified (code or link) - see PendingRegistration's docstring. Optional
+    # so existing integrations/tests that never touch the Gmail-first flow
+    # keep working exactly as before; the real frontend flow always sends one.
+    pending_token: str | None = None
 
     @field_validator("mc_number")
     @classmethod
@@ -179,6 +184,15 @@ class DispatcherLoginRequest(BaseModel):
 class ForgotPasswordRequest(BaseModel):
     mc_number: str
     turnstile_token: str | None = None
+
+
+class RegistrationVerificationRequest(BaseModel):
+    pending_token: str
+
+
+class VerifyRegistrationCodeRequest(BaseModel):
+    pending_token: str
+    code: str
 
 
 class ResetPasswordRequest(BaseModel):
@@ -433,6 +447,21 @@ def register_company(request: Request, body: RegisterRequest, response: Response
     if len(body.password.encode("utf-8")) > 72:
         raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
 
+    # Consumed BEFORE the company is created (not after) - a company must
+    # never exist without its Gmail credential when this flow was used, and
+    # this is also a one-time claim: a second /api/auth/register call with
+    # the same pending_token must fail, not silently create a duplicate
+    # company sharing one Gmail connection.
+    pending_gmail = None
+    if body.pending_token:
+        from db.repository import consume_pending_registration
+
+        pending_gmail = consume_pending_registration(body.pending_token)
+        if not pending_gmail:
+            raise HTTPException(
+                400, "That Gmail connection is invalid or has expired. Please connect Gmail again."
+            )
+
     try:
         with get_session() as session:
             # Check if MC exists
@@ -456,6 +485,9 @@ def register_company(request: Request, body: RegisterRequest, response: Response
             session.commit()
             session.refresh(new_company)
 
+            if pending_gmail:
+                save_company_credential(new_company.id, "gmail_refresh_token", pending_gmail["gmail_refresh_token"])
+
             token = create_token({"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name})
             set_session_cookies(response, token)
             return {
@@ -463,7 +495,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 "mc_number": new_company.mc_number,
                 "company_id": new_company.id,
                 "role": "owner",
-                "gmail_connected": False,  # a brand-new company has never connected anything yet
+                "gmail_connected": bool(pending_gmail),
             }
     except HTTPException:
         raise
@@ -944,6 +976,136 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
     company_id = user.get("company_id")
     delete_company_credential(company_id, "gmail_refresh_token")
     return {"success": True}
+
+
+# ------------------------------------------------------------------
+# Gmail-first registration - connect Gmail BEFORE a Company row exists,
+# confirm the visitor actually owns that inbox, THEN collect company
+# details. See PendingRegistration's docstring for the full flow and why
+# nothing is created until the final /api/auth/register submit.
+# ------------------------------------------------------------------
+REGISTER_GMAIL_REDIRECT_URI = os.getenv(
+    "REGISTER_GMAIL_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/register/gmail/callback"
+)
+
+
+def _send_registration_verification(pending_token: str, gmail_email: str) -> None:
+    import secrets
+
+    from db.repository import set_pending_registration_verification
+    from services import email_otp_service, twofactor_service
+
+    code = twofactor_service.generate_otp_code()
+    link_token = secrets.token_urlsafe(32)
+    set_pending_registration_verification(pending_token, twofactor_service.hash_otp_code(code), link_token)
+
+    verify_url = f"{FRONTEND_URL}/api/auth/register/verify-link?token={link_token}"
+    email_otp_service.send_registration_verification_email(gmail_email, code, verify_url)
+
+
+@app.get("/api/auth/register/gmail/start")
+@limiter.limit("10/minute")
+def register_gmail_start(request: Request):
+    from services.gmail_service import build_authorization_url
+
+    state = create_token({"purpose": "register_gmail"}, lifetime_seconds=SHORT_LIVED_SECONDS)
+    auth_url = build_authorization_url(REGISTER_GMAIL_REDIRECT_URI, state)
+    return {"auth_url": auth_url}
+
+
+@app.get("/api/auth/register/gmail/callback")
+def register_gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    """Google calls this directly - no way to redirect elsewhere on failure
+    except back to the registration page with an error flag in the URL,
+    same pattern as the authenticated Settings gmail_callback above."""
+    from fastapi.responses import RedirectResponse
+    import secrets
+
+    from db.repository import create_pending_registration
+    from services.gmail_service import exchange_code_for_refresh_token, get_email_address
+
+    payload = decode_token(state) if state else None
+    if error or not code or not state or not payload or payload.get("purpose") != "register_gmail":
+        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error")
+
+    try:
+        refresh_token = exchange_code_for_refresh_token(code, REGISTER_GMAIL_REDIRECT_URI)
+        if not refresh_token:
+            # Same "already approved before, no refresh_token issued" case
+            # the Settings flow hits - see that callback's comment.
+            return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_no_refresh_token")
+        gmail_email = get_email_address(refresh_token)
+
+        pending_token = secrets.token_urlsafe(32)
+        create_pending_registration(pending_token, gmail_email, refresh_token)
+        try:
+            _send_registration_verification(pending_token, gmail_email)
+        except Exception:
+            import logging
+            logging.exception("Failed to send registration verification email to %s", gmail_email)
+            # The pending registration still exists - the "Resend" button on
+            # the verify-email step covers this instead of failing the whole
+            # connection over a transient send error.
+    except Exception:
+        import logging
+        logging.exception("Gmail OAuth callback failed during registration")
+        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error")
+
+    return RedirectResponse(f"{FRONTEND_URL}/register?pending_token={pending_token}")
+
+
+@app.get("/api/auth/register/pending-status")
+def register_pending_status(pending_token: str):
+    from db.repository import get_pending_registration
+
+    info = get_pending_registration(pending_token)
+    if not info:
+        raise HTTPException(404, "That Gmail connection is invalid or has expired. Please connect Gmail again.")
+    return info
+
+
+@app.post("/api/auth/register/resend-verification")
+@limiter.limit("5/minute")
+def register_resend_verification(request: Request, body: RegistrationVerificationRequest):
+    from db.repository import get_pending_registration
+
+    info = get_pending_registration(body.pending_token)
+    if not info:
+        raise HTTPException(400, "That Gmail connection is invalid or has expired. Please connect Gmail again.")
+    if info["email_verified"]:
+        return {"success": True}
+
+    try:
+        _send_registration_verification(body.pending_token, info["gmail_email"])
+    except NotImplementedError as e:
+        raise HTTPException(503, str(e))
+    except Exception:
+        import logging
+        logging.exception("Failed to resend registration verification email")
+        raise HTTPException(500, "Failed to send the email. Please try again.")
+    return {"success": True}
+
+
+@app.post("/api/auth/register/verify-code")
+@limiter.limit("10/minute")
+def register_verify_code(request: Request, body: VerifyRegistrationCodeRequest):
+    from db.repository import verify_pending_registration_code
+    from services import twofactor_service
+
+    if not verify_pending_registration_code(body.pending_token, twofactor_service.hash_otp_code(body.code.strip())):
+        raise HTTPException(400, "Incorrect or expired code.")
+    return {"verified": True}
+
+
+@app.get("/api/auth/register/verify-link")
+def register_verify_link(token: str):
+    from fastapi.responses import RedirectResponse
+    from db.repository import verify_pending_registration_link
+
+    pending_token = verify_pending_registration_link(token)
+    if not pending_token:
+        return RedirectResponse(f"{FRONTEND_URL}/register?verify=error")
+    return RedirectResponse(f"{FRONTEND_URL}/register?pending_token={pending_token}&verified=1")
 
 @app.post("/api/settings/samsara")
 def connect_samsara(

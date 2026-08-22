@@ -42,6 +42,36 @@ def send_otp_email(to_address: str, code: str) -> None:
         server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())
 
 
+def send_registration_verification_email(to_address: str, code: str, verify_url: str) -> None:
+    """Confirms the visitor actually controls the Gmail inbox they just
+    connected during registration - sent right after the OAuth callback,
+    before any Company row exists. Gives both a code and a link so either
+    works, whichever's more convenient."""
+    if not is_configured():
+        raise NotImplementedError(
+            "Email isn't configured yet. Set SMTP_HOST, SMTP_USERNAME, and "
+            "SMTP_PASSWORD in .env (a Gmail app password works fine for this)."
+        )
+
+    body = (
+        "Thanks for signing up for Freight Pilot! Confirm this is your inbox to finish "
+        "creating your account.\n\n"
+        f"Click here to confirm: {verify_url}\n\n"
+        f"Or enter this code on the registration page: {code}\n\n"
+        "This expires in 1 hour. If you didn't start signing up for Freight Pilot, you can "
+        "safely ignore this email."
+    )
+    message = MIMEText(body)
+    message["Subject"] = f"{code} - Confirm your email for Freight Pilot"
+    message["From"] = SMTP_FROM_EMAIL
+    message["To"] = to_address
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())
+
+
 def send_password_reset_email(to_address: str, reset_url: str) -> None:
     """Sends an owner a one-time link to set a new password. Same platform
     SMTP account as send_otp_email above - this isn't a per-company Gmail

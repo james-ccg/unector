@@ -160,11 +160,35 @@ export const authApi = {
     password: string
     confirm_password: string
     turnstile_token?: string | null
+    pending_token?: string | null
   }) =>
     apiRequest<LoginSuccess>(
       '/api/auth/register',
       { method: 'POST', body: JSON.stringify(data) }
     ),
+
+  // Gmail-first registration - connect Gmail before any account exists,
+  // confirm you own that inbox, then register() above (with pending_token)
+  // actually creates the company. See PendingRegistration's docstring.
+  registerGmailStart: () =>
+    apiRequest<{ auth_url: string }>('/api/auth/register/gmail/start'),
+
+  registerPendingStatus: (pendingToken: string) =>
+    apiRequest<{ gmail_email: string; email_verified: boolean }>(
+      `/api/auth/register/pending-status?pending_token=${encodeURIComponent(pendingToken)}`
+    ),
+
+  registerVerifyCode: (pendingToken: string, code: string) =>
+    apiRequest<{ verified: boolean }>('/api/auth/register/verify-code', {
+      method: 'POST',
+      body: JSON.stringify({ pending_token: pendingToken, code }),
+    }),
+
+  registerResendVerification: (pendingToken: string) =>
+    apiRequest<{ success: boolean }>('/api/auth/register/resend-verification', {
+      method: 'POST',
+      body: JSON.stringify({ pending_token: pendingToken }),
+    }),
 
   logout: () => apiRequest<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
 

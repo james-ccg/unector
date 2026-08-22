@@ -9,6 +9,8 @@ client's persistent cookie jar. Mutating requests (POST/PATCH/DELETE made
 by an already-logged-in caller) also need the CSRF header the double-submit
 cookie pattern requires - see _csrf_headers().
 """
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 import miniapp.api as api_module
@@ -242,6 +244,146 @@ class TestPasswordReset:
             "token": token, "new_password": "somepassword123", "confirm_password": "differentpassword123",
         })
         assert response.status_code == 400
+
+
+class TestGmailFirstRegistration:
+    """Registration is Gmail-first: connect Gmail, confirm you own that
+    inbox (code or link), THEN fill in company details - a Company row is
+    only ever created at the final /api/auth/register call, and only if a
+    verified pending_token is attached. See PendingRegistration's docstring.
+
+    These tests create PendingRegistration rows directly rather than
+    exercising the real OAuth callback, which would need a live Google API
+    call - that part (services/gmail_service.exchange_code_for_refresh_token
+    and get_email_address) is exercised by hand against a real account
+    instead, same as the rest of this codebase's Gmail integration."""
+
+    def _create_pending_registration(self, *, verified: bool, gmail_email: str = "owner@gmail.com") -> tuple[str, str, str]:
+        """Returns (pending_token, plaintext_code, link_token)."""
+        import secrets
+        from datetime import timedelta
+        from db.database import get_session
+        from db import models
+        from config import encrypt_value
+        from services import twofactor_service
+
+        pending_token = secrets.token_urlsafe(16)
+        code = "123456"
+        link_token = secrets.token_urlsafe(16)
+
+        with get_session() as session:
+            session.add(models.PendingRegistration(
+                token=pending_token,
+                gmail_email=gmail_email,
+                gmail_refresh_token_encrypted=encrypt_value("fake-refresh-token"),
+                verify_code_hash=twofactor_service.hash_otp_code(code),
+                verify_link_token=link_token,
+                email_verified_at=datetime.now(timezone.utc) if verified else None,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            ))
+            session.commit()
+        return pending_token, code, link_token
+
+    def test_pending_status_returns_email_and_verified_flag(self, client):
+        pending_token, _code, _link = self._create_pending_registration(verified=False, gmail_email="pending@gmail.com")
+        response = client.get(f"/api/auth/register/pending-status?pending_token={pending_token}")
+        assert response.status_code == 200
+        assert response.json() == {"gmail_email": "pending@gmail.com", "email_verified": False}
+
+    def test_pending_status_unknown_token_404s(self, client):
+        response = client.get("/api/auth/register/pending-status?pending_token=not-a-real-token")
+        assert response.status_code == 404
+
+    def test_verify_code_marks_pending_registration_verified(self, client):
+        pending_token, code, _link = self._create_pending_registration(verified=False)
+        response = client.post("/api/auth/register/verify-code", json={"pending_token": pending_token, "code": code})
+        assert response.status_code == 200
+        assert response.json() == {"verified": True}
+
+        status = client.get(f"/api/auth/register/pending-status?pending_token={pending_token}")
+        assert status.json()["email_verified"] is True
+
+    def test_verify_code_wrong_code_rejected(self, client):
+        pending_token, _code, _link = self._create_pending_registration(verified=False)
+        response = client.post("/api/auth/register/verify-code", json={"pending_token": pending_token, "code": "000000"})
+        assert response.status_code == 400
+
+    def test_verify_link_marks_verified_and_redirects_with_pending_token(self, client):
+        pending_token, _code, link_token = self._create_pending_registration(verified=False)
+        response = client.get(f"/api/auth/register/verify-link?token={link_token}", follow_redirects=False)
+        assert response.status_code in (302, 307)
+        assert f"pending_token={pending_token}" in response.headers["location"]
+        assert "verified=1" in response.headers["location"]
+
+    def test_verify_link_unknown_token_redirects_with_error(self, client):
+        response = client.get("/api/auth/register/verify-link?token=not-a-real-link-token", follow_redirects=False)
+        assert response.status_code in (302, 307)
+        assert "verify=error" in response.headers["location"]
+
+    def test_register_with_verified_pending_token_attaches_gmail(self, client):
+        pending_token, _code, _link = self._create_pending_registration(verified=True, gmail_email="verified@gmail.com")
+
+        response = client.post("/api/auth/register", json={
+            "mc_number": "761111",
+            "company_name": "Gmail First Co",
+            "email": "owner@gmailfirstco.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+            "pending_token": pending_token,
+        })
+        assert response.status_code == 200, response.text
+        assert response.json()["gmail_connected"] is True
+
+        # The pending registration is one-time use - gone after consumption.
+        status = client.get(f"/api/auth/register/pending-status?pending_token={pending_token}")
+        assert status.status_code == 404
+
+    def test_register_with_unverified_pending_token_rejected_and_creates_no_company(self, client):
+        pending_token, _code, _link = self._create_pending_registration(verified=False)
+
+        response = client.post("/api/auth/register", json={
+            "mc_number": "762222",
+            "company_name": "Should Not Exist Co",
+            "email": "owner@shouldnotexist.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+            "pending_token": pending_token,
+        })
+        assert response.status_code == 400
+
+        # Confirm no company was created - the MC number is still free.
+        second_attempt = client.post("/api/auth/register", json={
+            "mc_number": "762222",
+            "company_name": "Should Not Exist Co",
+            "email": "owner@shouldnotexist.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert second_attempt.status_code == 200, second_attempt.text
+
+    def test_register_with_invalid_pending_token_rejected(self, client):
+        response = client.post("/api/auth/register", json={
+            "mc_number": "763333",
+            "company_name": "Invalid Token Co",
+            "email": "owner@invalidtokenco.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+            "pending_token": "not-a-real-pending-token",
+        })
+        assert response.status_code == 400
+
+    def test_register_without_pending_token_still_works(self, client):
+        """Backward-compat: pending_token is optional, so existing
+        integrations that never touch the Gmail-first flow are unaffected."""
+        response = client.post("/api/auth/register", json={
+            "mc_number": "764444",
+            "company_name": "No Gmail Co",
+            "email": "owner@nogmailco.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert response.status_code == 200, response.text
+        assert response.json()["gmail_connected"] is False
 
 
 class TestRegisterMcPrefixCollision:

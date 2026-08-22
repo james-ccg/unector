@@ -84,11 +84,14 @@ skip all of them on a brand-new database. Only run one if you're upgrading an ex
 
 ### 5. Add a company and driver
 
-Both are self-service from the dashboard now. Registering a company is done from `/register`;
-adding a driver is done from **Settings → Drivers** once logged in as the owner - it creates the
-driver record and shows a one-time `/linkdriver <code>` command. Add the bot to the driver's
-Telegram group and send that command there to complete the link (no group ID needed - unlike
-`/setvehicle`, this doesn't require `/myid` first).
+Both are self-service from the dashboard now. Registering a company from `/register` is
+Gmail-first: connect Gmail, confirm you own that inbox (a code or link emailed to it), then fill
+in company details - nothing is created until that last step submits, so abandoning the flow
+anywhere before then leaves nothing behind. Adding a driver is done from **Settings → Drivers**
+once logged in as the owner - it creates the driver record and shows a one-time
+`/linkdriver <code>` command. Add the bot to the driver's Telegram group and send that command
+there to complete the link (no group ID needed - unlike `/setvehicle`, this doesn't require
+`/myid` first).
 
 `seed.py` still exists for quick local/test setup without going through the dashboard:
 

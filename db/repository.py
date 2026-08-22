@@ -1310,3 +1310,114 @@ def consume_password_reset_token(token: str) -> int | None:
         row.consumed_at = datetime.now(timezone.utc)
         session.commit()
         return row.account_id
+
+
+PENDING_REGISTRATION_TTL_SECONDS = 60 * 60  # 1 hour to connect, verify, and fill in company details
+
+
+def create_pending_registration(token: str, gmail_email: str, gmail_refresh_token: str) -> None:
+    with get_session() as session:
+        session.add(
+            models.PendingRegistration(
+                token=token,
+                gmail_email=gmail_email,
+                gmail_refresh_token_encrypted=encrypt_value(gmail_refresh_token),
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=PENDING_REGISTRATION_TTL_SECONDS),
+            )
+        )
+        session.commit()
+
+
+def get_pending_registration(token: str) -> dict | None:
+    """Non-sensitive view for the frontend to poll/display - never returns
+    the refresh token itself. None if the token doesn't exist or expired."""
+    with get_session() as session:
+        row = (
+            session.query(models.PendingRegistration)
+            .filter(
+                models.PendingRegistration.token == token,
+                models.PendingRegistration.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if not row:
+            return None
+        return {"gmail_email": row.gmail_email, "email_verified": row.email_verified_at is not None}
+
+
+def set_pending_registration_verification(token: str, code_hash: str, link_token: str) -> bool:
+    """Stores a fresh code/link pair to verify against - called each time
+    the confirmation email is (re)sent, so only the most recently sent
+    code/link actually works. Returns False if the token doesn't exist."""
+    with get_session() as session:
+        row = session.query(models.PendingRegistration).filter_by(token=token).first()
+        if not row:
+            return False
+        row.verify_code_hash = code_hash
+        row.verify_link_token = link_token
+        session.commit()
+        return True
+
+
+def verify_pending_registration_code(token: str, code_hash: str) -> bool:
+    with get_session() as session:
+        row = (
+            session.query(models.PendingRegistration)
+            .filter(
+                models.PendingRegistration.token == token,
+                models.PendingRegistration.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if not row or not row.verify_code_hash or row.verify_code_hash != code_hash:
+            return False
+        row.email_verified_at = datetime.now(timezone.utc)
+        session.commit()
+        return True
+
+
+def verify_pending_registration_link(link_token: str) -> str | None:
+    """Same idea as verify_pending_registration_code but for the clicked-link
+    path - returns the pending registration's own token (so the frontend can
+    resume that session) or None if the link is invalid/expired."""
+    with get_session() as session:
+        row = (
+            session.query(models.PendingRegistration)
+            .filter(
+                models.PendingRegistration.verify_link_token == link_token,
+                models.PendingRegistration.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if not row:
+            return None
+        row.email_verified_at = datetime.now(timezone.utc)
+        session.commit()
+        return row.token
+
+
+def consume_pending_registration(token: str) -> dict | None:
+    """Called once, at the final /api/auth/register submit - returns the
+    verified Gmail address + decrypted refresh token to attach to the new
+    Company, and deletes the pending row (one-time use). None if the token
+    doesn't exist, expired, or was never actually verified - callers must
+    treat that as a hard failure, never fall back to creating the account
+    without a connected/verified Gmail."""
+    with get_session() as session:
+        row = (
+            session.query(models.PendingRegistration)
+            .filter(
+                models.PendingRegistration.token == token,
+                models.PendingRegistration.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if not row or not row.email_verified_at:
+            return None
+        result = {
+            "gmail_email": row.gmail_email,
+            "gmail_refresh_token": decrypt_value(row.gmail_refresh_token_encrypted),
+        }
+        session.delete(row)
+        session.commit()
+        return result
