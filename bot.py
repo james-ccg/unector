@@ -155,8 +155,8 @@ async def handle_faq(message: Message):
         "Telegram - connects Gmail, extracts load details with AI, tracks GPS, and gives "
         "owners/dispatchers a real-time web dashboard.\n\n"
         "**How does billing work?**\n"
-        "Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers. Max "
-        "plans are $100/mo for up to 25 drivers, or $200/mo for up to 100 drivers. Every "
+        "Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers. Max 5x "
+        "is $100/mo for up to 25 drivers, and Max 20x is $200/mo for up to 100 drivers. Every "
         "paid plan starts with a 7-day free trial.\n\n"
         "**How does Gmail integration work?**\n"
         "A secure OAuth 2.0 connection - the owner authorizes it once from the dashboard. "
@@ -231,7 +231,7 @@ async def handle_link(message: Message):
         f"📱 **How to use:**\n"
         f"• Copy the link above\n"
         f"• Open it in any browser (Chrome, Safari, Firefox)\n"
-        f"• Works on: Phone 📱 • Computer 💻 • Tablet 📱\n\n"
+        f"• Works on: 📱 Phone • 💻 Computer • 📱 Tablet\n\n"
         f"💡 **You can:**\n"
         f"• Share it with your team\n"
         f"• Bookmark it for quick access\n"
@@ -375,7 +375,7 @@ async def handle_setvehicle(message: Message):
     try:
         driver = get_driver_by_group(message.chat.id)
     except NotImplementedError:
-        await message.reply("⚙️ This feature isn't fully set up yet (waiting on database connection).")
+        await message.reply("⚙️ This feature isn't available for this group yet.")
         return
 
     if not driver:
@@ -440,7 +440,7 @@ async def _get_driver_and_company(message: Message) -> tuple | None:
         driver = get_driver_by_group(message.chat.id)
     except NotImplementedError:
         await message.reply(
-            "⚙️ This feature isn't fully set up yet (waiting on database connection). "
+            "⚙️ This feature isn't available for this group yet. "
             "It'll be ready soon."
         )
         return None
@@ -478,7 +478,7 @@ async def _post_load_template(message: Message, driver, company, load_id: str, d
         logger.exception("Failed to save RC data for load %s", load_id)
         await message.reply(
             f"⚠️ Found the RC, but something went wrong while processing it "
-            f"(load {load_id}). Please try again, or check the logs."
+            f"(load {load_id}). Please try again, or contact your dispatcher."
         )
         return
 
@@ -503,12 +503,12 @@ async def _extract_rc_data_or_reply(message: Message, pdf_bytes: bytes, context:
 
 async def _dispatch_by_load_number(message: Message, driver, company, load_id: str):
     """/dispatch <number> - searches the connected inbox for the RC."""
-    await message.reply(f"🔎 Checking email for load {load_id}...")
+    await message.reply(f"🔍 Checking email for load {load_id}...")
 
     try:
         pdf_bytes = await asyncio.to_thread(email_service.find_rc_pdf_by_load_id, company.id, load_id)
-    except NotImplementedError as e:
-        await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
+    except NotImplementedError:
+        await message.reply("⚙️ Email isn't connected for this company yet - ask your dispatcher to connect Gmail from the dashboard's Settings page.")
         return
 
     if pdf_bytes is None:
@@ -531,7 +531,7 @@ async def _dispatch_from_pdf(message: Message, driver, company, document):
     if not await _validate_document(document, message):
         return
 
-    await message.reply("🔎 Reading the attached PDF...")
+    await message.reply("🔍 Reading the attached PDF...")
     pdf_bytes, _mime_type = await _download_document(document)
 
     data = await _extract_rc_data_or_reply(message, pdf_bytes, "that PDF")
@@ -587,7 +587,7 @@ async def handle_dispatch_text(message: Message):
         return
 
     await message.reply(
-        "Usage: /dispatch <load number>  (e.g. /dispatch 11111)\n\n"
+        "Usage: /dispatch <load number> (e.g. /dispatch 11111)\n\n"
         "Or attach a PDF (or reply to one) with /dispatch and no number to build "
         "the load straight from that PDF instead of searching email."
     )
@@ -596,10 +596,10 @@ async def handle_dispatch_text(message: Message):
 # These four lines are the carrier's own standing policy - they must appear
 # in every load message exactly as written, regardless of what the RC says.
 MANDATORY_NOTES = [
-    "MUST ACCEPT TRUCKING WHICH BROKER SENT, BROKER MIGHT CHARGE FOR NOT ACCEPTING",
-    "LATE FEE; $500",
-    "PLEASE USE STRAPS AND LOADBARS TO SECURE THE LOAD",
-    "MUST SCALE AFTER PU (IF MORE THAN 35,000 LBS) $100 CHARGE IF NOT SCALE",
+    "MUST ACCEPT THE LOAD AS DISPATCHED - THE BROKER MAY CHARGE FOR REFUSING IT",
+    "LATE FEE: $500",
+    "USE STRAPS AND LOADBARS TO SECURE THE LOAD",
+    "MUST SCALE AFTER PU IF OVER 35,000 LBS - $100 CHARGE IF NOT SCALED",
 ]
 
 
@@ -625,10 +625,10 @@ def _format_stop_block(emoji: str, label: str, number: int, stop: dict) -> list[
     delivery and any extra stops from additional_pu_stops/additional_del_stops,
     so a multi-stop RC renders PU :1, PU :2, DEL :1, DEL :2, etc. the same way."""
     e = html.escape
-    lines = [f"<b>{emoji}{label} :{number}</b>"]
+    lines = [f"<b>{emoji} {label}:{number}</b>"]
     lines.append(f"<pre><code class='language-PERFORMANCE'>{e(stop.get('address') or '—')}</code></pre>")
     lines.append("")
-    date_time_bold = f"📅date: {e(stop.get('date') or '—')}\n🕔time:"
+    date_time_bold = f"📅 Date: {e(stop.get('date') or '—')}\n🕔 Time:"
     lines.append(f"<b>{date_time_bold}</b> {e(_normalize_time(stop.get('time')) or '—')}")
     if stop.get("reference"):
         lines.append(f"Ref#: {e(stop['reference'])}")
@@ -659,7 +659,7 @@ def format_load_template(load_id: str, data: dict) -> str:
     carrier = e(data.get("carrier_name") or "")
 
     # --- Header: broker + carrier + LOAD# label are bold, the load number itself is plain ---
-    header_bold = f"📌Broker: {broker}"
+    header_bold = f"📌 Broker: {broker}"
     if carrier:
         header_bold += f"\n{carrier}"
     header_bold += "\nLOAD#:"
@@ -676,8 +676,8 @@ def format_load_template(load_id: str, data: dict) -> str:
     # --- Weight / Commodity / PU# box (always the primary pickup's reference) ---
     box_lines = []
     if data.get("weight"):
-        box_lines.append(f"<b>⚖️Weight: {e(data['weight'])}</b>")
-    box_lines.append(f"<b>📤Commodity:</b> {e(data.get('commodity') or '—')}")
+        box_lines.append(f"<b>⚖️ Weight: {e(data['weight'])}</b>")
+    box_lines.append(f"<b>📤 Commodity:</b> {e(data.get('commodity') or '—')}")
     if data.get("reefer_temp"):
         box_lines.append(f"TEMP#: {e(data['reefer_temp'])}")
     if data.get("pu_reference"):
@@ -952,8 +952,8 @@ def _format_bol_response(result: dict) -> str:
     weight_status = g(weight, "status", "Not checked")
     lines.append(f"<b>Weight:</b>")
     blockquote_lines = [
-        f"<b>Bol</b> - {bol_weight}",
-        f"<b>Rc</b> - {rc_weight}",
+        f"<b>BOL</b> - {bol_weight}",
+        f"<b>RC</b> - {rc_weight}",
         f"<b>Status</b> - {weight_status}"
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
@@ -965,10 +965,10 @@ def _format_bol_response(result: dict) -> str:
     rc_addr = g(del_addr, "rc", "not visible")
     addr_status = g(del_addr, "status", "Not checked")
     addr_emoji = g(del_addr, "emoji", "")
-    lines.append(f"<b>Del address:</b>")
+    lines.append(f"<b>Delivery address:</b>")
     blockquote_lines = [
-        f"<b>Bol</b> - <i>{bol_addr}</i>",
-        f"<b>Rc</b> - <i>{rc_addr}</i>",
+        f"<b>BOL</b> - <i>{bol_addr}</i>",
+        f"<b>RC</b> - <i>{rc_addr}</i>",
         f"<b>Status</b> - {addr_status} {addr_emoji}"
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
@@ -979,10 +979,10 @@ def _format_bol_response(result: dict) -> str:
     rc_temp = g(temp, "rc", "didn't show")
     bol_temp = g(temp, "bol", "didn't show")
     temp_status = g(temp, "status", "Not checked")
-    lines.append(f"<b>Temp:</b>")
+    lines.append(f"<b>Temperature:</b>")
     blockquote_lines = [
-        f"<b>Rc</b> - {rc_temp}",
-        f"<b>Bol</b> - {bol_temp}",
+        f"<b>RC</b> - {rc_temp}",
+        f"<b>BOL</b> - {bol_temp}",
         f"<b>Status</b> - {temp_status}"
     ]
     lines.append(f"<blockquote>{'&#10;'.join(blockquote_lines)}</blockquote>")
@@ -992,14 +992,14 @@ def _format_bol_response(result: dict) -> str:
     seal = result.get("seal", {})
     seal_summary = g(seal, "summary", "Not checked")
     lines.append(f"<b>Seal match status:</b>")
-    lines.append(seal_summary)
+    lines.append(f"<blockquote>{seal_summary}</blockquote>")
     lines.append("")
 
     # Final verdict
     if result.get("mismatches") and len(result["mismatches"]) > 0:
         lines.append("<b>Please review before proceeding.</b>")
     else:
-        lines.append("<b>Good to go!</b>")
+        lines.append("<b>Everything looks good!</b>")
 
     return "\n".join(lines)
 
@@ -1008,11 +1008,11 @@ async def _run_bol(chat_id: int, trigger_message: Message, files: list[tuple[byt
     try:
         load = get_load_by_group(chat_id)
     except NotImplementedError:
-        await bot.send_message(chat_id, "⚙️ This feature isn't fully set up yet (waiting on database connection).")
+        await bot.send_message(chat_id, "⚙️ This feature isn't available for this group yet.")
         return
 
     if not load or not load.raw_extracted_json:
-        await bot.send_message(chat_id, "⚠️ Please load the RC first using /dispatch.")
+        await bot.send_message(chat_id, "⚠️ Please pull in the RC first using /dispatch.")
         return
 
     label = "document" if len(files) == 1 else f"{len(files)} documents"
@@ -1047,11 +1047,11 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
     try:
         load = get_load_by_group(chat_id)
     except NotImplementedError:
-        await bot.send_message(chat_id, "⚙️ This feature isn't fully set up yet (waiting on database connection).")
+        await bot.send_message(chat_id, "⚙️ This feature isn't available for this group yet.")
         return
 
     if not load or not load.raw_extracted_json:
-        await bot.send_message(chat_id, "⚠️ Please load the RC first using /dispatch.")
+        await bot.send_message(chat_id, "⚠️ Please pull in the RC first using /dispatch.")
         return
 
     broker_email = load.raw_extracted_json.get("broker_contact_email")
@@ -1078,8 +1078,8 @@ async def _run_pod(chat_id: int, trigger_message: Message, files: list[tuple[byt
             body=f"Please find the proof of delivery attached for load #{load.load_id}.",
             attachments=attachments,
         )
-    except NotImplementedError as e:
-        await bot.send_message(chat_id, f"⚙️ Email integration isn't connected yet.\n({e})")
+    except NotImplementedError:
+        await bot.send_message(chat_id, "⚙️ Email isn't connected for this company yet - ask your dispatcher to connect Gmail from the dashboard's Settings page.")
         return
     except Exception:
         logger.exception("Failed to send POD email for load %s", load.load_id)
@@ -1108,7 +1108,7 @@ async def handle_detention(message: Message):
     try:
         driver = get_driver_by_group(message.chat.id)
     except NotImplementedError:
-        await message.reply("⚙️ This feature isn't fully set up yet (waiting on database connection).")
+        await message.reply("⚙️ This feature isn't available for this group yet.")
         return
 
     if not driver:
@@ -1117,7 +1117,7 @@ async def handle_detention(message: Message):
 
     load = get_load_by_group(message.chat.id)
     if not load or not load.raw_extracted_json:
-        await message.reply("⚠️ No active load found for this group. Please load the RC first using /dispatch.")
+        await message.reply("⚠️ No active load found for this group. Please pull in the RC first using /dispatch.")
         return
 
     if load.detention_requested_at:
@@ -1151,8 +1151,8 @@ async def handle_detention(message: Message):
                 f"rate confirmation's stated terms:\n\n{terms}\n\nPlease advise on next steps."
             ),
         )
-    except NotImplementedError as e:
-        await message.reply(f"⚙️ Email integration isn't connected yet.\n({e})")
+    except NotImplementedError:
+        await message.reply("⚙️ Email isn't connected for this company yet - ask your dispatcher to connect Gmail from the dashboard's Settings page.")
         return
     except Exception:
         logger.exception("Failed to send detention request for load %s", load.load_id)
@@ -1222,19 +1222,19 @@ async def handle_pod_document(message: Message):
 @dp.message(_command_filter("bol"))
 async def handle_bol_no_attachment(message: Message):
     """Reached only when /bol was sent with no photo/document attached."""
-    await message.reply("Please send the BOL photo(s) or file with the /bol caption.")
+    await message.reply("⚠️ Please send the BOL photo(s) or file with the /bol caption.")
 
 
 @dp.message(_command_filter("pod"))
 async def handle_pod_no_attachment(message: Message):
     """Reached only when /pod was sent with no photo/document attached."""
-    await message.reply("Please send the POD photo(s) or file with the /pod caption.")
+    await message.reply("⚠️ Please send the POD photo(s) or file with the /pod caption.")
 
 
 @dp.message(_command_filter("loadpics"))
 async def handle_loadpics_no_attachment(message: Message):
     """Reached only when /loadpics was sent with no photo attached."""
-    await message.reply("Please send the load photo(s) with the /loadpics caption.")
+    await message.reply("⚠️ Please send the load photo(s) with the /loadpics caption.")
 
 
 # ------------------------------------------------------------------
@@ -1264,8 +1264,8 @@ async def location_monitor_loop():
 # identical to what this used to say unconditionally, so a company that never
 # touches the new settings sees no change at all.
 DEFAULT_ALERT_MESSAGES = {
-    "pu_near": "📍 Driver is ~{miles} miles from pickup on load #{load_id}. We'll inform you once he checks in.",
-    "del_near": "📍 Driver is ~{miles} miles from delivery on load #{load_id}. We'll inform you once he checks in.",
+    "pu_near": "📍 Driver is ~{miles} miles from pickup on load #{load_id}. We'll inform you once they check in.",
+    "del_near": "📍 Driver is ~{miles} miles from delivery on load #{load_id}. We'll inform you once they check in.",
 }
 
 

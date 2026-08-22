@@ -72,10 +72,10 @@ class TestFormatLoadTemplateStops:
 
     def test_single_stop_load_shows_one_pu_and_one_del(self):
         text = format_load_template("11111", self._base_data())
-        assert text.count("PU :") == 1
-        assert text.count("DEL :") == 1
-        assert "🟢PU :1" in text
-        assert "🔴DEL :1" in text
+        assert text.count("PU:") == 1
+        assert text.count("DEL:") == 1
+        assert "🟢 PU:1" in text
+        assert "🔴 DEL:1" in text
 
     def test_multi_stop_pu_renders_each_stop_numbered_in_order(self):
         data = self._base_data(additional_pu_stops=[
@@ -84,10 +84,10 @@ class TestFormatLoadTemplateStops:
         ])
         text = format_load_template("22222", data)
 
-        assert text.count("PU :") == 3
-        assert "🟢PU :1" in text
-        assert "🟢PU :2" in text
-        assert "🟢PU :3" in text
+        assert text.count("PU:") == 3
+        assert "🟢 PU:1" in text
+        assert "🟢 PU:2" in text
+        assert "🟢 PU:3" in text
         # Order preserved: stop 2 appears before stop 3 in the rendered text.
         assert text.index("Second Stop Rd") < text.index("Third Stop Rd")
         assert "PU2-REF" in text
@@ -98,9 +98,9 @@ class TestFormatLoadTemplateStops:
         ])
         text = format_load_template("33333", data)
 
-        assert text.count("DEL :") == 2
-        assert "🔴DEL :1" in text
-        assert "🔴DEL :2" in text
+        assert text.count("DEL:") == 2
+        assert "🔴 DEL:1" in text
+        assert "🔴 DEL:2" in text
         assert "Second Drop Ave" in text
 
     def test_additional_stop_addresses_are_html_escaped(self):
