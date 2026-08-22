@@ -200,7 +200,7 @@ export default function LoginPage() {
               </div>
 
               {activeTab === 'owner' ? (
-                <form onSubmit={handleOwnerLogin} className="card form">
+                <form key="owner-login-form" onSubmit={handleOwnerLogin} className="card form">
                   <label>
                     <span>MC Number</span>
                     <input type="text" name="mc_number" placeholder="123456" required />
@@ -231,7 +231,7 @@ export default function LoginPage() {
                   </p>
                 </form>
               ) : (
-                <form onSubmit={handleDispatcherLogin} className="card form">
+                <form key="dispatcher-login-form" onSubmit={handleDispatcherLogin} className="card form">
                   <label>
                     <span>Username</span>
                     <input type="text" name="username" placeholder="Username" required />

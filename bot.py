@@ -129,16 +129,16 @@ async def handle_start(message: Message):
         "I help trucking companies automate dispatch: I pull rate confirmations from email, "
         "extract load details with AI, check your BOL/POD photos, and track GPS proximity to "
         "pickup/delivery.\n\n"
-        "**Commands:**\n"
-        "• /dispatch <id> - find and post a load's rate confirmation\n"
-        "• /loadpics - (photo caption) AI reviews your load photos\n"
-        "• /bol - (photo/document caption) compares the BOL against the RC\n"
-        "• /pod - (photo/document caption) forwards the POD to the broker\n"
-        "• /detention - request detention/layover pay from the broker\n"
-        "• /setvehicle <id> - link this group to a Samsara vehicle for GPS alerts\n"
-        "• /dashboard - open the owner/dispatcher web dashboard\n"
-        "• /faq - frequently asked questions\n"
-        "• /commands - full command list\n\n"
+        "**Commands**\n"
+        "/dispatch <id> - find and post a load's rate confirmation\n"
+        "/loadpics - (photo caption) AI reviews your load photos\n"
+        "/bol - (photo/document caption) compares the BOL against the RC\n"
+        "/pod - (photo/document caption) forwards the POD to the broker\n"
+        "/detention - request detention/layover pay from the broker\n"
+        "/setvehicle <id> - link this group to a Samsara vehicle for GPS alerts\n"
+        "/dashboard - open the owner/dispatcher web dashboard\n"
+        "/faq - frequently asked questions\n"
+        "/commands - full command list\n\n"
         "The load commands only work inside your driver+dispatch group - if you're not sure "
         "where that is, ask your dispatcher.",
         parse_mode="Markdown",
@@ -182,26 +182,26 @@ async def handle_commands(message: Message):
     """Full command reference - everything /start only summarizes."""
     await message.reply(
         "**Full Command List**\n\n"
-        "**Anywhere:**\n"
-        "• /start - welcome message and command summary\n"
-        "• /faq - frequently asked questions\n"
-        "• /commands - this list\n"
-        "• /dashboard - open the owner/dispatcher web dashboard\n"
-        "• /link - direct dashboard link, for opening in any browser\n"
-        "• /verify2fa <code> - links this chat for 2FA codes (code from Settings → Security)\n"
-        "• /linkdriver <code> - links a new Telegram group to a driver (code from Settings → Drivers) - "
+        "**Anywhere**\n"
+        "/start - welcome message and command summary\n"
+        "/faq - frequently asked questions\n"
+        "/commands - this list\n"
+        "/dashboard - open the owner/dispatcher web dashboard\n"
+        "/link - direct dashboard link, for opening in any browser\n"
+        "/verify2fa <code> - links this chat for 2FA codes (code from Settings → Security)\n"
+        "/linkdriver <code> - links a new Telegram group to a driver (code from Settings → Drivers) - "
         "send it inside the group being linked\n"
-        "• /myid - prints the current chat/group ID\n\n"
-        "**Inside a driver+dispatch group only:**\n"
-        "• /dispatch <id> - finds the rate confirmation email and posts it to the group. "
+        "/myid - prints the current chat/group ID\n\n"
+        "**Inside a driver+dispatch group only**\n"
+        "/dispatch <id> - finds the rate confirmation email and posts it to the group. "
         "With no id but a PDF attached, replied to, or sent alongside it, builds the load "
         "directly from that PDF instead\n"
-        "• /loadpics - (photo caption) AI reviews load photos - send up to 10 as one album\n"
-        "• /bol - (photo/document caption) compares the BOL against the RC\n"
-        "• /pod - (photo/document caption) forwards the POD straight to the broker\n"
-        "• /detention - sends a detention/layover request to the broker, citing the RC's "
+        "/loadpics - (photo caption) AI reviews load photos - send up to 10 as one album\n"
+        "/bol - (photo/document caption) compares the BOL against the RC\n"
+        "/pod - (photo/document caption) forwards the POD straight to the broker\n"
+        "/detention - sends a detention/layover request to the broker, citing the RC's "
         "terms, and notifies the dispatcher - send it when the driver is actually held\n"
-        "• /setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts",
+        "/setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts",
         parse_mode="Markdown",
     )
 
@@ -227,11 +227,11 @@ async def handle_link(message: Message):
     
     await message.reply(
         f"🔗 **Freight Pilot Dashboard Link**\n\n"
-        f"`{MINIAPP_URL}`\n\n"
+        f"{MINIAPP_URL}\n\n"
         f"📱 **How to use:**\n"
         f"• Copy the link above\n"
         f"• Open it in any browser (Chrome, Safari, Firefox)\n"
-        f"• Works on: 📱 Phone • 💻 Computer • 📱 Tablet\n\n"
+        f"• Works on any device that can run a browser\n\n"
         f"💡 **You can:**\n"
         f"• Share it with your team\n"
         f"• Bookmark it for quick access\n"
@@ -335,8 +335,8 @@ async def handle_dashboard(message: Message):
             f"Open a private chat with me and send /dashboard\n\n"
             f"**Option 2 (Direct link):**\n"
             f"Open this link in any browser:\n"
-            f"`{MINIAPP_URL}`\n\n"
-            f"Works on: 📱 Phone • 💻 Computer • 📱 Tablet",
+            f"{MINIAPP_URL}\n\n"
+            f"Works on any device that can run a browser.",
             parse_mode="Markdown"
         )
         return
@@ -1235,6 +1235,30 @@ async def handle_pod_no_attachment(message: Message):
 async def handle_loadpics_no_attachment(message: Message):
     """Reached only when /loadpics was sent with no photo attached."""
     await message.reply("⚠️ Please send the load photo(s) with the /loadpics caption.")
+
+
+# ------------------------------------------------------------------
+# Catch-alls for a private chat with the bot - registered last, so they
+# only ever fire once every specific command handler above has already had
+# a chance to match. Scoped to private chats on purpose: a group can have
+# other bots and ordinary conversation in it, where replying to every
+# unmatched message would just be noise.
+# ------------------------------------------------------------------
+@dp.message(F.text.regexp(r"^/\w+"), F.chat.type == "private")
+async def handle_unrecognized_command(message: Message):
+    """Reached only when the text looks like a command (starts with /) but
+    didn't match any command handler above."""
+    await message.reply("Unrecognized command. Say what?")
+
+
+@dp.message(F.text, F.chat.type == "private")
+async def handle_plain_text_dm(message: Message):
+    """Reached only for ordinary text in a private chat - not a command,
+    and not a reply the bot was expecting for anything in progress."""
+    await message.reply(
+        f"If you're having trouble, please contact your dispatcher or company owner.\n\n"
+        f"Dashboard: {MINIAPP_URL or 'ask your dispatcher for the link'}"
+    )
 
 
 # ------------------------------------------------------------------
