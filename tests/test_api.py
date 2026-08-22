@@ -153,6 +153,97 @@ class TestAuth:
         assert me.status_code == 401
 
 
+class TestPasswordReset:
+    """/api/auth/forgot-password + /api/auth/reset-password - see
+    PasswordResetToken's docstring for why this only covers owners."""
+
+    def _register_owner(self, client, mc_number: str, email: str) -> None:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Reset Test Co {mc_number}",
+            "email": email,
+            "password": "originalpass123",
+            "confirm_password": "originalpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def _latest_token_for_mc(self, mc_number: str) -> str:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            company = session.query(models.Company).filter_by(mc_number=mc_number).first()
+            row = (
+                session.query(models.PasswordResetToken)
+                .filter_by(account_type="owner", account_id=company.id)
+                .order_by(models.PasswordResetToken.created_at.desc())
+                .first()
+            )
+            return row.token
+
+    def test_forgot_password_gives_same_response_for_unknown_mc(self, client):
+        self._register_owner(client, "777001", "owner@resettest.com")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+
+        known = client.post("/api/auth/forgot-password", json={"mc_number": "777001"})
+        unknown = client.post("/api/auth/forgot-password", json={"mc_number": "777099"})
+
+        assert known.status_code == 200
+        assert unknown.status_code == 200
+        assert known.json() == unknown.json()
+
+    def test_reset_password_with_valid_token_changes_password(self, client):
+        self._register_owner(client, "777002", "owner@resettest2.com")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+
+        client.post("/api/auth/forgot-password", json={"mc_number": "777002"})
+        token = self._latest_token_for_mc("777002")
+
+        reset = client.post("/api/auth/reset-password", json={
+            "token": token, "new_password": "brandnewpass123", "confirm_password": "brandnewpass123",
+        })
+        assert reset.status_code == 200, reset.text
+
+        old_login = client.post("/api/auth/owner", json={"mc_number": "777002", "password": "originalpass123"})
+        assert old_login.status_code == 401
+
+        new_login = client.post("/api/auth/owner", json={"mc_number": "777002", "password": "brandnewpass123"})
+        assert new_login.status_code == 200
+
+    def test_reset_password_token_is_single_use(self, client):
+        self._register_owner(client, "777003", "owner@resettest3.com")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/forgot-password", json={"mc_number": "777003"})
+        token = self._latest_token_for_mc("777003")
+
+        first = client.post("/api/auth/reset-password", json={
+            "token": token, "new_password": "firstnewpass123", "confirm_password": "firstnewpass123",
+        })
+        assert first.status_code == 200
+
+        second = client.post("/api/auth/reset-password", json={
+            "token": token, "new_password": "secondnewpass123", "confirm_password": "secondnewpass123",
+        })
+        assert second.status_code == 400
+
+    def test_reset_password_rejects_unknown_token(self, client):
+        response = client.post("/api/auth/reset-password", json={
+            "token": "not-a-real-token", "new_password": "somepassword123", "confirm_password": "somepassword123",
+        })
+        assert response.status_code == 400
+
+    def test_reset_password_rejects_mismatched_confirmation(self, client):
+        self._register_owner(client, "777004", "owner@resettest4.com")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/forgot-password", json={"mc_number": "777004"})
+        token = self._latest_token_for_mc("777004")
+
+        response = client.post("/api/auth/reset-password", json={
+            "token": token, "new_password": "somepassword123", "confirm_password": "differentpassword123",
+        })
+        assert response.status_code == 400
+
+
 class TestRegisterMcPrefixCollision:
     """Regression test: telegram_group_prefix used to be derived from just the
     first 4 digits of the MC number, so two companies whose MC numbers shared

@@ -168,6 +168,18 @@ export const authApi = {
 
   logout: () => apiRequest<{ success: boolean }>('/api/auth/logout', { method: 'POST' }),
 
+  forgotPassword: (mcNumber: string, turnstileToken?: string | null) =>
+    apiRequest<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ mc_number: mcNumber, turnstile_token: turnstileToken }),
+    }),
+
+  resetPassword: (token: string, newPassword: string, confirmPassword: string) =>
+    apiRequest<{ success: boolean }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword, confirm_password: confirmPassword }),
+    }),
+
   // Called on app load to check whether the httpOnly session cookie (if any)
   // is still valid - the frontend never sees the token itself, only this result.
   me: () => apiRequest<LoginSuccess>('/api/me'),

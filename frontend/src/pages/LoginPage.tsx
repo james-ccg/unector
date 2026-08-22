@@ -209,6 +209,11 @@ export default function LoginPage() {
                     <span>Password</span>
                     <input type="password" name="password" placeholder="Password" required />
                   </label>
+                  <p style={{ textAlign: 'right', margin: '-8px 0 0' }}>
+                    <Link to="/forgot-password" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '13px' }}>
+                      Forgot password?
+                    </Link>
+                  </p>
                   <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
                   <button
                     type="submit"
@@ -244,6 +249,9 @@ export default function LoginPage() {
                     {loading ? 'Logging in...' : 'Log in'}
                   </button>
                   {error && <p className="error">{error}</p>}
+                  <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px', margin: 0 }}>
+                    Don't have a login? Ask your company's owner to create one from Settings → Dispatchers.
+                  </p>
                 </form>
               )}
             </>

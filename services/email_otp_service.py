@@ -40,3 +40,30 @@ def send_otp_email(to_address: str, code: str) -> None:
         server.starttls()
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
         server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())
+
+
+def send_password_reset_email(to_address: str, reset_url: str) -> None:
+    """Sends an owner a one-time link to set a new password. Same platform
+    SMTP account as send_otp_email above - this isn't a per-company Gmail
+    integration, so it works even for a company that hasn't connected one."""
+    if not is_configured():
+        raise NotImplementedError(
+            "Email isn't configured yet. Set SMTP_HOST, SMTP_USERNAME, and "
+            "SMTP_PASSWORD in .env (a Gmail app password works fine for this)."
+        )
+
+    body = (
+        "Someone (hopefully you) requested a password reset for your Freight Pilot account.\n\n"
+        f"Set a new password here: {reset_url}\n\n"
+        "This link expires in 1 hour and can only be used once. If you didn't request this, "
+        "you can safely ignore this email - your password won't change unless you click the link above."
+    )
+    message = MIMEText(body)
+    message["Subject"] = "Reset your Freight Pilot password"
+    message["From"] = SMTP_FROM_EMAIL
+    message["To"] = to_address
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())

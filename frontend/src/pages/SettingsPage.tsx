@@ -109,8 +109,9 @@ export default function SettingsPage() {
         setBanner({
           kind: 'error',
           text:
-            'Google didn\u2019t return a refresh token (this happens if the account was already connected before). ' +
-            'Revoke access at myaccount.google.com/permissions and try connecting again.',
+            "Google didn't grant lasting access this time - this usually happens if you've connected this " +
+            "same account before. Go to myaccount.google.com/permissions, remove Freight Pilot's access " +
+            'there, then try connecting again.',
         })
       } else {
         setBanner({ kind: 'error', text: 'Something went wrong connecting Gmail. Please try again.' })
@@ -485,7 +486,7 @@ export default function SettingsPage() {
               <div className="integration-icon"><Icon name="email" size={22} /></div>
               <div className="integration-info">
                 <h3>Gmail</h3>
-                <p>Lets the bot search this inbox for Rate Confirmation emails and send PODs.</p>
+                <p>Automatically finds rate confirmations in this inbox and sends PODs to brokers.</p>
               </div>
               <span className={`status-badge ${settings?.gmail_connected ? 'is-connected' : 'is-disconnected'}`}>
                 {settings?.gmail_connected ? 'Connected' : 'Not connected'}

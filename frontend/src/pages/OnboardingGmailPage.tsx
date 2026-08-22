@@ -38,8 +38,9 @@ export default function OnboardingGmailPage() {
     queueMicrotask(() => {
       if (gmailStatus === 'error_no_refresh_token') {
         setError(
-          'Google didn’t return a refresh token (this happens if the account was already ' +
-            'connected before). Revoke access at myaccount.google.com/permissions and try again.'
+          "Google didn't grant lasting access this time - this usually happens if you've " +
+            "connected this same account before. Go to myaccount.google.com/permissions, " +
+            "remove Freight Pilot's access there, then try connecting again."
         )
       } else {
         setError('Something went wrong connecting Gmail. Please try again.')
@@ -68,10 +69,14 @@ export default function OnboardingGmailPage() {
         <div className="container">
           <div className="page-hero-content">
             <div className="logo-icon" style={{ margin: '0 auto 24px' }}>FP</div>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 8 }}>
+              STEP 2 OF 2
+            </p>
             <h1 className="page-hero-title">Connect Gmail to Finish Setup</h1>
             <p className="page-hero-description">
-              Freight Pilot reads rate confirmations straight from your inbox - without this,
-              the bot can't do its main job. This is a required, one-time step.
+              Freight Pilot reads rate confirmations straight from your inbox, so dispatch runs
+              automatically - without this, that's still manual. It's a one-time step and takes
+              under a minute.
             </p>
           </div>
         </div>

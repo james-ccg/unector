@@ -62,7 +62,11 @@ export default function RegisterPage() {
 
     try {
       const result = await authApi.register(data)
-      setSuccess('Registration successful! Redirecting...')
+      setSuccess(
+        searchParams.get('plan')
+          ? 'Account created - taking you to checkout...'
+          : 'Account created - taking you to your dashboard...'
+      )
       login(result)
       // useEffect will handle navigation
     } catch (err) {
@@ -85,7 +89,7 @@ export default function RegisterPage() {
             <h1 className="page-hero-title">Register Your Company</h1>
             <p className="page-hero-description">
               {searchParams.get('plan')
-                ? 'Start your 7-day free trial today'
+                ? "Start your 7-day free trial today - you won't be charged until it ends, and you can cancel anytime before then."
                 : "Get started free - no card required"}
             </p>
           </div>
@@ -133,7 +137,12 @@ export default function RegisterPage() {
             </p>
           </form>
 
-          <p style={{ textAlign: 'center', marginTop: '24px', color: 'var(--text-muted)', fontSize: '14px' }}>
+          <p style={{ textAlign: 'center', marginTop: '20px', color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.5 }}>
+            Your password is encrypted and never visible to anyone at Freight Pilot, including us.
+            We'll only ever email you about your own account.
+          </p>
+
+          <p style={{ textAlign: 'center', marginTop: '16px', color: 'var(--text-muted)', fontSize: '14px' }}>
             <Link to="/" style={{ color: 'var(--primary)', textDecoration: 'none' }}>
               ← Back to Home
             </Link>

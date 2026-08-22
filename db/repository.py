@@ -60,6 +60,7 @@ class Company:
     mc_number: str
     company_name: str
     password_hash: str | None = None
+    email: str | None = None
 
 
 @dataclass
@@ -466,7 +467,8 @@ def get_company_by_mc(mc_number: str) -> Company | None:
         if not row:
             return None
         return Company(
-            id=row.id, mc_number=row.mc_number, company_name=row.company_name, password_hash=row.password_hash
+            id=row.id, mc_number=row.mc_number, company_name=row.company_name,
+            password_hash=row.password_hash, email=row.email,
         )
 
 
@@ -1234,3 +1236,41 @@ def consume_webauthn_challenge(account_type: str, account_id: int, purpose: str)
         row.consumed_at = datetime.now(timezone.utc)
         session.commit()
         return row.challenge
+
+
+PASSWORD_RESET_TTL_SECONDS = 60 * 60  # 1 hour - long enough to find the email, short enough to limit exposure
+
+
+def create_password_reset_token(company_id: int, token: str) -> None:
+    with get_session() as session:
+        session.add(
+            models.PasswordResetToken(
+                account_type="owner",
+                account_id=company_id,
+                token=token,
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=PASSWORD_RESET_TTL_SECONDS),
+            )
+        )
+        session.commit()
+
+
+def consume_password_reset_token(token: str) -> int | None:
+    """Looks up an unexpired, unused reset token and marks it consumed.
+    Returns the company_id to reset the password for, or None if the token
+    is invalid/expired/already used - callers must treat that as a hard
+    failure (request a new link), never fall back to any other check."""
+    with get_session() as session:
+        row = (
+            session.query(models.PasswordResetToken)
+            .filter(
+                models.PasswordResetToken.token == token,
+                models.PasswordResetToken.consumed_at.is_(None),
+                models.PasswordResetToken.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if not row:
+            return None
+        row.consumed_at = datetime.now(timezone.utc)
+        session.commit()
+        return row.account_id

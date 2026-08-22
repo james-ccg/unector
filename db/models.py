@@ -265,6 +265,23 @@ class WebauthnChallenge(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class PasswordResetToken(Base):
+    """A one-time, emailed link for an owner who forgot their password.
+    Scoped to owners only for now (account_type is always "owner") -
+    dispatcher accounts have no email on file to send a link to; a locked-out
+    dispatcher asks their owner to set a new password from Settings instead."""
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+
+    token: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
 class TrialRedemption(Base):
     """One row per company that has ever started a paid-plan free trial.
     Records every identifying signal we had at the time (login email, MC

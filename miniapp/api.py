@@ -43,6 +43,7 @@ from db.repository import (
     get_company,
     get_company_by_mc,
     get_company_billing_info,
+    set_company_password,
     get_dispatcher_by_username,
     get_dispatchers_by_company,
     get_drivers_by_company,
@@ -173,6 +174,26 @@ class DispatcherLoginRequest(BaseModel):
     username: str
     password: str
     turnstile_token: str | None = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    mc_number: str
+    turnstile_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password must be 72 bytes or fewer (most passwords qualify).")
+        return v
 
 
 class CreateDispatcherRequest(BaseModel):
@@ -518,6 +539,58 @@ def logout(response: Response):
     """Clears the session/CSRF cookies. Client-side JS can't read or delete
     an httpOnly cookie itself, so this round-trip is required."""
     clear_session_cookies(response)
+    return {"success": True}
+
+
+# ------------------------------------------------------------------
+# Password reset (owner accounts only - see PasswordResetToken's docstring
+# for why dispatchers aren't covered here)
+# ------------------------------------------------------------------
+_FORGOT_PASSWORD_RESPONSE = {
+    "message": "If that MC number is registered, we've emailed a link to reset the password."
+}
+
+
+@app.post("/api/auth/forgot-password")
+@limiter.limit("5/minute")
+def forgot_password(request: Request, body: ForgotPasswordRequest):
+    """Always returns the same generic response whether or not the MC number
+    matches an account, and whether or not the email actually sends -
+    responding differently in any of those cases would let this endpoint be
+    used to enumerate registered MC numbers."""
+    verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
+
+    company = get_company_by_mc(body.mc_number.strip())
+    if company and company.email:
+        import logging
+        import secrets
+        from db.repository import create_password_reset_token
+        from services import email_otp_service
+
+        token = secrets.token_urlsafe(32)
+        create_password_reset_token(company.id, token)
+        reset_url = f"{FRONTEND_URL}/reset-password?token={token}"
+        try:
+            email_otp_service.send_password_reset_email(company.email, reset_url)
+        except Exception:
+            logging.exception("Failed to send password reset email for company %s", company.id)
+
+    return _FORGOT_PASSWORD_RESPONSE
+
+
+@app.post("/api/auth/reset-password")
+@limiter.limit("10/minute")
+def reset_password(request: Request, body: ResetPasswordRequest):
+    if body.new_password != body.confirm_password:
+        raise HTTPException(400, "Passwords do not match")
+
+    from db.repository import consume_password_reset_token
+
+    company_id = consume_password_reset_token(body.token)
+    if not company_id:
+        raise HTTPException(400, "That reset link is invalid or has expired. Request a new one.")
+
+    set_company_password(company_id, hash_password(body.new_password))
     return {"success": True}
 
 
