@@ -409,7 +409,7 @@ export default function SettingsPage() {
             <div className="pref-row">
               <div>
                 <p className="settings-row-label">Appearance</p>
-                <p className="settings-row-hint">System matches your device's setting.</p>
+                <p className="settings-row-hint">Auto matches your device's setting, or the time of day if it doesn't have one.</p>
               </div>
               <ThemeToggle />
             </div>

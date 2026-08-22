@@ -3,7 +3,7 @@ import Icon from './Icon'
 import './ThemeToggle.css'
 
 const OPTIONS: { value: ThemePreference; label: string; icon: 'monitor' | 'sun' | 'moon' }[] = [
-  { value: 'system', label: 'System', icon: 'monitor' },
+  { value: 'system', label: 'Auto', icon: 'monitor' },
   { value: 'light', label: 'Light', icon: 'sun' },
   { value: 'dark', label: 'Dark', icon: 'moon' },
 ]

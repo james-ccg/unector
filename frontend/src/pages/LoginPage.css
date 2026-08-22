@@ -59,9 +59,9 @@
 }
 
 .tab.active-tab {
-  background: linear-gradient(135deg, var(--amber) 0%, var(--amber-dark) 100%);
-  color: #16150f;
-  box-shadow: 0 8px 20px rgba(255, 159, 28, 0.5);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  color: #161616;
+  box-shadow: 0 8px 20px rgba(195, 248, 50, 0.5);
   transform: scale(1.03);
 }
 
@@ -102,9 +102,9 @@
 
 .form input:focus {
   outline: none;
-  border-color: var(--amber);
+  border-color: var(--accent);
   background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 4px rgba(255, 159, 28, 0.15);
+  box-shadow: 0 0 0 4px rgba(195, 248, 50, 0.15);
 }
 
 .form input::placeholder {
@@ -173,9 +173,9 @@
   cursor: pointer;
 }
 .method-tab.is-active {
-  background: var(--amber);
-  border-color: var(--amber);
-  color: #16150f;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #161616;
 }
 .method-hint {
   color: var(--hint);
@@ -190,8 +190,8 @@
   cursor: pointer;
 }
 .btn-ghost:hover {
-  border-color: var(--amber);
-  color: var(--amber);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .btn-full {
   width: 100%;

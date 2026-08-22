@@ -83,7 +83,7 @@
   width: 52px;
   height: 52px;
   border-radius: 12px;
-  background: rgba(255, 159, 28, 0.12);
+  background: rgba(195, 248, 50, 0.12);
   color: var(--primary);
   margin-bottom: 16px;
 }
@@ -134,7 +134,7 @@
 
 .pricing-pill-option.active {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #16150f;
+  color: #161616;
 }
 
 .pricing-grid {
@@ -161,7 +161,7 @@
 .pricing-card.featured {
   transform: scale(1.05);
   border-color: var(--primary);
-  box-shadow: 0 16px 40px rgba(255, 159, 28, 0.3);
+  box-shadow: 0 16px 40px rgba(195, 248, 50, 0.3);
 }
 
 .pricing-badge {
@@ -179,7 +179,7 @@
 
 .pricing-badge.featured {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #16150f;
+  color: #161616;
 }
 
 .pricing-name {

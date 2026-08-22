@@ -14,7 +14,7 @@ import './DashboardPage.css'
 // older versions; passing var(--x) does work in modern browsers via SVG's
 // CSS support, but hardcoding here avoids any renderer-version surprises).
 const CHART_COLORS = {
-  amber: '#ff9f1c',
+  amber: '#c3f832',
   green: '#2ecc71',
   grid: '#37342a',
   text: '#a49d8c',

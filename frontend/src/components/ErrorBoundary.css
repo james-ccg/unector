@@ -19,7 +19,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius, 14px);
   padding: 32px 24px;
-  color: var(--amber, #ff9f1c);
+  color: var(--accent, #c3f832);
 }
 
 .error-boundary-card h1 {
@@ -36,8 +36,8 @@
 }
 
 .error-boundary-btn {
-  background: var(--amber, #ff9f1c);
-  color: #16150f;
+  background: var(--accent, #c3f832);
+  color: #161616;
   border: none;
   border-radius: 999px;
   padding: 10px 24px;

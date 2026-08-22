@@ -33,6 +33,6 @@
 }
 
 .font-size-toggle-option.is-active {
-  background: var(--amber);
-  color: #16150f;
+  background: var(--accent);
+  color: #161616;
 }

@@ -52,7 +52,7 @@
 
 .social-link:hover {
   background: var(--primary);
-  color: #16150f;
+  color: #161616;
   transform: translateY(-3px);
 }
 

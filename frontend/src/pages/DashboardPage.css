@@ -55,8 +55,8 @@
   text-decoration: none;
 }
 .btn-ghost:hover {
-  border-color: var(--amber);
-  color: var(--amber);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .btn-logout {
@@ -93,7 +93,7 @@
   font-family: var(--font-mono);
   font-size: 32px;
   font-weight: 700;
-  color: var(--amber);
+  color: var(--accent);
   margin-bottom: 8px;
 }
 
@@ -105,8 +105,8 @@
 
 .billing-card {
   margin-bottom: 40px;
-  background: linear-gradient(135deg, rgba(255, 159, 28, 0.12) 0%, rgba(255, 159, 28, 0.06) 100%);
-  border: 1px solid rgba(255, 159, 28, 0.25);
+  background: linear-gradient(135deg, rgba(195, 248, 50, 0.12) 0%, rgba(195, 248, 50, 0.06) 100%);
+  border: 1px solid rgba(195, 248, 50, 0.25);
 }
 
 .billing-title {
@@ -125,7 +125,7 @@
 .billing-total {
   margin-top: 10px;
   padding-top: 18px;
-  border-top: 2px solid rgba(255, 159, 28, 0.35);
+  border-top: 2px solid rgba(195, 248, 50, 0.35);
   border-bottom: none;
 }
 
@@ -141,7 +141,7 @@
 }
 
 .billing-total .billing-value {
-  color: var(--amber);
+  color: var(--accent);
   font-size: 22px;
   font-weight: 700;
 }
@@ -265,7 +265,7 @@
 
 .driver-card:hover {
   transform: translateY(-4px);
-  border-color: var(--amber);
+  border-color: var(--accent);
 }
 
 .driver-header {
@@ -336,11 +336,11 @@
 }
 
 .btn-primary {
-  background: var(--amber);
-  color: #16150f;
+  background: var(--accent);
+  color: #161616;
 }
 .btn-primary:hover {
-  background: var(--amber-dark);
+  background: var(--accent-dark);
 }
 .btn-primary:disabled {
   opacity: 0.5;
@@ -389,7 +389,7 @@
   flex-shrink: 0;
 }
 .callout-dot.on { background: var(--green); }
-.callout-dot.off { background: var(--amber); }
+.callout-dot.off { background: var(--accent); }
 
 /* Driver list controls */
 .section-header-row {
@@ -421,7 +421,7 @@
 }
 .driver-search:focus {
   outline: none;
-  border-color: var(--amber);
+  border-color: var(--accent);
 }
 .filter-pills {
   display: flex;
@@ -442,8 +442,8 @@
   cursor: pointer;
 }
 .filter-pill.is-active {
-  background: var(--amber);
-  color: #16150f;
+  background: var(--accent);
+  color: #161616;
 }
 
 .driver-name-row {
@@ -460,7 +460,7 @@
   margin-bottom: 14px;
 }
 .text-warn {
-  color: var(--amber);
+  color: var(--accent);
 }
 
 .empty {
@@ -483,8 +483,8 @@
 .spinner {
   width: 48px;
   height: 48px;
-  border: 4px solid rgba(255, 159, 28, 0.2);
-  border-top-color: var(--amber);
+  border: 4px solid rgba(195, 248, 50, 0.2);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-bottom: 16px;

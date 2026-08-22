@@ -37,8 +37,8 @@
   color: var(--red);
 }
 .banner-info {
-  background: rgba(255, 159, 28, 0.1);
-  border: 1px solid rgba(255, 159, 28, 0.25);
+  background: rgba(195, 248, 50, 0.1);
+  border: 1px solid rgba(195, 248, 50, 0.25);
   color: var(--hint);
 }
 .banner-close {
@@ -124,13 +124,13 @@
   transition: transform 0.2s ease;
 }
 .switch input:checked + .switch-track {
-  background: var(--amber);
+  background: var(--accent);
 }
 .switch input:checked + .switch-track .switch-thumb {
   transform: translateX(16px);
 }
 .switch input:focus-visible + .switch-track {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -261,7 +261,7 @@
 .form select:focus,
 .form textarea:focus {
   outline: none;
-  border-color: var(--amber);
+  border-color: var(--accent);
 }
 /* .form-error, .modal-overlay, .modal-card are shared with the dashboard -
    defined once in DashboardPage.css, which this page also imports. */
@@ -364,8 +364,8 @@
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  color: var(--amber);
-  background: rgba(255, 159, 28, 0.12);
+  color: var(--accent);
+  background: rgba(195, 248, 50, 0.12);
   border-radius: 10px;
 }
 
@@ -405,7 +405,7 @@
 }
 .inline-form input:focus {
   outline: none;
-  border-color: var(--amber);
+  border-color: var(--accent);
 }
 
 .totp-qr {

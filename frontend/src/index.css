@@ -1,119 +1,131 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 @import './styles/pages.css';
 
 /* ============================================================
    Freight Pilot — design tokens
-   Identity: a night-highway / dispatch-terminal feel rather than a
-   generic navy-and-purple SaaS look — warm charcoal base (like asphalt
-   after dark), signal-amber as the one brand accent, and green/red
-   status colors that echo the bot's own 🟢PU / 🔴DEL language.
-   Type: Space Grotesk for headings (distinctive, geometric), Inter for
-   body/UI text (dense-UI legible), IBM Plex Mono for data (load IDs,
-   MC#, dollar figures) — gives numbers a "terminal" feel that plain
-   text figures don't have.
+   Identity: a clean, confident logistics-dashboard look - neutral
+   near-black/off-white surfaces (no navy-and-purple SaaS cliché) with
+   one loud signal-lime accent that carries the brand.
+   Which surface is "loud" flips deliberately with theme: near-black is
+   the loud primary-button color against light surfaces, and lime takes
+   over that job against dark surfaces - each theme gets its own natural
+   highlight instead of one color fighting its own background.
+   Type: DM Sans for everything (headings through body) for a single
+   cohesive voice, IBM Plex Mono for data (load IDs, MC#, dollar
+   figures) - gives numbers a "terminal" feel plain text figures don't.
    ============================================================ */
 
 :root {
   /* Core surfaces */
-  --bg: #16150f;
-  --card: #201f17;
-  --dark: #16150f;
-  --dark-lighter: #201f17;
-  --border: #37342a;
+  --bg: #161616;
+  --card: #201f1c;
+  --dark: #161616;
+  --dark-lighter: #201f1c;
+  --border: #322f2a;
 
   /* Text */
-  --text: #f4f1e8;
-  --text-primary: #f4f1e8;
-  --hint: #a49d8c;
-  --text-muted: #a49d8c;
+  --text: #f5f4f0;
+  --text-primary: #f5f4f0;
+  --hint: #9b988f;
+  --text-muted: #9b988f;
 
-  /* Brand accent (amber) - the one color that carries the identity */
-  --amber: #ff9f1c;
-  --amber-dark: #e08800;
-  --primary: #ff9f1c;
-  --primary-dark: #e08800;
-  --gradient-start: #ffb54d;
-  --gradient-end: #ff9f1c;
+  /* Brand accent (signal-lime) - the loud color against a dark surface */
+  --accent: #c3f832;
+  --accent-dark: #a3d81a;
+  --primary: #c3f832;
+  --primary-dark: #a3d81a;
+  --gradient-start: #ddff6b;
+  --gradient-end: #9fd400;
 
-  /* Signal colors - same language as the Telegram bot's 🟢PU / 🔴DEL */
-  --green: #2ecc71;
-  --red: #ff5a5a;
+  /* Signal colors - same language as the Telegram bot's 🟢PU / 🔴DEL.
+     Kept out of lime's hue range on purpose, so a status color is never
+     mistaken for the brand accent. */
+  --green: #34c759;
+  --red: #ff5c52;
   --blue: #5b9dd9;
-  --success: #2ecc71;
+  --success: #34c759;
 
   /* Type */
-  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-ui: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --radius: 14px;
-  --radius-sm: 8px;
+  --radius: 16px;
+  --radius-sm: 10px;
 
   /* Header's translucent backdrop, matched per-theme below (the header
      needs a color independent of --bg since it stays visible over
      scrolled-past content). */
-  --header-bg-transparent: rgba(22, 21, 15, 0.92);
-  --header-bg-scrolled: rgba(22, 21, 15, 0.97);
+  --header-bg-transparent: rgba(22, 22, 22, 0.92);
+  --header-bg-scrolled: rgba(22, 22, 22, 0.97);
 }
 
 /* ============================================================
-   Appearance (system/light/dark) - see context/ThemeContext.tsx.
-   "system" sets no data-theme attribute at all, so it falls through to
-   this prefers-color-scheme block; "light"/"dark" set the attribute
-   explicitly and always win regardless of the OS setting.
+   Appearance (auto/light/dark) - see context/ThemeContext.tsx.
+   "auto" sets no data-theme attribute at all, so it falls through to
+   this prefers-color-scheme block (ThemeContext also layers in a
+   time-of-day check on top of the OS setting for "auto" specifically);
+   "light"/"dark" set the attribute explicitly and always win regardless
+   of the OS setting or the time of day.
    ============================================================ */
 :root:not([data-theme='light']):not([data-theme='dark']) {
   @media (prefers-color-scheme: light) {
-    --bg: #faf8f3;
+    --bg: #f8f8f6;
     --card: #ffffff;
-    --dark: #faf8f3;
+    --dark: #f8f8f6;
     --dark-lighter: #ffffff;
-    --border: #e5e0d3;
+    --border: #e6e4de;
 
-    --text: #1a1812;
-    --text-primary: #1a1812;
-    --hint: #6b6558;
-    --text-muted: #6b6558;
+    --text: #201f1c;
+    --text-primary: #201f1c;
+    --hint: #706d65;
+    --text-muted: #706d65;
 
-    --amber: #e08800;
-    --amber-dark: #b86e00;
-    --primary: #e08800;
-    --primary-dark: #b86e00;
+    /* Loud color flips to near-black in light mode - see the file
+       header comment above for why. */
+    --accent: #c3f832;
+    --accent-dark: #96c400;
+    --primary: #201f1c;
+    --primary-dark: #000000;
+    --gradient-start: #c3f832;
+    --gradient-end: #86b800;
 
     --green: #1e9e56;
     --red: #d63e3e;
     --blue: #3d7cb8;
     --success: #1e9e56;
 
-    --header-bg-transparent: rgba(250, 248, 243, 0.92);
-    --header-bg-scrolled: rgba(250, 248, 243, 0.97);
+    --header-bg-transparent: rgba(248, 248, 246, 0.92);
+    --header-bg-scrolled: rgba(248, 248, 246, 0.97);
   }
 }
 
 :root[data-theme='light'] {
-  --bg: #faf8f3;
+  --bg: #f8f8f6;
   --card: #ffffff;
-  --dark: #faf8f3;
+  --dark: #f8f8f6;
   --dark-lighter: #ffffff;
-  --border: #e5e0d3;
+  --border: #e6e4de;
 
-  --text: #1a1812;
-  --text-primary: #1a1812;
-  --hint: #6b6558;
-  --text-muted: #6b6558;
+  --text: #201f1c;
+  --text-primary: #201f1c;
+  --hint: #706d65;
+  --text-muted: #706d65;
 
-  --amber: #e08800;
-  --amber-dark: #b86e00;
-  --primary: #e08800;
-  --primary-dark: #b86e00;
+  --accent: #c3f832;
+  --accent-dark: #96c400;
+  --primary: #201f1c;
+  --primary-dark: #000000;
+  --gradient-start: #c3f832;
+  --gradient-end: #86b800;
 
   --green: #1e9e56;
   --red: #d63e3e;
   --blue: #3d7cb8;
   --success: #1e9e56;
 
-  --header-bg-transparent: rgba(250, 248, 243, 0.92);
-  --header-bg-scrolled: rgba(250, 248, 243, 0.97);
+  --header-bg-transparent: rgba(248, 248, 246, 0.92);
+  --header-bg-scrolled: rgba(248, 248, 246, 0.97);
 }
 
 * {
@@ -256,5 +268,5 @@ a {
   border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--amber);
+  background: var(--accent);
 }

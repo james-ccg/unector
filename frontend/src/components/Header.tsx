@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
-import ThemeToggle from './ThemeToggle'
 import './Header.css'
 
 interface HeaderProps {
@@ -79,9 +78,6 @@ export default function Header({ transparent = false }: HeaderProps) {
                 </Link>
               </li>
             )}
-            <li className="nav-item nav-item-mobile-only nav-theme-mobile">
-              <ThemeToggle />
-            </li>
           </ul>
           <button type="button" className="nav-close" aria-label="Close menu" onClick={() => setIsMenuOpen(false)}>
             <Icon name="close" size={20} />
@@ -89,9 +85,6 @@ export default function Header({ transparent = false }: HeaderProps) {
         </div>
 
         <div className="nav-actions">
-          <div className="nav-theme-desktop">
-            <ThemeToggle />
-          </div>
           {isAuthenticated ? (
             <Link to="/dashboard" className="nav-profile" onClick={() => setIsMenuOpen(false)}>
               <span className="nav-profile-avatar">
