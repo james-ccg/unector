@@ -5,6 +5,7 @@ import { authApi, twoFaApi, publicApi, errorMessage } from '../services/api'
 import type { LoginSuccess, TwoFaChallenge } from '../services/api'
 import { isWebAuthnSupported, getCredential } from '../services/webauthn'
 import Turnstile from '../components/Turnstile'
+import PasswordInput from '../components/PasswordInput'
 import './LoginPage.css'
 
 const METHOD_LABELS: Record<string, string> = {
@@ -207,7 +208,7 @@ export default function LoginPage() {
                   </label>
                   <label>
                     <span>Password</span>
-                    <input type="password" name="password" placeholder="Password" required />
+                    <PasswordInput name="password" placeholder="Password" required />
                   </label>
                   <p style={{ textAlign: 'right', margin: '-8px 0 0' }}>
                     <Link to="/forgot-password" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '13px' }}>
@@ -238,7 +239,7 @@ export default function LoginPage() {
                   </label>
                   <label>
                     <span>Password</span>
-                    <input type="password" name="password" placeholder="Password" required />
+                    <PasswordInput name="password" placeholder="Password" required />
                   </label>
                   <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
                   <button

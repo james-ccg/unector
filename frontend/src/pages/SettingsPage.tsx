@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import ErrorMessage from '../components/ErrorMessage'
+import PasswordInput from '../components/PasswordInput'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import ThemeToggle from '../components/ThemeToggle'
 import FontSizeToggle from '../components/FontSizeToggle'
@@ -802,8 +803,7 @@ export default function SettingsPage() {
                 </label>
                 <label>
                   <span>Password</span>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="min. 6 characters"
@@ -854,8 +854,7 @@ export default function SettingsPage() {
               </p>
               <label>
                 <span>Samsara API token</span>
-                <input
-                  type="password"
+                <PasswordInput
                   value={samsaraKey}
                   onChange={(e) => setSamsaraKey(e.target.value)}
                   placeholder="samsara_api_..."
@@ -908,8 +907,7 @@ export default function SettingsPage() {
                 </label>
                 <label>
                   <span>New password (optional)</span>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
                     placeholder="Leave blank to keep current password"

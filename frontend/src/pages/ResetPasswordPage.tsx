@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi, errorMessage } from '../services/api'
+import PasswordInput from '../components/PasswordInput'
 import './LoginPage.css'
 
 export default function ResetPasswordPage() {
@@ -70,11 +71,11 @@ export default function ResetPasswordPage() {
             <form onSubmit={handleSubmit} className="card form">
               <label>
                 <span>New Password</span>
-                <input type="password" name="new_password" placeholder="Min. 8 characters" required minLength={8} />
+                <PasswordInput name="new_password" placeholder="Min. 8 characters" required minLength={8} />
               </label>
               <label>
                 <span>Confirm New Password</span>
-                <input type="password" name="confirm_password" placeholder="Repeat password" required minLength={8} />
+                <PasswordInput name="confirm_password" placeholder="Repeat password" required minLength={8} />
               </label>
               <button type="submit" className="btn-primary btn-full" disabled={loading}>
                 {loading ? 'Updating...' : 'Update Password'}

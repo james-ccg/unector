@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { authApi, billingApi, publicApi, errorMessage } from '../services/api'
 import Turnstile from '../components/Turnstile'
+import PasswordInput from '../components/PasswordInput'
 import './LoginPage.css'
 
 // Registration is Gmail-first: connect Gmail, confirm you own that inbox
@@ -287,11 +288,11 @@ export default function RegisterPage() {
               </label>
               <label>
                 <span>Password</span>
-                <input type="password" name="password" placeholder="Min. 8 characters" required minLength={8} />
+                <PasswordInput name="password" placeholder="Min. 8 characters" required minLength={8} />
               </label>
               <label>
                 <span>Confirm Password</span>
-                <input type="password" name="confirm_password" placeholder="Repeat password" required minLength={8} />
+                <PasswordInput name="confirm_password" placeholder="Repeat password" required minLength={8} />
               </label>
               <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
               <button
