@@ -143,6 +143,10 @@
   color: var(--primary);
 }
 
+.nav-profile-wrap {
+  position: relative;
+}
+
 .nav-profile {
   display: flex;
   align-items: center;
@@ -150,6 +154,9 @@
   padding: 6px 16px 6px 6px;
   border-radius: 999px;
   border: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
   text-decoration: none;
   transition: all 0.2s ease;
 }
@@ -175,9 +182,51 @@
 }
 
 .nav-profile-label {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.nav-profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+.nav-profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font: 600 13px var(--font-ui);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-profile-menu-item:hover {
+  background: var(--bg);
+}
+
+.nav-profile-menu-item.is-danger {
+  color: var(--red);
 }
 
 .nav-toggle,

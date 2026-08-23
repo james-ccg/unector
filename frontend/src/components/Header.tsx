@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
+import EditStatusModal from './EditStatusModal'
 import './Header.css'
 
 interface HeaderProps {
@@ -11,7 +12,10 @@ interface HeaderProps {
 export default function Header({ transparent = false }: HeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isScrolled, setIsScrolled] = useState(false)
-  const { isAuthenticated, user } = useAuth()
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
+  const [statusModalOpen, setStatusModalOpen] = useState(false)
+  const { isAuthenticated, user, logout } = useAuth()
+  const profileMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handleScroll = () => {
@@ -21,6 +25,17 @@ export default function Header({ transparent = false }: HeaderProps) {
     window.addEventListener('scroll', handleScroll)
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (!isProfileMenuOpen) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setIsProfileMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isProfileMenuOpen])
 
   const headerClass = `header ${transparent && !isScrolled ? 'header-transparent' : ''} ${
     isScrolled ? 'header-scrolled' : ''
@@ -86,12 +101,63 @@ export default function Header({ transparent = false }: HeaderProps) {
 
         <div className="nav-actions">
           {isAuthenticated ? (
-            <Link to="/dashboard" className="nav-profile" onClick={() => setIsMenuOpen(false)}>
-              <span className="nav-profile-avatar">
-                {(user?.companyName || 'FP').slice(0, 2).toUpperCase()}
-              </span>
-              <span className="nav-profile-label">Profile</span>
-            </Link>
+            <div className="nav-profile-wrap" ref={profileMenuRef}>
+              <button
+                type="button"
+                className="nav-profile"
+                onClick={() => setIsProfileMenuOpen((open) => !open)}
+                aria-expanded={isProfileMenuOpen}
+              >
+                <span className="nav-profile-avatar">
+                  {user?.status?.emoji || (user?.companyName || 'FP').slice(0, 2).toUpperCase()}
+                </span>
+                <span className="nav-profile-label">{user?.status?.text || 'Profile'}</span>
+              </button>
+              {isProfileMenuOpen && (
+                <div className="nav-profile-menu">
+                  <button
+                    type="button"
+                    className="nav-profile-menu-item"
+                    onClick={() => {
+                      setStatusModalOpen(true)
+                      setIsProfileMenuOpen(false)
+                    }}
+                  >
+                    <Icon name="check" size={16} /> Set Status
+                  </button>
+                  <Link
+                    to="/monitoring"
+                    className="nav-profile-menu-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      setIsMenuOpen(false)
+                    }}
+                  >
+                    <Icon name="location" size={16} /> Live GPS
+                  </Link>
+                  <Link
+                    to="/settings"
+                    className="nav-profile-menu-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      setIsMenuOpen(false)
+                    }}
+                  >
+                    <Icon name="settings" size={16} /> Settings
+                  </Link>
+                  <button
+                    type="button"
+                    className="nav-profile-menu-item is-danger"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      logout()
+                    }}
+                  >
+                    <Icon name="logout" size={16} /> Sign out
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <Link to="/login" className="btn-secondary">
@@ -113,6 +179,7 @@ export default function Header({ transparent = false }: HeaderProps) {
           </button>
         </div>
       </nav>
+      {statusModalOpen && <EditStatusModal onClose={() => setStatusModalOpen(false)} />}
     </header>
   )
 }

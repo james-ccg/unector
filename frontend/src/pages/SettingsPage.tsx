@@ -68,6 +68,19 @@ export default function SettingsPage() {
 
   const isOwner = user?.role === 'owner'
 
+  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'drivers' | 'dispatchers' | 'security'
+  const [activeSection, setActiveSection] = useState<SettingsSection>('company')
+  const SETTINGS_NAV: { key: SettingsSection; label: string; icon: Parameters<typeof Icon>[0]['name']; ownerOnly?: boolean }[] = [
+    { key: 'company', label: 'Company', icon: 'briefcase' },
+    { key: 'preferences', label: 'App Preferences', icon: 'monitor' },
+    { key: 'billing', label: 'Billing', icon: 'money', ownerOnly: true },
+    { key: 'integrations', label: 'Integrations', icon: 'email' },
+    { key: 'alerts', label: 'Location Alerts', icon: 'location', ownerOnly: true },
+    { key: 'drivers', label: 'Drivers', icon: 'drivers', ownerOnly: true },
+    { key: 'dispatchers', label: 'Dispatchers', icon: 'check', ownerOnly: true },
+    { key: 'security', label: 'Security', icon: 'shield' },
+  ]
+
   const loadAll = async () => {
     if (!user) return
     try {
@@ -422,7 +435,7 @@ export default function SettingsPage() {
               <Icon name="arrow-left" size={16} /> Dashboard
             </Link>
             <button className="btn btn-logout" onClick={logout}>
-              <Icon name="logout" size={16} /> Log out
+              <Icon name="logout" size={16} /> Sign out
             </button>
           </div>
         </header>
@@ -441,8 +454,21 @@ export default function SettingsPage() {
           </div>
         )}
 
+        <nav className="settings-nav">
+          {SETTINGS_NAV.filter((item) => !item.ownerOnly || isOwner).map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`settings-nav-item ${activeSection === item.key ? 'is-active' : ''}`}
+              onClick={() => setActiveSection(item.key)}
+            >
+              <Icon name={item.icon} size={16} /> {item.label}
+            </button>
+          ))}
+        </nav>
+
         {/* ---------------- Company info ---------------- */}
-        <section className="settings-section">
+        <section className={`settings-section ${activeSection === 'company' ? '' : 'settings-section-hidden'}`}>
           <h2 className="section-title">Company</h2>
           <div className="card">
             <div className="settings-row">
@@ -461,7 +487,7 @@ export default function SettingsPage() {
         </section>
 
         {/* ---------------- App Preferences ---------------- */}
-        <section className="settings-section">
+        <section className={`settings-section ${activeSection === 'preferences' ? '' : 'settings-section-hidden'}`}>
           <h2 className="section-title">App Preferences</h2>
           <div className="card">
             <div className="pref-row">
@@ -498,7 +524,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Billing ---------------- */}
         {isOwner && billing && (
-          <section className="settings-section">
+          <section className={`settings-section ${activeSection === 'billing' ? '' : 'settings-section-hidden'}`}>
             <h2 className="section-title">Billing</h2>
             <div className="card billing-card">
               <div className="billing-row">
@@ -535,7 +561,7 @@ export default function SettingsPage() {
         )}
 
         {/* ---------------- Integrations ---------------- */}
-        <section className="settings-section">
+        <section className={`settings-section ${activeSection === 'integrations' ? '' : 'settings-section-hidden'}`}>
           <h2 className="section-title">Integrations</h2>
 
           <div className="card integration-card">
@@ -589,7 +615,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Location alerts ---------------- */}
         {isOwner && (
-          <section className="settings-section">
+          <section className={`settings-section ${activeSection === 'alerts' ? '' : 'settings-section-hidden'}`}>
             <h2 className="section-title">Location alerts</h2>
             <div className="card">
               <p className="settings-hint">
@@ -658,7 +684,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Drivers ---------------- */}
         {isOwner && (
-          <section className="settings-section">
+          <section className={`settings-section ${activeSection === 'drivers' ? '' : 'settings-section-hidden'}`}>
             <h2 className="section-title">Drivers</h2>
             <div className="card">
               {drivers.length > 0 ? (
@@ -736,7 +762,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Dispatchers ---------------- */}
         {isOwner && (
-          <section className="settings-section">
+          <section className={`settings-section ${activeSection === 'dispatchers' ? '' : 'settings-section-hidden'}`}>
             <h2 className="section-title">Dispatchers</h2>
 
             <div className="card">
@@ -795,7 +821,7 @@ export default function SettingsPage() {
         )}
 
         {/* ---------------- Security (2FA) - available to owner and dispatcher ---------------- */}
-        <section className="settings-section">
+        <section className={`settings-section ${activeSection === 'security' ? '' : 'settings-section-hidden'}`}>
           <h2 className="section-title">Security</h2>
           <TwoFactorSettings />
         </section>

@@ -130,6 +130,12 @@ export interface TwoFaChallenge {
   methods: ('totp' | 'email' | 'sms' | 'telegram' | 'webauthn')[]
 }
 
+export interface AccountStatus {
+  emoji: string | null
+  text: string
+  expires_at: string | null
+}
+
 export interface LoginSuccess {
   role: 'owner' | 'dispatcher'
   company_name?: string
@@ -138,6 +144,7 @@ export interface LoginSuccess {
   // Only present for owners - Gmail connection is mandatory for them (the
   // bot's core feature depends on it), not applicable to dispatchers.
   gmail_connected?: boolean
+  status?: AccountStatus | null
 }
 
 export const authApi = {
@@ -207,6 +214,14 @@ export const authApi = {
   // Called on app load to check whether the httpOnly session cookie (if any)
   // is still valid - the frontend never sees the token itself, only this result.
   me: () => apiRequest<LoginSuccess>('/api/me'),
+
+  setStatus: (text: string, emoji: string | null, expiresInMinutes: number | null) =>
+    apiRequest<{ success: boolean }>('/api/me/status', {
+      method: 'PUT',
+      body: JSON.stringify({ text, emoji, expires_in_minutes: expiresInMinutes }),
+    }),
+
+  clearStatus: () => apiRequest<{ success: boolean }>('/api/me/status', { method: 'DELETE' }),
 }
 
 export interface TwoFaStatus {

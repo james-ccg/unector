@@ -566,9 +566,64 @@ def _finish_password_step(response: Response, account_type: str, account_id: int
     return {"requires_2fa": True, "pending_token": pending_token, "methods": available_methods}
 
 
+def _status_field(user: dict) -> dict:
+    from db.repository import get_account_status
+
+    account_type, account_id = _self_account(user)
+    return {"status": get_account_status(account_type, account_id)}
+
+
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
-    return {**user, **_gmail_connected_field(user.get("role"), user.get("company_id"))}
+    return {**user, **_gmail_connected_field(user.get("role"), user.get("company_id")), **_status_field(user)}
+
+
+class SetStatusRequest(BaseModel):
+    emoji: str | None = None
+    text: str
+    expires_in_minutes: int | None = None  # None = never expires
+
+    @field_validator("text")
+    @classmethod
+    def _text_length(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Status text is required")
+        if len(v) > 80:
+            raise ValueError("Status must be 80 characters or fewer")
+        return v
+
+    @field_validator("emoji")
+    @classmethod
+    def _emoji_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 8:
+            raise ValueError("That doesn't look like a single emoji")
+        return v
+
+
+@app.put("/api/me/status")
+def set_my_status(
+    body: SetStatusRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from datetime import timedelta
+    from db.repository import set_account_status
+
+    account_type, account_id = _self_account(user)
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(minutes=body.expires_in_minutes)
+        if body.expires_in_minutes else None
+    )
+    set_account_status(account_type, account_id, body.emoji, body.text, expires_at)
+    return {"success": True}
+
+
+@app.delete("/api/me/status")
+def clear_my_status(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+    from db.repository import clear_account_status
+
+    account_type, account_id = _self_account(user)
+    clear_account_status(account_type, account_id)
+    return {"success": True}
 
 
 @app.post("/api/auth/logout")

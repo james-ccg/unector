@@ -246,6 +246,94 @@ class TestPasswordReset:
         assert response.status_code == 400
 
 
+class TestAccountStatus:
+    """PUT/DELETE /api/me/status - the "what's happening" status shown in
+    the profile menu, and its expiry handling."""
+
+    def _register_owner(self, client, mc_number: str) -> None:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Status Test Co {mc_number}",
+            "email": f"owner{mc_number}@statustest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def test_me_has_no_status_by_default(self, client):
+        self._register_owner(client, "781111")
+        response = client.get("/api/me")
+        assert response.json()["status"] is None
+
+    def test_set_status_reflects_in_me(self, client):
+        self._register_owner(client, "782222")
+        set_resp = client.put(
+            "/api/me/status", json={"emoji": "🌴", "text": "On vacation", "expires_in_minutes": None},
+            headers=_csrf_headers(client),
+        )
+        assert set_resp.status_code == 200, set_resp.text
+
+        me = client.get("/api/me").json()
+        assert me["status"] == {"emoji": "🌴", "text": "On vacation", "expires_at": None}
+
+    def test_clear_status_removes_it(self, client):
+        self._register_owner(client, "783333")
+        client.put(
+            "/api/me/status", json={"emoji": None, "text": "Busy", "expires_in_minutes": None},
+            headers=_csrf_headers(client),
+        )
+        client.delete("/api/me/status", headers=_csrf_headers(client))
+
+        assert client.get("/api/me").json()["status"] is None
+
+    def test_expired_status_reads_as_none(self, client):
+        self._register_owner(client, "784444")
+        client.put(
+            "/api/me/status", json={"emoji": None, "text": "Back in 5", "expires_in_minutes": 30},
+            headers=_csrf_headers(client),
+        )
+
+        # Force it into the past directly, rather than waiting 30 minutes.
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            company = session.query(models.Company).filter_by(mc_number="784444").first()
+            row = (
+                session.query(models.AccountStatus)
+                .filter_by(account_type="owner", account_id=company.id)
+                .first()
+            )
+            row.expires_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            session.commit()
+
+        assert client.get("/api/me").json()["status"] is None
+
+    def test_set_status_rejects_blank_text(self, client):
+        self._register_owner(client, "785555")
+        response = client.put(
+            "/api/me/status", json={"emoji": None, "text": "   ", "expires_in_minutes": None},
+            headers=_csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    def test_dispatcher_status_is_independent_of_owner(self, client):
+        self._register_owner(client, "786666")
+        client.post(
+            "/api/dispatchers", json={"username": "status_dispatcher", "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        client.put(
+            "/api/me/status", json={"emoji": None, "text": "Owner status", "expires_in_minutes": None},
+            headers=_csrf_headers(client),
+        )
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "status_dispatcher", "password": "dispatcherpass123"})
+
+        assert client.get("/api/me").json()["status"] is None
+
+
 class TestGmailFirstRegistration:
     """Registration is Gmail-first: connect Gmail, confirm you own that
     inbox (code or link), THEN fill in company details - a Company row is

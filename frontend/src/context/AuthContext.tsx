@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authApi, type LoginSuccess } from '../services/api'
+import { authApi, type LoginSuccess, type AccountStatus } from '../services/api'
 
 interface User {
   role: 'owner' | 'dispatcher'
@@ -9,6 +9,7 @@ interface User {
   dispatcherId?: number
   // undefined for dispatchers (not applicable); boolean for owners.
   gmailConnected?: boolean
+  status?: AccountStatus | null
 }
 
 interface AuthContextType {
@@ -29,6 +30,7 @@ function toUser(session: LoginSuccess): User {
     companyId: session.company_id,
     dispatcherId: session.dispatcher_id,
     gmailConnected: session.gmail_connected,
+    status: session.status,
   }
 }
 

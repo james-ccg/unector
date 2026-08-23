@@ -307,6 +307,25 @@ class PendingRegistration(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class AccountStatus(Base):
+    """A short "what's happening" status message an owner or dispatcher
+    sets for themselves - shown in their own profile menu, similar in
+    spirit to GitHub/Slack's status feature. One row per account
+    (account_type, account_id is unique together); optional expires_at
+    clears it automatically without needing a background job - callers
+    just filter out an expired row when reading."""
+    __tablename__ = "account_statuses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+
+    emoji: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    text: Mapped[str] = mapped_column(String(80))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
+
+
 class TrialRedemption(Base):
     """One row per company that has ever started a paid-plan free trial.
     Records every identifying signal we had at the time (login email, MC

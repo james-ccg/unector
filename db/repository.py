@@ -1421,3 +1421,59 @@ def consume_pending_registration(token: str) -> dict | None:
         session.delete(row)
         session.commit()
         return result
+
+
+def get_account_status(account_type: str, account_id: int) -> dict | None:
+    """None if never set, cleared, or its expires_at has passed - an
+    expired status is treated exactly like no status at all, rather than
+    needing a background job to clear it. The not-yet-expired check is done
+    as a SQL filter (not a Python-side comparison against the fetched row)
+    because SQLite's DateTime doesn't round-trip timezone awareness -
+    comparing a fetched (naive) value against datetime.now(timezone.utc)
+    (aware) raises TypeError, same reason every other expiring-token table
+    in this file filters expires_at in the query instead."""
+    from sqlalchemy import or_
+
+    with get_session() as session:
+        row = (
+            session.query(models.AccountStatus)
+            .filter(
+                models.AccountStatus.account_type == account_type,
+                models.AccountStatus.account_id == account_id,
+                or_(models.AccountStatus.expires_at.is_(None), models.AccountStatus.expires_at > datetime.now(timezone.utc)),
+            )
+            .first()
+        )
+        if not row:
+            return None
+        return {"emoji": row.emoji, "text": row.text, "expires_at": row.expires_at}
+
+
+def set_account_status(
+    account_type: str, account_id: int, emoji: str | None, text: str, expires_at: datetime | None,
+) -> None:
+    with get_session() as session:
+        row = (
+            session.query(models.AccountStatus)
+            .filter(
+                models.AccountStatus.account_type == account_type,
+                models.AccountStatus.account_id == account_id,
+            )
+            .first()
+        )
+        if row is None:
+            row = models.AccountStatus(account_type=account_type, account_id=account_id)
+            session.add(row)
+        row.emoji = emoji
+        row.text = text
+        row.expires_at = expires_at
+        session.commit()
+
+
+def clear_account_status(account_type: str, account_id: int) -> None:
+    with get_session() as session:
+        session.query(models.AccountStatus).filter(
+            models.AccountStatus.account_type == account_type,
+            models.AccountStatus.account_id == account_id,
+        ).delete()
+        session.commit()

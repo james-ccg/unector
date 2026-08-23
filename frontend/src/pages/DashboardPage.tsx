@@ -232,7 +232,7 @@ export default function DashboardPage() {
                 <Icon name="settings" size={16} /> Settings
               </Link>
               <button className="btn btn-logout" onClick={logout}>
-                <Icon name="logout" size={16} /> Log out
+                <Icon name="logout" size={16} /> Sign out
               </button>
             </div>
           </header>
