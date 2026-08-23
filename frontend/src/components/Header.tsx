@@ -41,6 +41,8 @@ export default function Header({ transparent = false }: HeaderProps) {
     isScrolled ? 'header-scrolled' : ''
   }`
 
+  const displayName = user?.role === 'owner' ? user?.companyName : user?.username
+
   return (
     <header className={headerClass} id="header">
       <nav className="nav container">
@@ -109,9 +111,13 @@ export default function Header({ transparent = false }: HeaderProps) {
                 aria-expanded={isProfileMenuOpen}
               >
                 <span className="nav-profile-avatar">
-                  {user?.status?.emoji || (user?.companyName || 'FP').slice(0, 2).toUpperCase()}
+                  {user?.avatar ? (
+                    <img src={user.avatar} alt="" className="nav-profile-avatar-img" />
+                  ) : (
+                    user?.status?.emoji || (displayName || 'FP').slice(0, 2).toUpperCase()
+                  )}
                 </span>
-                <span className="nav-profile-label">{user?.status?.text || 'Profile'}</span>
+                <span className="nav-profile-label">{user?.status?.text || displayName || 'Profile'}</span>
               </button>
               {isProfileMenuOpen && (
                 <div className="nav-profile-menu">

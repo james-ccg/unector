@@ -1,0 +1,33 @@
+.avatar-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar-picker-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--dark-lighter);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.avatar-picker-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-picker-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}

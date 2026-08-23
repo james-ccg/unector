@@ -326,6 +326,24 @@ class AccountStatus(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 
+class AccountAvatar(Base):
+    """A profile picture an owner or dispatcher sets for themselves, shown
+    in their own profile menu and to teammates (owner/dispatchers can see
+    each other's avatars). Stored as a data URI (small, client-resized
+    image already base64-encoded with its MIME type) rather than a file on
+    disk, so no separate static-file serving or storage service is needed
+    for what's expected to stay a small image. One row per account
+    (account_type, account_id is unique together)."""
+    __tablename__ = "account_avatars"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+
+    data_url: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
+
+
 class TrialRedemption(Base):
     """One row per company that has ever started a paid-plan free trial.
     Records every identifying signal we had at the time (login email, MC

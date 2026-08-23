@@ -8,12 +8,13 @@ import PasswordInput from '../components/PasswordInput'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import ThemeToggle from '../components/ThemeToggle'
 import FontSizeToggle from '../components/FontSizeToggle'
+import AvatarPicker from '../components/AvatarPicker'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
-  settingsApi, dashboardApi, billingApi, errorMessage,
+  settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
   type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
-  type Driver, type DriverLinkCode,
+  type Driver, type DriverLinkCode, type TeamMember,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
@@ -30,6 +31,8 @@ export default function SettingsPage() {
 
   const [billing, setBilling] = useState<BillingStatus | null>(null)
   const [billingBusy, setBillingBusy] = useState(false)
+
+  const [team, setTeam] = useState<TeamMember[]>([])
 
   // Samsara "connect" modal state
   const [samsaraModalOpen, setSamsaraModalOpen] = useState(false)
@@ -69,16 +72,17 @@ export default function SettingsPage() {
 
   const isOwner = user?.role === 'owner'
 
-  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'drivers' | 'dispatchers' | 'security'
+  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'drivers' | 'dispatchers' | 'team' | 'security'
   const [activeSection, setActiveSection] = useState<SettingsSection>('company')
   const SETTINGS_NAV: { key: SettingsSection; label: string; icon: Parameters<typeof Icon>[0]['name']; ownerOnly?: boolean }[] = [
     { key: 'company', label: 'Company', icon: 'briefcase' },
     { key: 'preferences', label: 'App Preferences', icon: 'monitor' },
-    { key: 'billing', label: 'Billing', icon: 'money', ownerOnly: true },
+    { key: 'billing', label: 'Billing', icon: 'money' },
     { key: 'integrations', label: 'Integrations', icon: 'email' },
     { key: 'alerts', label: 'Location Alerts', icon: 'location', ownerOnly: true },
     { key: 'drivers', label: 'Drivers', icon: 'drivers', ownerOnly: true },
     { key: 'dispatchers', label: 'Dispatchers', icon: 'check', ownerOnly: true },
+    { key: 'team', label: 'Team', icon: 'users' },
     { key: 'security', label: 'Security', icon: 'shield' },
   ]
 
@@ -87,11 +91,15 @@ export default function SettingsPage() {
     try {
       const settingsData = await settingsApi.getSettings()
       setSettings(settingsData)
+      // Billing is shared: whoever's paying (owner or dispatcher) can view
+      // and manage the plan, so this loads regardless of role.
+      const billingData = await billingApi.getStatus()
+      setBilling(billingData)
+      const teamData = await teamApi.list()
+      setTeam(teamData)
       if (user.role === 'owner') {
         const dispatcherData = await dashboardApi.listDispatchers()
         setDispatchers(dispatcherData)
-        const billingData = await billingApi.getStatus()
-        setBilling(billingData)
         const alertRuleData = await settingsApi.listAlertRules()
         setAlertRules(alertRuleData)
         const driverData = await dashboardApi.listDrivers()
@@ -493,6 +501,13 @@ export default function SettingsPage() {
           <div className="card">
             <div className="pref-row">
               <div>
+                <p className="settings-row-label">Profile picture</p>
+                <p className="settings-row-hint">Shown in your profile menu and to your teammates.</p>
+              </div>
+              <AvatarPicker />
+            </div>
+            <div className="pref-row">
+              <div>
                 <p className="settings-row-label">Appearance</p>
                 <p className="settings-row-hint">Auto matches your device's setting, or the time of day if it doesn't have one.</p>
               </div>
@@ -524,7 +539,7 @@ export default function SettingsPage() {
         </section>
 
         {/* ---------------- Billing ---------------- */}
-        {isOwner && billing && (
+        {billing && (
           <section className={`settings-section ${activeSection === 'billing' ? '' : 'settings-section-hidden'}`}>
             <h2 className="section-title">Billing</h2>
             <div className="card billing-card">
@@ -771,7 +786,9 @@ export default function SettingsPage() {
                 <div className="dispatcher-list">
                   {dispatchers.map((d) => (
                     <div key={d.id} className="dispatcher-row">
-                      <span className="status-dot on" />
+                      <span className="team-avatar">
+                        {d.avatar ? <img src={d.avatar} alt="" /> : d.username.slice(0, 2).toUpperCase()}
+                      </span>
                       <span className="dispatcher-username">{d.username}</span>
                       <span className="dispatcher-role mono">{d.role}</span>
                       <button className="btn btn-ghost btn-sm" onClick={() => openEditDispatcher(d)}>
@@ -819,6 +836,28 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        {/* ---------------- Team - read-only roster, available to owner and dispatcher ---------------- */}
+        <section className={`settings-section ${activeSection === 'team' ? '' : 'settings-section-hidden'}`}>
+          <h2 className="section-title">Team</h2>
+          <div className="card">
+            {team.length > 0 ? (
+              <div className="dispatcher-list">
+                {team.map((member) => (
+                  <div key={`${member.role}-${member.name}`} className="dispatcher-row">
+                    <span className="team-avatar">
+                      {member.avatar ? <img src={member.avatar} alt="" /> : member.name.slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="dispatcher-username">{member.name}</span>
+                    <span className="dispatcher-role mono">{member.role}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty">No teammates yet.</p>
+            )}
+          </div>
+        </section>
 
         {/* ---------------- Security (2FA) - available to owner and dispatcher ---------------- */}
         <section className={`settings-section ${activeSection === 'security' ? '' : 'settings-section-hidden'}`}>

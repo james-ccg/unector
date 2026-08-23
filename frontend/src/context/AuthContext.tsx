@@ -7,9 +7,12 @@ interface User {
   companyName?: string
   companyId?: number
   dispatcherId?: number
+  // Only present for dispatchers - the owner's own name is companyName.
+  username?: string
   // undefined for dispatchers (not applicable); boolean for owners.
   gmailConnected?: boolean
   status?: AccountStatus | null
+  avatar?: string | null
 }
 
 interface AuthContextType {
@@ -29,8 +32,10 @@ function toUser(session: LoginSuccess): User {
     companyName: session.company_name,
     companyId: session.company_id,
     dispatcherId: session.dispatcher_id,
+    username: session.username,
     gmailConnected: session.gmail_connected,
     status: session.status,
+    avatar: session.avatar,
   }
 }
 

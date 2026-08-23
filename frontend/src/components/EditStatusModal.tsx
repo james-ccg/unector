@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '../context/AuthContext'
 import { authApi, errorMessage } from '../services/api'
@@ -57,7 +58,12 @@ export default function EditStatusModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
+  // Portaled straight to <body> - Header has backdrop-filter (for its
+  // frosted-glass look), which creates a CSS containing block for any
+  // position:fixed descendant, so a modal rendered inside it would be
+  // trapped inside the header's own small box instead of centering on the
+  // full viewport.
+  return createPortal(
     <AnimatePresence>
       <motion.div
         className="modal-overlay"
@@ -129,6 +135,7 @@ export default function EditStatusModal({ onClose }: { onClose: () => void }) {
           </form>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

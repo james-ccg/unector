@@ -880,15 +880,38 @@ def get_dispatchers_by_company(company_id: int) -> list[dict]:
     """Returns every dispatcher login under a company, for the Settings page."""
     with get_session() as session:
         rows = session.query(models.Dispatcher).filter(models.Dispatcher.company_id == company_id).all()
+        avatars = get_account_avatars([("dispatcher", r.id) for r in rows])
         return [
             {
                 "id": r.id,
                 "username": r.username,
                 "role": r.role,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "avatar": avatars.get(("dispatcher", r.id)),
             }
             for r in rows
         ]
+
+
+def get_team_roster(company_id: int) -> list[dict]:
+    """The owner plus every dispatcher under a company, each with their
+    display name and avatar - lets teammates see each other regardless of
+    which one of them is logged in (unlike get_dispatchers_by_company,
+    which is owner-only CRUD data)."""
+    company = get_company(company_id)
+    if company is None:
+        return []
+    with get_session() as session:
+        dispatchers = session.query(models.Dispatcher).filter(models.Dispatcher.company_id == company_id).all()
+
+    pairs = [("owner", company_id)] + [("dispatcher", d.id) for d in dispatchers]
+    avatars = get_account_avatars(pairs)
+    roster = [{"role": "owner", "name": company.company_name, "avatar": avatars.get(("owner", company_id))}]
+    roster += [
+        {"role": "dispatcher", "name": d.username, "avatar": avatars.get(("dispatcher", d.id))}
+        for d in dispatchers
+    ]
+    return roster
 
 
 # ------------------------------------------------------------------
@@ -1475,5 +1498,68 @@ def clear_account_status(account_type: str, account_id: int) -> None:
         session.query(models.AccountStatus).filter(
             models.AccountStatus.account_type == account_type,
             models.AccountStatus.account_id == account_id,
+        ).delete()
+        session.commit()
+
+
+def get_account_avatar(account_type: str, account_id: int) -> str | None:
+    with get_session() as session:
+        row = (
+            session.query(models.AccountAvatar)
+            .filter(
+                models.AccountAvatar.account_type == account_type,
+                models.AccountAvatar.account_id == account_id,
+            )
+            .first()
+        )
+        return row.data_url if row else None
+
+
+def get_account_avatars(pairs: list[tuple[str, int]]) -> dict[tuple[str, int], str]:
+    """Bulk lookup for teammate listings (e.g. the dispatcher list an owner
+    sees, or a team roster) - one query per account_type instead of one per
+    account. Grouped in Python rather than a tuple-IN query, since that's a
+    row-value comparison SQLAlchemy would need to emit per-dialect."""
+    if not pairs:
+        return {}
+    ids_by_type: dict[str, list[int]] = {}
+    for account_type, account_id in pairs:
+        ids_by_type.setdefault(account_type, []).append(account_id)
+
+    result: dict[tuple[str, int], str] = {}
+    with get_session() as session:
+        for account_type, ids in ids_by_type.items():
+            rows = (
+                session.query(models.AccountAvatar)
+                .filter(models.AccountAvatar.account_type == account_type, models.AccountAvatar.account_id.in_(ids))
+                .all()
+            )
+            for row in rows:
+                result[(row.account_type, row.account_id)] = row.data_url
+    return result
+
+
+def set_account_avatar(account_type: str, account_id: int, data_url: str) -> None:
+    with get_session() as session:
+        row = (
+            session.query(models.AccountAvatar)
+            .filter(
+                models.AccountAvatar.account_type == account_type,
+                models.AccountAvatar.account_id == account_id,
+            )
+            .first()
+        )
+        if row is None:
+            row = models.AccountAvatar(account_type=account_type, account_id=account_id)
+            session.add(row)
+        row.data_url = data_url
+        session.commit()
+
+
+def clear_account_avatar(account_type: str, account_id: int) -> None:
+    with get_session() as session:
+        session.query(models.AccountAvatar).filter(
+            models.AccountAvatar.account_type == account_type,
+            models.AccountAvatar.account_id == account_id,
         ).delete()
         session.commit()

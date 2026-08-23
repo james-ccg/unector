@@ -53,7 +53,7 @@ export default function PricingPage() {
   const [maxMultiplier, setMaxMultiplier] = useState<Multiplier>('5x')
   const [upgradeBusy, setUpgradeBusy] = useState(false)
   const [upgradeError, setUpgradeError] = useState('')
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
 
   const proPrice = priceDisplay('pro', proInterval)
@@ -71,10 +71,6 @@ export default function PricingPage() {
   const handleUpgradeClick = async (tier: 'pro' | 'max_5x' | 'max_20x', interval: Interval) => {
     if (!isAuthenticated) {
       window.location.href = `/register?plan=${tier}&interval=${interval}`
-      return
-    }
-    if (user?.role !== 'owner') {
-      setUpgradeError('Only the company owner can upgrade the plan.')
       return
     }
     setUpgradeError('')

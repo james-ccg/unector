@@ -141,10 +141,13 @@ export interface LoginSuccess {
   company_name?: string
   company_id: number
   dispatcher_id?: number
+  // Only present for dispatchers - the owner's own name is company_name.
+  username?: string
   // Only present for owners - Gmail connection is mandatory for them (the
   // bot's core feature depends on it), not applicable to dispatchers.
   gmail_connected?: boolean
   status?: AccountStatus | null
+  avatar?: string | null
 }
 
 export const authApi = {
@@ -222,6 +225,24 @@ export const authApi = {
     }),
 
   clearStatus: () => apiRequest<{ success: boolean }>('/api/me/status', { method: 'DELETE' }),
+
+  setAvatar: (dataUrl: string) =>
+    apiRequest<{ success: boolean }>('/api/me/avatar', {
+      method: 'PUT',
+      body: JSON.stringify({ data_url: dataUrl }),
+    }),
+
+  clearAvatar: () => apiRequest<{ success: boolean }>('/api/me/avatar', { method: 'DELETE' }),
+}
+
+export interface TeamMember {
+  role: 'owner' | 'dispatcher'
+  name: string
+  avatar: string | null
+}
+
+export const teamApi = {
+  list: () => apiRequest<TeamMember[]>('/api/team'),
 }
 
 export interface TwoFaStatus {
@@ -392,6 +413,7 @@ export interface Dispatcher {
   username: string
   role: string
   created_at: string | null
+  avatar?: string | null
 }
 
 export const dashboardApi = {

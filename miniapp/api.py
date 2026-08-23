@@ -243,6 +243,7 @@ class DispatcherSummary(BaseModel):
     username: str
     role: str
     created_at: str | None
+    avatar: str | None = None
 
 
 class TwoFaStatusResponse(BaseModel):
@@ -527,7 +528,7 @@ def login_dispatcher(request: Request, body: DispatcherLoginRequest, response: R
 
     return _finish_password_step(
         response, "dispatcher", dispatcher.id,
-        {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id},
+        {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id, "username": dispatcher.username},
     )
 
 
@@ -575,7 +576,12 @@ def _status_field(user: dict) -> dict:
 
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
-    return {**user, **_gmail_connected_field(user.get("role"), user.get("company_id")), **_status_field(user)}
+    return {
+        **user,
+        **_gmail_connected_field(user.get("role"), user.get("company_id")),
+        **_status_field(user),
+        **_avatar_field(user),
+    }
 
 
 class SetStatusRequest(BaseModel):
@@ -624,6 +630,68 @@ def clear_my_status(user: dict = Depends(get_current_user), _csrf: None = Depend
     account_type, account_id = _self_account(user)
     clear_account_status(account_type, account_id)
     return {"success": True}
+
+
+def _avatar_field(user: dict) -> dict:
+    from db.repository import get_account_avatar
+
+    account_type, account_id = _self_account(user)
+    return {"avatar": get_account_avatar(account_type, account_id)}
+
+
+# Data-URI cap: ~300KB of base64 text, comfortably above a compressed
+# ~200x200 JPEG (what the frontend resizes to before uploading) with room
+# to spare, while still ruling out someone stuffing a multi-MB image in.
+_MAX_AVATAR_DATA_URL_LENGTH = 300_000
+
+
+class SetAvatarRequest(BaseModel):
+    data_url: str
+
+    @field_validator("data_url")
+    @classmethod
+    def _validate_data_url(cls, v: str) -> str:
+        if not v.startswith("data:image/"):
+            raise ValueError("Avatar must be an image data URL")
+        if len(v) > _MAX_AVATAR_DATA_URL_LENGTH:
+            raise ValueError("Image is too large - please use a smaller picture")
+        return v
+
+
+@app.put("/api/me/avatar")
+def set_my_avatar(
+    body: SetAvatarRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import set_account_avatar
+
+    account_type, account_id = _self_account(user)
+    set_account_avatar(account_type, account_id, body.data_url)
+    return {"success": True}
+
+
+@app.delete("/api/me/avatar")
+def clear_my_avatar(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+    from db.repository import clear_account_avatar
+
+    account_type, account_id = _self_account(user)
+    clear_account_avatar(account_type, account_id)
+    return {"success": True}
+
+
+class TeamMember(BaseModel):
+    role: str
+    name: str
+    avatar: str | None = None
+
+
+@app.get("/api/team", response_model=list[TeamMember])
+def get_team(user: dict = Depends(get_current_user)):
+    """The owner plus every dispatcher under the company, with their
+    avatars - lets owner and dispatchers see each other's profile
+    pictures, regardless of which one of them is logged in."""
+    from db.repository import get_team_roster
+
+    return get_team_roster(user["company_id"])
 
 
 @app.post("/api/auth/logout")
@@ -1254,10 +1322,11 @@ def delete_alert_rule_endpoint(
 
 
 # ------------------------------------------------------------------
-# Billing & subscription (owner only, except the Stripe webhook below)
+# Billing & subscription (owner or dispatcher - either can be the one
+# actually paying for the account, except the Stripe webhook below)
 # ------------------------------------------------------------------
 @app.get("/api/billing")
-def get_billing(user: dict = Depends(require_owner)):
+def get_billing(user: dict = Depends(get_current_user)):
     """Returns the company's current plan, subscription status, and how
     many of its PLAN_LIMITS driver cap is in use."""
     info = get_company_billing_info(user["company_id"])
@@ -1276,7 +1345,7 @@ def get_billing(user: dict = Depends(require_owner)):
 
 @app.post("/api/billing/checkout")
 def create_billing_checkout(
-    body: CheckoutRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+    body: CheckoutRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     """Starts a Stripe Checkout session for the chosen paid plan. Returns
     the URL to redirect the browser to."""
@@ -1294,7 +1363,7 @@ def create_billing_checkout(
 
 
 @app.post("/api/billing/portal")
-def create_billing_portal(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
+def create_billing_portal(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
     """Returns a URL to the Stripe-hosted billing portal (cancel, switch
     plan, update card)."""
     from services import stripe_service

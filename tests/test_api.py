@@ -334,6 +334,124 @@ class TestAccountStatus:
         assert client.get("/api/me").json()["status"] is None
 
 
+class TestAccountAvatar:
+    """PUT/DELETE /api/me/avatar - the profile picture shown in the profile
+    menu and to teammates via GET /api/team. See AccountAvatar in
+    db/models.py."""
+
+    _FAKE_DATA_URL = "data:image/png;base64,iVBORw0KGgo="
+
+    def _register_owner(self, client, mc_number: str) -> None:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Avatar Test Co {mc_number}",
+            "email": f"owner{mc_number}@avatartest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def test_me_has_no_avatar_by_default(self, client):
+        self._register_owner(client, "791111")
+        assert client.get("/api/me").json()["avatar"] is None
+
+    def test_set_avatar_reflects_in_me(self, client):
+        self._register_owner(client, "792222")
+        set_resp = client.put(
+            "/api/me/avatar", json={"data_url": self._FAKE_DATA_URL}, headers=_csrf_headers(client),
+        )
+        assert set_resp.status_code == 200, set_resp.text
+        assert client.get("/api/me").json()["avatar"] == self._FAKE_DATA_URL
+
+    def test_clear_avatar_removes_it(self, client):
+        self._register_owner(client, "793333")
+        client.put("/api/me/avatar", json={"data_url": self._FAKE_DATA_URL}, headers=_csrf_headers(client))
+        client.delete("/api/me/avatar", headers=_csrf_headers(client))
+        assert client.get("/api/me").json()["avatar"] is None
+
+    def test_set_avatar_rejects_non_image_data_url(self, client):
+        self._register_owner(client, "794444")
+        response = client.put(
+            "/api/me/avatar", json={"data_url": "not-an-image"}, headers=_csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    def test_set_avatar_rejects_oversized_payload(self, client):
+        self._register_owner(client, "795555")
+        oversized = "data:image/png;base64," + ("A" * 400_000)
+        response = client.put(
+            "/api/me/avatar", json={"data_url": oversized}, headers=_csrf_headers(client),
+        )
+        assert response.status_code == 422
+
+    def test_dispatcher_avatar_is_independent_of_owner(self, client):
+        self._register_owner(client, "796666")
+        client.post(
+            "/api/dispatchers", json={"username": "avatar_dispatcher", "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        client.put("/api/me/avatar", json={"data_url": self._FAKE_DATA_URL}, headers=_csrf_headers(client))
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "avatar_dispatcher", "password": "dispatcherpass123"})
+
+        assert client.get("/api/me").json()["avatar"] is None
+
+
+class TestTeamRoster:
+    """GET /api/team - lets an owner and their dispatchers see each other's
+    display name and avatar, regardless of which one of them is logged in
+    (unlike GET /api/dispatchers, which is owner-only CRUD data)."""
+
+    _FAKE_DATA_URL = "data:image/png;base64,iVBORw0KGgo="
+
+    def _register_owner_and_dispatcher(self, client, mc_number: str, username: str) -> None:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Team Test Co {mc_number}",
+            "email": f"owner{mc_number}@teamtest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        created = client.post(
+            "/api/dispatchers", json={"username": username, "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+
+    def test_team_lists_owner_and_dispatchers(self, client):
+        self._register_owner_and_dispatcher(client, "797777", "team_dispatcher_1")
+        team = client.get("/api/team").json()
+        assert {m["role"]: m["name"] for m in team} == {
+            "owner": "Team Test Co 797777", "dispatcher": "team_dispatcher_1",
+        }
+
+    def test_dispatcher_sees_owners_avatar_via_team(self, client):
+        self._register_owner_and_dispatcher(client, "798888", "team_dispatcher_2")
+        client.put("/api/me/avatar", json={"data_url": self._FAKE_DATA_URL}, headers=_csrf_headers(client))
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "team_dispatcher_2", "password": "dispatcherpass123"})
+
+        team = client.get("/api/team").json()
+        owner_entry = next(m for m in team if m["role"] == "owner")
+        assert owner_entry["avatar"] == self._FAKE_DATA_URL
+
+    def test_owner_sees_dispatchers_avatar_via_team(self, client):
+        self._register_owner_and_dispatcher(client, "799999", "team_dispatcher_3")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "team_dispatcher_3", "password": "dispatcherpass123"})
+        client.put("/api/me/avatar", json={"data_url": self._FAKE_DATA_URL}, headers=_csrf_headers(client))
+
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/owner", json={"mc_number": "799999", "password": "ownerpass123"})
+
+        team = client.get("/api/team").json()
+        dispatcher_entry = next(m for m in team if m["role"] == "dispatcher")
+        assert dispatcher_entry["avatar"] == self._FAKE_DATA_URL
+
+
 class TestGmailFirstRegistration:
     """Registration is Gmail-first: connect Gmail, confirm you own that
     inbox (code or link), THEN fill in company details - a Company row is
@@ -967,6 +1085,71 @@ class TestDispatcherSubscriptionToggle:
             f"/api/drivers/{driver_id}/subscription", json={"active": True}, headers=_csrf_headers(client),
         )
         assert response.status_code == 403
+
+
+class TestDispatcherBillingAccess:
+    """Billing/subscription management isn't owner-only: in many companies
+    the dispatcher is the one actually paying, so they can view the plan
+    and reach checkout/portal too. See the billing endpoints in
+    miniapp/api.py, all switched from require_owner to get_current_user."""
+
+    def _register_owner_and_dispatcher(self, client, mc_number: str, username: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Dispatcher Billing Co {mc_number}",
+            "email": f"owner{mc_number}@dispatcherbilling.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        company_id = reg.json()["company_id"]
+
+        created = client.post(
+            "/api/dispatchers", json={"username": username, "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+        return company_id
+
+    def test_dispatcher_can_view_billing(self, client):
+        self._register_owner_and_dispatcher(client, "741111", "billing_dispatcher_1")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "billing_dispatcher_1", "password": "dispatcherpass123"})
+
+        response = client.get("/api/billing")
+        assert response.status_code == 200, response.text
+        assert response.json()["tier"] == "free"
+
+    def test_dispatcher_can_reach_checkout(self, client, monkeypatch):
+        # Mocks Stripe out entirely (this environment happens to have a real
+        # test-mode STRIPE_SECRET_KEY configured, which would otherwise make
+        # this a live network call) - what matters here is only that the
+        # dispatcher reaches stripe_service at all instead of being blocked
+        # by require_owner, not what Stripe itself does with the request.
+        from services import stripe_service
+
+        monkeypatch.setattr(
+            stripe_service, "create_checkout_session",
+            lambda company_id, tier, interval: "https://checkout.stripe.com/fake",
+        )
+
+        self._register_owner_and_dispatcher(client, "742222", "billing_dispatcher_2")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "billing_dispatcher_2", "password": "dispatcherpass123"})
+
+        response = client.post(
+            "/api/billing/checkout", json={"tier": "pro", "interval": "month"}, headers=_csrf_headers(client),
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["url"] == "https://checkout.stripe.com/fake"
+
+    def test_dispatcher_can_reach_billing_portal(self, client):
+        self._register_owner_and_dispatcher(client, "743333", "billing_dispatcher_3")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": "billing_dispatcher_3", "password": "dispatcherpass123"})
+
+        response = client.post("/api/billing/portal", headers=_csrf_headers(client))
+        assert response.status_code != 403
 
 
 class TestAlertRules:

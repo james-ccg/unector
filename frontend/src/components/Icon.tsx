@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'phone' | 'settings' | 'shield' | 'sun' | 'truck' | 'warning'
+type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'phone' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   'arrow-left': <path d="m15 18-6-6 6-6M9 12h12" />,
@@ -26,6 +26,7 @@ const paths: Record<IconName, ReactNode> = {
   shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10ZM9 12l2 2 4-4" />,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
   truck: <><path d="M3 6h11v10H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="18" r="2" /><circle cx="18" cy="18" r="2" /></>,
+  users: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
   warning: <><path d="M10.3 3.5 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.5a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></>,
 }
 
