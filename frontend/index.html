@@ -7,15 +7,25 @@
     <meta name="description" content="Freight Pilot - Telegram bot for trucking dispatch management" />
     <title>Freight Pilot - Dispatch Management</title>
     <script>
-      // Applies the saved theme/font-size/motion prefs before React (or even
-      // the CSS) loads, so there's no flash of the wrong appearance on first
-      // paint. "medium" (the font-size default) sets no attribute at all -
-      // the implicit 1x zoom handles that case on its own. Reduce-motion has
-      // no attribute-less default: with nothing stored yet, it falls back to
+      // Applies the saved theme/font/motion prefs before React (or even the
+      // CSS) loads, so there's no flash of the wrong appearance on first
+      // paint. "default" (the font default) sets no attribute at all - the
+      // brand face is already the token value. Reduce-motion has no
+      // attribute-less default: with nothing stored yet, it falls back to
       // the OS accessibility setting, mirroring PreferencesContext's own
-      // first-run logic.
+      // first-run logic. Storage access is wrapped because it throws
+      // outright in a private window or with site data blocked - the page
+      // must still render, just without the saved preferences.
       (function () {
-        var theme = localStorage.getItem('fp-theme');
+        function stored(key) {
+          try {
+            return localStorage.getItem(key);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        var theme = stored('fp-theme');
         if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
           theme = 'system';
         }
@@ -32,12 +42,12 @@
         }
         document.documentElement.setAttribute('data-theme', theme);
 
-        var fontSize = localStorage.getItem('fp-font-size');
-        if (fontSize === 'small' || fontSize === 'large') {
-          document.documentElement.setAttribute('data-font-size', fontSize);
+        var font = stored('fp-font');
+        if (font === 'system' || font === 'serif') {
+          document.documentElement.setAttribute('data-font', font);
         }
 
-        var reduceMotion = localStorage.getItem('fp-reduce-motion');
+        var reduceMotion = stored('fp-reduce-motion');
         if (reduceMotion === null) {
           reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'true' : 'false';
         }

@@ -1,0 +1,70 @@
+.font-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.font-toggle-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* Each option previews the face it selects, so the choice is legible from
+   the control itself rather than from its label alone. */
+.font-toggle-sample {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.font-toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.font-toggle-default .font-toggle-sample,
+.font-toggle-default .font-toggle-label {
+  font-family: 'DM Sans', sans-serif;
+}
+.font-toggle-system .font-toggle-sample,
+.font-toggle-system .font-toggle-label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.font-toggle-serif .font-toggle-sample,
+.font-toggle-serif .font-toggle-label {
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+}
+
+.font-toggle-option:hover {
+  color: var(--text);
+}
+
+.font-toggle-option.is-active {
+  background: var(--accent);
+  color: #161616;
+}
+
+@media screen and (max-width: 560px) {
+  /* The labels are the first thing to go when the row gets tight - each
+     option still previews its own face through the sample glyph. */
+  .font-toggle-label {
+    display: none;
+  }
+  .font-toggle-option {
+    padding: 6px 14px;
+  }
+}

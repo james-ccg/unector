@@ -156,32 +156,22 @@ body {
 }
 
 /* ============================================================
-   Chat font size (App Preferences) - see context/PreferencesContext.tsx.
-   Every font-size in this codebase is a fixed px value (no rem base to
-   scale from), so this scales via zoom instead of a root font-size
-   percentage. Scoped to .main-content (Layout's per-page wrapper) so the
-   fixed Header/Footer chrome stays a constant size regardless of preference.
-   "medium" sets no attribute - zoom defaults to 1 with no rule needed.
+   Interface font (App Preferences) - see context/PreferencesContext.tsx.
+   Retargets the two font tokens rather than restyling components, so the
+   choice reaches everything downstream of them. --font-mono is deliberately
+   left alone: MC numbers, load IDs and rates rely on its fixed advance
+   width to stay column-aligned. "default" sets no attribute at all.
+   Every option is a face the page already has, so switching costs no
+   extra download.
    ============================================================ */
-[data-font-size='small'] .main-content {
-  zoom: 0.925;
-}
-[data-font-size='large'] .main-content {
-  zoom: 1.15;
+:root[data-font='system'] {
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-/* .modal-overlay (DashboardPage.css) is position: fixed but still a DOM
-   descendant of .main-content (no portal - this codebase renders modals
-   inline in each page's JSX) - without countering it, the ancestor's zoom
-   would apply again on top of the modal's own "cover the full viewport"
-   sizing, misaligning/clipping it instead of covering the screen
-   edge-to-edge. Canceling it back out here keeps the overlay itself at
-   true 1:1 scale while everything else on the page still zooms. */
-[data-font-size='small'] .main-content .modal-overlay {
-  zoom: calc(1 / 0.925);
-}
-[data-font-size='large'] .main-content .modal-overlay {
-  zoom: calc(1 / 1.15);
+:root[data-font='serif'] {
+  --font-display: Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
+  --font-ui: Georgia, 'Iowan Old Style', 'Times New Roman', Times, serif;
 }
 
 /* ============================================================

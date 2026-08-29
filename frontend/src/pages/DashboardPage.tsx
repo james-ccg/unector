@@ -44,7 +44,7 @@ function ChartTooltip({ active, payload, label, formatter }: ChartTooltipProps) 
 }
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [error, setError] = useState('')
@@ -224,16 +224,15 @@ export default function DashboardPage() {
               <p className="eyebrow">{dashboardData?.company_name || user?.companyName || '—'}</p>
               <h1>{user?.role === 'owner' ? 'Owner Dashboard' : 'Dispatcher Dashboard'}</h1>
             </div>
+            {/* Only the page-level destination lives here. Settings and Sign
+                out are account actions and are already in the header's
+                profile menu - repeating them gave one screen two competing
+                sets of the same controls, with Sign out carrying as much
+                visual weight as primary navigation. */}
             <div className="page-head-actions">
               <Link to="/monitoring" className="btn btn-ghost">
                 <Icon name="location" size={16} /> Live GPS
               </Link>
-              <Link to="/settings" className="btn btn-ghost">
-                <Icon name="settings" size={16} /> Settings
-              </Link>
-              <button className="btn btn-logout" onClick={logout}>
-                <Icon name="logout" size={16} /> Sign out
-              </button>
             </div>
           </header>
 

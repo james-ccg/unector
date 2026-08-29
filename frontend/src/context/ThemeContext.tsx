@@ -51,18 +51,47 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() => {
+function readStoredPreference(): ThemePreference {
+  // Storage can throw outright, not just come back empty - a private window
+  // or a browser set to block site data. Falling back to Auto is correct
+  // there; letting it throw would take the whole provider down.
+  try {
     const stored = localStorage.getItem(STORAGE_KEY)
     return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
-  })
+  } catch {
+    return 'system'
+  }
+}
+
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference)
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>(() => resolveTheme(preference))
+
+  // Re-stamp on mount so React is the single source of truth for data-theme.
+  // index.html's anti-flash script sets it first, but nothing here ever
+  // re-applied it afterwards - so any disagreement between the two (storage
+  // that reads back empty, a write that silently failed, the two resolving
+  // 'system' either side of the night-hours boundary) left the page showing
+  // one theme while Settings showed another, with no way to self-correct.
+  // resolvedTheme is already correct from its own initializer - this effect
+  // only pushes that resolution out to the DOM.
+  useEffect(() => {
+    applyTheme(preference)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const setPreference = (next: ThemePreference) => {
     setPreferenceState(next)
-    localStorage.setItem(STORAGE_KEY, next)
+    // Applied BEFORE persisting: if storage throws, the theme the user just
+    // picked must still take effect for this session rather than the click
+    // appearing to do nothing.
     applyTheme(next)
     setResolvedTheme(resolveTheme(next))
+    try {
+      localStorage.setItem(STORAGE_KEY, next)
+    } catch {
+      // Non-fatal - the choice just won't outlive this tab.
+    }
   }
 
   // If the user is on "auto", re-resolve live while the tab stays open -

@@ -24,7 +24,8 @@
   margin: 0 0 8px;
 }
 .monitoring-page-head h1 {
-  font-size: 28px;
+  /* Matches the in-app page-title step - see DashboardPage.css. */
+  font-size: 24px;
   margin: 0;
 }
 

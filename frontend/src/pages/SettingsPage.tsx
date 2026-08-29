@@ -7,7 +7,7 @@ import ErrorMessage from '../components/ErrorMessage'
 import PasswordInput from '../components/PasswordInput'
 import TwoFactorSettings from '../components/TwoFactorSettings'
 import ThemeToggle from '../components/ThemeToggle'
-import FontSizeToggle from '../components/FontSizeToggle'
+import FontToggle from '../components/FontToggle'
 import AvatarPicker from '../components/AvatarPicker'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
@@ -21,7 +21,7 @@ import './DashboardPage.css'
 import './SettingsPage.css'
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const { reduceMotion, setReduceMotion } = usePreferences()
   const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<CompanySettings | null>(null)
@@ -439,13 +439,12 @@ export default function SettingsPage() {
             <p className="eyebrow">{settings?.company_name || '—'}</p>
             <h1>Settings</h1>
           </div>
+          {/* Sign out lives in the header's profile menu only - see the note
+              on DashboardPage's page-head-actions. */}
           <div className="page-head-actions">
             <Link to="/dashboard" className="btn btn-ghost">
               <Icon name="arrow-left" size={16} /> Dashboard
             </Link>
-            <button className="btn btn-logout" onClick={logout}>
-              <Icon name="logout" size={16} /> Sign out
-            </button>
           </div>
         </header>
         {banner && (
@@ -515,10 +514,10 @@ export default function SettingsPage() {
             </div>
             <div className="pref-row">
               <div>
-                <p className="settings-row-label">Chat font</p>
-                <p className="settings-row-hint">Text size across the dashboard.</p>
+                <p className="settings-row-label">Interface font</p>
+                <p className="settings-row-hint">The typeface used across the dashboard.</p>
               </div>
-              <FontSizeToggle />
+              <FontToggle />
             </div>
             <div className="pref-row">
               <div>
