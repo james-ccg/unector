@@ -160,8 +160,14 @@
   transition: all 0.3s ease;
 }
 
+/* Stands taller than its neighbours via negative block margin, not
+   transform: scale(). Scaling resamples the card's text and its 1px border
+   at a non-integer factor, so the one card meant to draw the eye was the
+   only one rendering soft - and because a transform doesn't affect layout,
+   the scaled-up card silently overflowed its grid cell toward its
+   neighbours instead of the grid making room for it. */
 .pricing-card.featured {
-  transform: scale(1.05);
+  margin-block: -14px;
   border-color: var(--primary);
   box-shadow: 0 16px 40px rgba(195, 248, 50, 0.3);
 }
@@ -474,7 +480,9 @@
   }
 
   .pricing-card.featured {
-    transform: scale(1);
+    /* Single column here, so there are no neighbours to stand out from -
+       the lift would just misalign it against the cards above and below. */
+    margin-block: 0;
   }
 
   .stat-card {

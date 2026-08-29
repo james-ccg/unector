@@ -58,11 +58,14 @@
   color: var(--text);
 }
 
+/* No transform: scale() here either - unlike a hover lift this is a
+   PERSISTENT state, so it left the selected tab's label permanently
+   resampled and soft against its crisp neighbour. The gradient fill and
+   glow already carry the selection on their own. */
 .tab.active-tab {
   background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
   color: #161616;
-  box-shadow: 0 8px 20px rgba(195, 248, 50, 0.5);
-  transform: scale(1.03);
+  box-shadow: 0 6px 16px rgba(195, 248, 50, 0.42);
 }
 
 .card {
