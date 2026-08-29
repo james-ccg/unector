@@ -69,10 +69,10 @@ export default function Footer() {
             <h4 className="footer-title">Legal</h4>
             <ul className="footer-links">
               <li>
-                <span className="is-disabled" title="Coming soon">Privacy Policy</span>
+                <Link to="/pages/privacy">Privacy Policy</Link>
               </li>
               <li>
-                <span className="is-disabled" title="Coming soon">Terms of Service</span>
+                <Link to="/pages/terms">Terms of Service</Link>
               </li>
             </ul>
           </div>

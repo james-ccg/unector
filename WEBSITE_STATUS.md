@@ -26,6 +26,8 @@ Public (no login):
 - `/pages/security` - Security
 - `/pages/trust` - Trust/stats
 - `/pages/updates` - Changelog
+- `/pages/privacy` - Privacy Policy
+- `/pages/terms` - Terms of Service
 - `/login`, `/register`
 
 Private (session cookie required, `PrivateRoute`):
@@ -49,6 +51,10 @@ owner is routed to onboarding until that's done.
 
 ## Known gaps
 
-- Footer social links (Twitter/LinkedIn) and Privacy Policy/Terms are
-  placeholder "Coming soon" - no real profile URLs or legal copy exist yet
-  to link to.
+- Footer social links (Twitter/LinkedIn) are still placeholder "Coming
+  soon" - no real profile URLs exist yet to link to. Privacy Policy and
+  Terms of Service are real pages now (`/pages/privacy`, `/pages/terms`),
+  but both have a couple of bracketed placeholders (legal entity name,
+  governing jurisdiction) that need filling in with real details - see
+  `PrivacyPolicyPage.tsx`/`TermsOfServicePage.tsx` for the `legal-fill`
+  spans - and the content hasn't been reviewed by a lawyer.

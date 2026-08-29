@@ -392,6 +392,75 @@
   left: 8px;
 }
 
+/* Legal pages (Privacy Policy, Terms of Service) - long-form prose rather
+   than the card/grid layouts above, so its own small block of rules. */
+.legal-updated {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin: -36px 0 48px;
+}
+
+.legal-content {
+  max-width: 760px;
+  margin: 0 auto;
+  color: var(--text-primary);
+}
+
+.legal-content section {
+  margin-bottom: 40px;
+}
+
+.legal-content h2 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 14px;
+  color: var(--text-primary);
+}
+
+.legal-content h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 20px 0 8px;
+  color: var(--text-primary);
+}
+
+.legal-content p {
+  color: var(--text-muted);
+  line-height: 1.75;
+  margin: 0 0 14px;
+}
+
+.legal-content ul {
+  color: var(--text-muted);
+  line-height: 1.75;
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.legal-content li {
+  margin-bottom: 6px;
+}
+
+.legal-content strong {
+  color: var(--text-primary);
+}
+
+.legal-content a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.legal-content .legal-fill {
+  background: rgba(195, 248, 50, 0.14);
+  border: 1px dashed var(--primary);
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--text-primary);
+  font-style: normal;
+}
+
 @media screen and (max-width: 768px) {
   .page-title {
     font-size: 32px;

@@ -25,6 +25,8 @@ const PricingPage = lazy(() => import('./pages/PricingPage'))
 const SecurityPage = lazy(() => import('./pages/SecurityPage'))
 const TrustPage = lazy(() => import('./pages/TrustPage'))
 const UpdatesPage = lazy(() => import('./pages/UpdatesPage'))
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
+const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'))
 
 function RouteFallback() {
   return (
@@ -51,6 +53,8 @@ function App() {
             <Route path="/pages/security" element={<SecurityPage />} />
             <Route path="/pages/trust" element={<TrustPage />} />
             <Route path="/pages/updates" element={<UpdatesPage />} />
+            <Route path="/pages/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/pages/terms" element={<TermsOfServicePage />} />
             <Route
               path="/onboarding/connect-gmail"
               element={
