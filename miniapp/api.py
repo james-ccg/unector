@@ -48,6 +48,7 @@ from db.repository import (
     get_dispatchers_by_company,
     get_drivers_by_company,
     get_driver_details,
+    get_fleet_status,
     toggle_driver_subscription,
     current_week_start_utc,
     GROSS_ELIGIBLE_STATUSES,
@@ -1525,7 +1526,12 @@ def get_dashboard(user: dict = Depends(get_current_user)):
                     "total_loads": total_loads,
                     "weekly_gross": float(weekly_gross)
                 },
-                "drivers": drivers or []
+                "drivers": drivers or [],
+                # Every truck currently on a load, worst-first - see
+                # get_fleet_status. Bundled into this response rather than
+                # given its own endpoint so the dashboard still paints in a
+                # single round-trip.
+                "fleet": get_fleet_status(user["company_id"]),
             }
             
             # Add billing info for owners

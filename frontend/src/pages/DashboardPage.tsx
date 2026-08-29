@@ -6,9 +6,20 @@ import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import ErrorMessage from '../components/ErrorMessage'
 import { useAuth } from '../context/AuthContext'
-import { dashboardApi, errorMessage, type Driver, type DashboardData, type DriverDetail } from '../services/api'
+import {
+  dashboardApi, errorMessage,
+  type Driver, type DashboardData, type DriverDetail, type LoadStage,
+} from '../services/api'
 import { PLAN_LABELS } from '../lib/plans'
 import './DashboardPage.css'
+
+// Named for what the dispatcher is waiting on next, not for the bot command
+// that sets the status - "Awaiting BOL" is actionable, "loaded" isn't.
+const LOAD_STAGE_LABELS: Record<LoadStage, string> = {
+  dispatched: 'Awaiting pickup',
+  loaded: 'Awaiting BOL',
+  bol_ok: 'Awaiting POD',
+}
 
 // Matches index.css's dark theme tokens - recharts needs literal color
 // values (it renders to SVG attributes, not CSS custom properties... on
@@ -163,6 +174,13 @@ export default function DashboardPage() {
     () => drivers.filter((d) => !d.samsara_vehicle_id).length,
     [drivers]
   )
+
+  // Already sorted worst-first by the API (see get_fleet_status) - the order
+  // is deliberately not recomputed here so both ends agree on what "needs
+  // attention" means. Memoized because the `?? []` fallback would otherwise
+  // be a fresh array identity on every render.
+  const fleet = useMemo(() => dashboardData?.fleet ?? [], [dashboardData])
+  const attentionCount = useMemo(() => fleet.filter((row) => row.attention.length > 0).length, [fleet])
 
   // Real per-driver earnings already fetched for the list below - just
   // reshaped for the chart, not a separate/fabricated data source.
@@ -361,6 +379,57 @@ export default function DashboardPage() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Sits above the driver list because it answers the more urgent
+              question - what is every truck doing right now, and which ones
+              need chasing - rather than the roster question. Rows arrive
+              from the API already sorted worst-first. */}
+          <div className="section-header-row">
+            <h2 className="section-title">Fleet status</h2>
+            {fleet.length > 0 && (
+              <span className="section-note">
+                {attentionCount > 0
+                  ? `${attentionCount} of ${fleet.length} need attention`
+                  : `${fleet.length} load${fleet.length === 1 ? '' : 's'} running`}
+              </span>
+            )}
+          </div>
+
+          {fleet.length > 0 ? (
+            <div className="fleet-list">
+              {fleet.map((row) => (
+                <article
+                  key={`${row.driver_id}-${row.load_id}`}
+                  className={`fleet-row ${row.attention.length > 0 ? 'needs-attention' : ''}`}
+                >
+                  <div className="fleet-main">
+                    <div className="fleet-identity">
+                      <span className="fleet-driver">{row.driver_name}</span>
+                      <span className="fleet-load mono">#{row.load_id}</span>
+                    </div>
+                    <p className="fleet-route">
+                      {row.pickup || '—'} <Icon name="arrow-right" size={13} /> {row.delivery || '—'}
+                    </p>
+                  </div>
+
+                  <div className="fleet-meta">
+                    {row.attention.map((reason) => (
+                      <span key={reason} className={`fleet-flag is-${reason}`}>
+                        <Icon name="warning" size={12} />
+                        {reason === 'detention' ? 'In detention' : 'Past due'}
+                      </span>
+                    ))}
+                    <span className={`fleet-stage is-${row.status}`}>{LOAD_STAGE_LABELS[row.status]}</span>
+                    {row.del_date && <span className="fleet-date">Del {row.del_date}</span>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="card">
+              <p className="empty">No loads running right now. Dispatch one with <code>/dispatch</code> in Telegram.</p>
             </div>
           )}
 

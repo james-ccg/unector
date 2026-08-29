@@ -1502,6 +1502,109 @@ def clear_account_status(account_type: str, account_id: int) -> None:
         session.commit()
 
 
+# The bot walks a load through these in order: /dispatch creates it as
+# "dispatched", /loadpics marks it "loaded", /bol marks it "bol_ok", /pod
+# marks it "pod_sent" and the load is done. Anything before pod_sent is
+# still live work someone may need to chase.
+LOAD_STAGE_ORDER = ("dispatched", "loaded", "bol_ok", "pod_sent")
+_OPEN_LOAD_STATUSES = ("dispatched", "loaded", "bol_ok")
+
+
+def get_fleet_status(company_id: int) -> list[dict]:
+    """One row per driver who currently has an open load, for the dashboard's
+    fleet view. Answers "what is every truck doing, and which ones need me"
+    without opening each driver in turn.
+
+    `attention` flags the rows worth looking at first: detention is running
+    (money is accruing and the broker needs chasing), or the load is past its
+    delivery date and still not delivered."""
+    from sqlalchemy import func
+
+    with get_session() as session:
+        drivers = (
+            session.query(models.Driver)
+            .filter(models.Driver.company_id == company_id)
+            .all()
+        )
+        if not drivers:
+            return []
+
+        by_id = {d.id: d for d in drivers}
+        # Newest-first, so the first open load seen per driver is their
+        # current one. One query for the whole fleet, not one per driver.
+        open_loads = (
+            session.query(models.Load)
+            .filter(
+                models.Load.driver_id.in_(list(by_id)),
+                models.Load.status.in_(_OPEN_LOAD_STATUSES),
+            )
+            .order_by(models.Load.created_at.desc())
+            .all()
+        )
+
+        current: dict[int, models.Load] = {}
+        for load in open_loads:
+            current.setdefault(load.driver_id, load)
+
+        rows = []
+        for driver_id, load in current.items():
+            driver = by_id[driver_id]
+            reasons = []
+            if load.detention_requested_at:
+                reasons.append("detention")
+            if _is_past_due(load):
+                reasons.append("overdue")
+
+            rows.append({
+                "driver_id": driver.id,
+                "driver_name": driver.full_name or driver.driver_bot_id,
+                "driver_bot_id": driver.driver_bot_id,
+                "load_id": load.load_id,
+                "status": load.status,
+                "broker_name": load.broker_name,
+                "pickup": _first_line(load.pu_address),
+                "delivery": _first_line(load.del_address),
+                "del_date": load.del_date,
+                "rate_amount": float(load.rate_amount) if load.rate_amount else None,
+                "detention_since": load.detention_requested_at.isoformat()
+                if load.detention_requested_at else None,
+                "attention": reasons,
+            })
+
+        # Rows needing attention first, then earliest stage first - a load
+        # still sitting at "dispatched" is the one most likely to need a
+        # nudge, and a finished-but-not-POD'd one the least.
+        rows.sort(key=lambda r: (not r["attention"], LOAD_STAGE_ORDER.index(r["status"])))
+        return rows
+
+
+def _first_line(address: str | None) -> str | None:
+    """RC addresses are stored as a multi-line block (company, street,
+    city/state/zip); a fleet row only has space for the first line."""
+    return address.splitlines()[0] if address else None
+
+
+def _is_past_due(load) -> bool:
+    """del_date comes straight off the rate confirmation as free text, in
+    whatever format that broker writes - so this parses leniently and simply
+    declines to flag anything it can't read, rather than guessing."""
+    if not load.del_date:
+        return False
+    parsed = _parse_loose_date(load.del_date)
+    if parsed is None:
+        return False
+    return parsed.date() < datetime.now(timezone.utc).date()
+
+
+def _parse_loose_date(value: str) -> datetime | None:
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%b %d, %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(value.strip(), fmt)
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
 def get_account_avatar(account_type: str, account_id: int) -> str | None:
     with get_session() as session:
         row = (

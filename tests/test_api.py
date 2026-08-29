@@ -1087,6 +1087,116 @@ class TestDispatcherSubscriptionToggle:
         assert response.status_code == 403
 
 
+class TestFleetStatus:
+    """The dashboard's fleet view - one row per truck currently on a load,
+    with the rows needing attention sorted to the top. See get_fleet_status
+    in db/repository.py."""
+
+    def _register_owner(self, client, mc_number: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Fleet Status Co {mc_number}",
+            "email": f"owner{mc_number}@fleetstatus.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        return reg.json()["company_id"]
+
+    def _add_load(self, company_id: int, driver_name: str, **load_fields) -> None:
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            driver = models.Driver(
+                company_id=company_id, driver_bot_id=f"D{driver_name}", full_name=driver_name,
+                subscription_active=True,
+            )
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+
+            session.add(models.Load(
+                company_id=company_id, driver_id=driver.id, **load_fields,
+            ))
+            session.commit()
+
+    def test_open_loads_appear_and_finished_ones_do_not(self, client):
+        company_id = self._register_owner(client, "870101")
+        self._add_load(company_id, "Running", load_id="L-OPEN", status="loaded")
+        self._add_load(company_id, "Finished", load_id="L-DONE", status="pod_sent")
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert [row["load_id"] for row in fleet] == ["L-OPEN"]
+
+    def test_driver_with_no_load_is_omitted(self, client):
+        company_id = self._register_owner(client, "870202")
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            session.add(models.Driver(
+                company_id=company_id, driver_bot_id="DIDLE", full_name="Idle", subscription_active=True,
+            ))
+            session.commit()
+
+        assert client.get("/api/dashboard").json()["fleet"] == []
+
+    def test_detention_is_flagged_and_sorted_first(self, client):
+        company_id = self._register_owner(client, "870303")
+        # Added in the order that would sort WRONG if attention were ignored:
+        # "dispatched" is the earliest stage and would otherwise lead.
+        self._add_load(company_id, "Quiet", load_id="L-QUIET", status="dispatched")
+        self._add_load(
+            company_id, "Waiting", load_id="L-DETAINED", status="loaded",
+            detention_requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert fleet[0]["load_id"] == "L-DETAINED"
+        assert fleet[0]["attention"] == ["detention"]
+        assert fleet[1]["attention"] == []
+
+    def test_load_past_its_delivery_date_is_flagged_overdue(self, client):
+        company_id = self._register_owner(client, "870404")
+        self._add_load(company_id, "Late", load_id="L-LATE", status="loaded", del_date="01/02/2020")
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert fleet[0]["attention"] == ["overdue"]
+
+    def test_unparseable_delivery_date_is_not_flagged(self, client):
+        # del_date is free text straight off the rate confirmation - a broker
+        # writing "ASAP" must not be read as an overdue load.
+        company_id = self._register_owner(client, "870505")
+        self._add_load(company_id, "Vague", load_id="L-VAGUE", status="loaded", del_date="ASAP")
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert fleet[0]["attention"] == []
+
+    def test_future_delivery_date_is_not_flagged(self, client):
+        company_id = self._register_owner(client, "870606")
+        self._add_load(company_id, "OnTime", load_id="L-FUTURE", status="loaded", del_date="12/31/2099")
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert fleet[0]["attention"] == []
+
+    def test_calm_rows_sort_by_earliest_stage(self, client):
+        company_id = self._register_owner(client, "870707")
+        self._add_load(company_id, "AtBol", load_id="L-BOL", status="bol_ok")
+        self._add_load(company_id, "AtDispatch", load_id="L-DISPATCHED", status="dispatched")
+
+        fleet = client.get("/api/dashboard").json()["fleet"]
+        assert [row["load_id"] for row in fleet] == ["L-DISPATCHED", "L-BOL"]
+
+    def test_fleet_is_scoped_to_the_callers_company(self, client):
+        other_company = self._register_owner(client, "870808")
+        self._add_load(other_company, "Theirs", load_id="L-THEIRS", status="loaded")
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+
+        self._register_owner(client, "870909")
+        assert client.get("/api/dashboard").json()["fleet"] == []
+
+
 class TestDispatcherBillingAccess:
     """Billing/subscription management isn't owner-only: in many companies
     the dispatcher is the one actually paying, so they can view the plan

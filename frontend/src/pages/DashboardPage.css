@@ -441,6 +441,134 @@
 .section-header-row .section-title {
   margin: 0;
 }
+
+.section-note {
+  color: var(--hint);
+  font-size: 13px;
+}
+
+/* ---------- Fleet status ----------
+   A scannable row per running load. State is carried by a left stripe and a
+   flag chip, not colour alone, so "needs attention" survives both themes and
+   reads without relying on hue. */
+.fleet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 40px;
+}
+
+.fleet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: 12px;
+}
+
+.fleet-row.needs-attention {
+  border-left-color: var(--red);
+}
+
+.fleet-main {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.fleet-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fleet-driver {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.fleet-load {
+  font-size: 12px;
+  color: var(--hint);
+}
+
+.fleet-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  /* Long addresses truncate rather than wrapping the row to two lines and
+     breaking the scan down the list. */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fleet-route .icon {
+  flex-shrink: 0;
+  color: var(--hint);
+}
+
+.fleet-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.fleet-stage {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The later the stage, the closer to done - carried as fill weight so the
+   progression reads at a glance down the column. */
+.fleet-stage.is-bol_ok {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fleet-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: rgba(255, 92, 82, 0.14);
+  color: var(--red);
+}
+
+.fleet-date {
+  font-size: 12px;
+  color: var(--hint);
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 560px) {
+  .fleet-row {
+    align-items: flex-start;
+  }
+  .fleet-meta {
+    width: 100%;
+  }
+}
 .driver-controls {
   display: flex;
   gap: 10px;

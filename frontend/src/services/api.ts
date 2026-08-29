@@ -396,6 +396,27 @@ export interface DriverDetail {
   loads: DriverLoad[]
 }
 
+/** The stages a load moves through, in order: /dispatch creates it, then
+ *  /loadpics, /bol and /pod each advance it. Only open loads (everything
+ *  before pod_sent) appear in the fleet view. */
+export type LoadStage = 'dispatched' | 'loaded' | 'bol_ok'
+
+export interface FleetRow {
+  driver_id: number
+  driver_name: string
+  driver_bot_id: string
+  load_id: string
+  status: LoadStage
+  broker_name: string | null
+  pickup: string | null
+  delivery: string | null
+  del_date: string | null
+  rate_amount: number | null
+  detention_since: string | null
+  /** Empty when nothing is wrong; otherwise why this row needs looking at. */
+  attention: ('detention' | 'overdue')[]
+}
+
 export interface DashboardData {
   company_name: string
   stats: {
@@ -405,6 +426,7 @@ export interface DashboardData {
     weekly_gross: number
   }
   drivers: Driver[]
+  fleet: FleetRow[]
   billing?: BillingStatus
 }
 
