@@ -18,7 +18,7 @@ export default function PrivacyPolicyPage() {
             <section>
               <p>
                 Freight Pilot ("Freight Pilot," "we," "us") is a dispatch-automation service for trucking companies,
-                operated by <em className="legal-fill">[Legal entity name]</em>. This policy explains what
+                operated by Freight Pilot LLC. This policy explains what
                 information we collect through our Telegram bot, web dashboard, and related services (together, the
                 "Service"), how we use it, and the choices you have. It applies to the company owners and dispatchers
                 who use the Service, and to the drivers whose information an owner or dispatcher adds to it.

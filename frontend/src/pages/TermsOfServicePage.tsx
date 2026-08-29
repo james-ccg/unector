@@ -18,7 +18,7 @@ export default function TermsOfServicePage() {
             <section>
               <p>
                 These Terms of Service ("Terms") are an agreement between your trucking company ("you," "your
-                company") and Freight Pilot, operated by <em className="legal-fill">[Legal entity name]</em>
+                company") and Freight Pilot, operated by Freight Pilot LLC
                 ("Freight Pilot," "we," "us"), governing your use of our Telegram bot, web dashboard, and related
                 services (the "Service"). By registering a company account, you agree to these Terms.
               </p>
@@ -121,8 +121,8 @@ export default function TermsOfServicePage() {
             <section>
               <h2>9. Governing law</h2>
               <p>
-                These Terms are governed by the laws of <em className="legal-fill">[Governing state/country]</em>,
-                without regard to its conflict-of-law rules.
+                These Terms are governed by the laws of the State of Delaware, USA, without regard to its
+                conflict-of-law rules.
               </p>
             </section>
 

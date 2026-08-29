@@ -54,7 +54,5 @@ owner is routed to onboarding until that's done.
 - Footer social links (Twitter/LinkedIn) are still placeholder "Coming
   soon" - no real profile URLs exist yet to link to. Privacy Policy and
   Terms of Service are real pages now (`/pages/privacy`, `/pages/terms`),
-  but both have a couple of bracketed placeholders (legal entity name,
-  governing jurisdiction) that need filling in with real details - see
-  `PrivacyPolicyPage.tsx`/`TermsOfServicePage.tsx` for the `legal-fill`
-  spans - and the content hasn't been reviewed by a lawyer.
+  naming Freight Pilot LLC (Delaware) as the operating entity - the
+  content hasn't been reviewed by a lawyer, though.
