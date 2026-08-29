@@ -49,9 +49,16 @@ export default function Header({ transparent = false }: HeaderProps) {
     setIsProfileMenuOpen(false)
   }
 
+  // Which nav to show follows the ROUTE, not whether someone is signed in.
+  // Keying it off auth meant a signed-in owner standing on the marketing
+  // site lost Pricing entirely - exactly the person most likely to want it,
+  // since that's where plan upgrades start.
+  const APP_ROUTES = ['/dashboard', '/monitoring', '/settings', '/onboarding']
+  const isAppRoute = APP_ROUTES.some((route) => location.pathname.startsWith(route))
+
   // Four items either way - inside the 5-7 a top nav can carry before it
   // starts reading as a wall of links.
-  const NAV_ITEMS: { to: string; label: string; external?: boolean }[] = isAuthenticated
+  const NAV_ITEMS: { to: string; label: string; external?: boolean }[] = isAppRoute
     ? [
         { to: '/dashboard', label: 'Dashboard' },
         { to: '/monitoring', label: 'Live GPS' },
@@ -125,10 +132,16 @@ export default function Header({ transparent = false }: HeaderProps) {
               </button>
               {isProfileMenuOpen && (
                 <div className="nav-profile-menu">
-                  {/* Account actions only. Dashboard / Live GPS / Settings
-                      are the app's three areas and live in the main nav -
-                      listing them here too meant one screen offered the same
-                      destination twice, in two different places. */}
+                  {/* On the marketing pages the main nav is marketing links,
+                      so this is the way back into the app. On the app's own
+                      pages Dashboard is already the first nav item, and
+                      repeating it here would put the same destination on one
+                      screen twice. */}
+                  {!isAppRoute && (
+                    <Link to="/dashboard" className="nav-profile-menu-item" onClick={closeMenus}>
+                      <Icon name="truck" size={16} /> Dashboard
+                    </Link>
+                  )}
                   <button
                     type="button"
                     className="nav-profile-menu-item"
