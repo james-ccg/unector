@@ -1022,8 +1022,13 @@ def get_settings(user: dict = Depends(get_current_user)):
     gmail_token = get_company_credential(company_id, "gmail_refresh_token")
     samsara_key = get_company_credential(company_id, "samsara_api_key")
 
+    from services.gmail_service import token_invalid_since
+
     return {
         "gmail_connected": bool(gmail_token),
+        # Connected, but Google has since stopped accepting the stored token -
+        # the owner has to reconnect. Only meaningful while gmail_connected.
+        "gmail_needs_reconnect": bool(gmail_token) and bool(token_invalid_since(company_id)),
         "samsara_connected": bool(samsara_key) or SAMSARA_TEST_MODE,
         "company_name": company.company_name,
         "mc_number": company.mc_number
@@ -1088,6 +1093,9 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
             # access at myaccount.google.com/permissions and try again.
             return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_no_refresh_token")
         save_company_credential(payload["company_id"], "gmail_refresh_token", refresh_token)
+        # Fresh token - retire any "needs reconnect" warning from the old one.
+        from services.gmail_service import clear_token_invalid
+        clear_token_invalid(payload["company_id"])
 
         # Record WHICH inbox this is, not just the token for it. Without
         # this an owner who signed up before the Gmail-first flow existed
@@ -1120,8 +1128,12 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
 @app.delete("/api/settings/gmail")
 def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
     """Disconnect Gmail account"""
+    from services.gmail_service import clear_token_invalid
+
     company_id = user.get("company_id")
     delete_company_credential(company_id, "gmail_refresh_token")
+    # Otherwise the stale marker would make a later reconnect look broken.
+    clear_token_invalid(company_id)
     return {"success": True}
 
 
@@ -1644,6 +1656,15 @@ def get_dashboard(user: dict = Depends(get_current_user)):
                 # single round-trip.
                 "fleet": get_fleet_status(user["company_id"]),
             }
+
+            # Surfaced on the dashboard, not just Settings: a dead Gmail
+            # connection stops the bot finding rate confirmations at all, so
+            # the owner needs to see it on the screen they actually open.
+            if user.get("role") == "owner":
+                from services.gmail_service import token_invalid_since
+
+                if get_company_credential(user["company_id"], "gmail_refresh_token"):
+                    result["gmail_needs_reconnect"] = bool(token_invalid_since(user["company_id"]))
             
             # Add billing info for owners
             if user.get("role") == "owner":

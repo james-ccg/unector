@@ -434,6 +434,8 @@ export interface DashboardData {
   }
   drivers: Driver[]
   fleet: FleetRow[]
+  // Owners only - see CompanySettings.gmail_needs_reconnect.
+  gmail_needs_reconnect?: boolean
   billing?: BillingStatus
 }
 
@@ -517,6 +519,9 @@ export interface AlertRule {
 
 export interface CompanySettings {
   gmail_connected: boolean
+  // Connected, but Google has stopped accepting the stored token - the
+  // owner has to reconnect before the bot can read the inbox again.
+  gmail_needs_reconnect?: boolean
   samsara_connected: boolean
   company_name: string
   mc_number: string

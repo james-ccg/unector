@@ -1197,6 +1197,91 @@ class TestFleetStatus:
         assert client.get("/api/dashboard").json()["fleet"] == []
 
 
+class TestGmailReconnectWarning:
+    """A Gmail connection whose refresh token Google has stopped accepting
+    is reported so the dashboard can warn about it - the bot silently stops
+    finding rate confirmations otherwise. See gmail_service's
+    _tracking_token_state."""
+
+    def _register_owner(self, client, mc_number: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Gmail Warn Co {mc_number}",
+            "email": f"owner{mc_number}@gmailwarn.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        return reg.json()["company_id"]
+
+    def test_not_flagged_when_no_gmail_is_connected(self, client):
+        self._register_owner(client, "766100")
+        assert client.get("/api/settings").json()["gmail_needs_reconnect"] is False
+
+    def test_not_flagged_while_the_token_still_works(self, client):
+        from db.repository import save_company_credential
+
+        company_id = self._register_owner(client, "766101")
+        save_company_credential(company_id, "gmail_refresh_token", "a-working-token")
+        assert client.get("/api/settings").json()["gmail_needs_reconnect"] is False
+
+    def test_flagged_after_a_refresh_failure(self, client):
+        from db.repository import save_company_credential
+        from services import gmail_service
+
+        company_id = self._register_owner(client, "766102")
+        save_company_credential(company_id, "gmail_refresh_token", "a-dead-token")
+        gmail_service.mark_token_invalid(company_id)
+
+        assert client.get("/api/settings").json()["gmail_needs_reconnect"] is True
+        assert client.get("/api/dashboard").json()["gmail_needs_reconnect"] is True
+
+    def test_a_refresh_error_marks_it_and_other_errors_do_not(self, client):
+        """The distinction that matters: only an auth failure means
+        "reconnect", a quota or transient API error must not."""
+        from google.auth.exceptions import RefreshError
+        from services import gmail_service
+
+        company_id = self._register_owner(client, "766103")
+
+        def _boom(exc):
+            def _call():
+                raise exc
+            return _call
+
+        with pytest.raises(RefreshError):
+            gmail_service._tracking_token_state(company_id, _boom(RefreshError("expired")))
+        assert gmail_service.token_invalid_since(company_id) is not None
+
+        gmail_service.clear_token_invalid(company_id)
+        with pytest.raises(RuntimeError):
+            gmail_service._tracking_token_state(company_id, _boom(RuntimeError("quota exceeded")))
+        assert gmail_service.token_invalid_since(company_id) is None
+
+    def test_a_later_success_clears_the_warning(self, client):
+        from db.repository import save_company_credential
+        from services import gmail_service
+
+        company_id = self._register_owner(client, "766104")
+        save_company_credential(company_id, "gmail_refresh_token", "token")
+        gmail_service.mark_token_invalid(company_id)
+        assert client.get("/api/settings").json()["gmail_needs_reconnect"] is True
+
+        gmail_service._tracking_token_state(company_id, lambda: "ok")
+        assert client.get("/api/settings").json()["gmail_needs_reconnect"] is False
+
+    def test_disconnecting_clears_the_warning(self, client):
+        from db.repository import save_company_credential
+        from services import gmail_service
+
+        company_id = self._register_owner(client, "766105")
+        save_company_credential(company_id, "gmail_refresh_token", "token")
+        gmail_service.mark_token_invalid(company_id)
+
+        client.delete("/api/settings/gmail", headers=_csrf_headers(client))
+        assert gmail_service.token_invalid_since(company_id) is None
+
+
 class TestGoogleSignIn:
     """"Continue with Google" - /api/auth/google/start and its callback.
     Google itself is stubbed out; what's covered here is the account

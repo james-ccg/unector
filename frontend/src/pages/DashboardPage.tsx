@@ -254,6 +254,19 @@ export default function DashboardPage() {
             </div>
           </header>
 
+          {/* Top of the page, above the numbers: while this is broken the
+              bot can't read rate confirmations at all, so every figure
+              below it is quietly going stale. */}
+          {dashboardData?.gmail_needs_reconnect && (
+            <div className="banner banner-error dashboard-banner">
+              <Icon name="warning" size={16} />
+              <span>
+                Gmail has disconnected, so new rate confirmations aren't being picked up.{' '}
+                <Link to="/settings">Reconnect it in Settings</Link> to start processing loads again.
+              </span>
+            </div>
+          )}
+
           <div className="stats-row">
             <div className="stat">
               <span className="stat-value">{dashboardData?.stats?.total_drivers || 0}</span>

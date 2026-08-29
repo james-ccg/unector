@@ -17,12 +17,17 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-from db.repository import get_company_credential
+from db.repository import (
+    delete_company_credential,
+    get_company_credential,
+    save_company_credential,
+)
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -30,6 +35,48 @@ SCOPES = [
 ]
 
 TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+# Marks a connection whose stored refresh token Google has stopped accepting.
+# Recorded when a real call fails rather than by probing on page load: it
+# costs nothing on the happy path, and it reports the connection actually
+# being broken instead of a guess about whether it might be.
+#
+# The most common cause by far is an OAuth app still in "Testing" publishing
+# status - Google revokes refresh tokens issued by unverified apps after
+# exactly 7 days, no matter how recently the owner approved it. The others
+# are the owner revoking access, or the password on that Google account
+# changing. All of them need the same fix: reconnect from Settings.
+_TOKEN_INVALID_CRED = "gmail_token_invalid_at"
+
+
+def mark_token_invalid(company_id: int) -> None:
+    from datetime import datetime, timezone
+
+    save_company_credential(company_id, _TOKEN_INVALID_CRED, datetime.now(timezone.utc).isoformat())
+
+
+def clear_token_invalid(company_id: int) -> None:
+    """Called on a fresh connect and on any later success, so a connection
+    that starts working again stops warning on its own."""
+    delete_company_credential(company_id, _TOKEN_INVALID_CRED)
+
+
+def token_invalid_since(company_id: int) -> str | None:
+    return get_company_credential(company_id, _TOKEN_INVALID_CRED)
+
+
+def _tracking_token_state(company_id: int, call):
+    """Runs a Gmail call, recording whether this company's stored token is
+    still accepted. Only RefreshError is treated as "reconnect needed" - an
+    ordinary API error (quota, a malformed query, a transient 5xx) says
+    nothing about the credential and must not raise a false alarm."""
+    try:
+        result = call()
+    except RefreshError:
+        mark_token_invalid(company_id)
+        raise
+    clear_token_invalid(company_id)
+    return result
 
 
 def _build_gmail_client(company_id: int):
@@ -123,7 +170,12 @@ def find_rc_pdf_by_load_id(company_id: int, load_id: str) -> bytes | None:
     # extra Gmail search operators (e.g. "OR from:someone-else").
     safe_load_id = load_id.replace('"', "")
     query = f'"{safe_load_id}" has:attachment filename:pdf'
-    results = service.users().messages().list(userId="me", q=query, maxResults=5).execute()
+    # First call that actually contacts Google, so this is where an expired
+    # or revoked refresh token surfaces - see _tracking_token_state.
+    results = _tracking_token_state(
+        company_id,
+        lambda: service.users().messages().list(userId="me", q=query, maxResults=5).execute(),
+    )
     messages = results.get("messages", [])
     if not messages:
         return None
@@ -187,6 +239,9 @@ def send_email(company_id: int, to_address: str, subject: str, body: str, attach
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
     try:
-        service.users().messages().send(userId="me", body={"raw": raw}).execute()
+        _tracking_token_state(
+            company_id,
+            lambda: service.users().messages().send(userId="me", body={"raw": raw}).execute(),
+        )
     except HttpError as e:
         raise RuntimeError(f"Gmail API failed to send email: {e}") from e
