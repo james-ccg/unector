@@ -180,6 +180,13 @@ export const authApi = {
   // Gmail-first registration - connect Gmail before any account exists,
   // confirm you own that inbox, then register() above (with pending_token)
   // actually creates the company. See PendingRegistration's docstring.
+  // "Continue with Google" - returns the consent URL to send the browser to.
+  // The rest of the flow happens as redirects, so there's no second call
+  // here: the backend lands the browser back on /dashboard (session set) or
+  // on /login with a ?google=... reason.
+  googleLoginStart: () =>
+    apiRequest<{ auth_url: string }>('/api/auth/google/start'),
+
   registerGmailStart: () =>
     apiRequest<{ auth_url: string }>('/api/auth/register/gmail/start'),
 

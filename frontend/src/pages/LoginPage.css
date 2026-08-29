@@ -201,3 +201,49 @@
   font-size: 14px;
   margin-top: 6px;
 }
+
+/* ---------- "or" divider between password and Google sign-in ---------- */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ---------- Continue with Google ----------
+   Deliberately neutral rather than brand-accented: Google's identity
+   guidelines expect their own mark on a plain light/dark surface, and a
+   secondary treatment also keeps the primary "Log in" action dominant. */
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.btn-google:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: var(--dark-lighter);
+}
+.btn-google:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-google svg {
+  flex-shrink: 0;
+}

@@ -29,6 +29,8 @@ from slowapi.util import get_remote_address
 from config import (
     FORCE_HTTPS,
     FRONTEND_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
     IS_PRODUCTION,
     PLAN_LIMITS,
     SAMSARA_TEST_MODE,
@@ -1086,6 +1088,27 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
             # access at myaccount.google.com/permissions and try again.
             return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_no_refresh_token")
         save_company_credential(payload["company_id"], "gmail_refresh_token", refresh_token)
+
+        # Record WHICH inbox this is, not just the token for it. Without
+        # this an owner who signed up before the Gmail-first flow existed
+        # has no email on their company row at all, which silently makes
+        # password reset a no-op (it only ever reads company.email) and
+        # leaves Google sign-in with nothing to match them against.
+        try:
+            from db.repository import set_company_email
+            from services.gmail_service import get_email_address
+
+            address = get_email_address(refresh_token)
+            if address:
+                set_company_email(payload["company_id"], address)
+        except Exception:
+            # Best-effort: the connection itself already succeeded, so a
+            # failure to read the address back must not undo it.
+            import logging
+            logging.exception(
+                "Connected Gmail for company %s but could not record its address",
+                payload.get("company_id"),
+            )
     except Exception:
         import logging
         logging.exception("Gmail OAuth callback failed for company %s", payload.get("company_id"))
@@ -1100,6 +1123,94 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
     company_id = user.get("company_id")
     delete_company_credential(company_id, "gmail_refresh_token")
     return {"success": True}
+
+
+# ------------------------------------------------------------------
+# "Continue with Google" sign-in. Identity scopes only - see
+# services/google_identity_service.py for why this is kept separate from
+# the Gmail integration's restricted scopes.
+# ------------------------------------------------------------------
+GOOGLE_LOGIN_REDIRECT_URI = os.getenv(
+    "GOOGLE_LOGIN_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"
+)
+
+
+@app.get("/api/auth/google/start")
+@limiter.limit("10/minute")
+def google_login_start(request: Request):
+    """Returns the Google consent URL for signing in. The state is a signed,
+    short-lived token so the callback can prove the request originated here
+    rather than being replayed from somewhere else."""
+    from services import google_identity_service
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(503, "Google sign-in isn't configured on this server.")
+
+    state = create_token({"purpose": "google_login"}, lifetime_seconds=SHORT_LIVED_SECONDS)
+    return {"auth_url": google_identity_service.build_authorization_url(GOOGLE_LOGIN_REDIRECT_URI, state)}
+
+
+@app.get("/api/auth/google/callback")
+def google_login_callback(
+    response: Response, code: str | None = None, state: str | None = None, error: str | None = None,
+):
+    """Google redirects the browser back here. On success this either sets a
+    real session cookie and lands on the dashboard, or - when the account has
+    2FA on - hands the login page a pending token to finish the second factor
+    with. Proving you own the inbox is authentication, not authorization to
+    skip a factor the owner deliberately turned on."""
+    from fastapi.responses import RedirectResponse
+    from db.repository import get_companies_by_email
+    from services import google_identity_service
+
+    def _fail(reason: str) -> RedirectResponse:
+        return RedirectResponse(f"{FRONTEND_URL}/login?google={reason}")
+
+    payload = decode_token(state) if state else None
+    if error or not code or not payload or payload.get("purpose") != "google_login":
+        return _fail("error")
+
+    try:
+        email = google_identity_service.exchange_code_for_email(code, GOOGLE_LOGIN_REDIRECT_URI)
+    except Exception:
+        import logging
+        logging.exception("Google sign-in callback failed")
+        return _fail("error")
+
+    if not email:
+        return _fail("error")
+
+    companies = get_companies_by_email(email)
+    if not companies:
+        return _fail("no_account")
+    if len(companies) > 1:
+        # Ambiguous: email isn't unique-constrained, so more than one company
+        # can share an address. Refusing beats guessing which one to sign in.
+        return _fail("ambiguous")
+
+    company = companies[0]
+    result = _finish_password_step(
+        response, "owner", company.id,
+        {"company_id": company.id, "company_name": company.company_name},
+    )
+
+    if result.get("requires_2fa"):
+        # The available methods ride along so the login page can render the
+        # same picker a password login gets. They're not secret - the JSON
+        # login response returns the identical list - and the pending token
+        # is what actually gates completing the factor.
+        methods = ",".join(result.get("methods", []))
+        return RedirectResponse(
+            f"{FRONTEND_URL}/login?google_2fa={result['pending_token']}&methods={methods}"
+        )
+
+    # _finish_password_step wrote the session cookies onto `response`; carry
+    # those Set-Cookie headers onto the redirect the browser actually follows.
+    redirect = RedirectResponse(f"{FRONTEND_URL}/dashboard")
+    for key, value in response.raw_headers:
+        if key.decode().lower() == "set-cookie":
+            redirect.raw_headers.append((key, value))
+    return redirect
 
 
 # ------------------------------------------------------------------

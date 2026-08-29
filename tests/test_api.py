@@ -1197,6 +1197,106 @@ class TestFleetStatus:
         assert client.get("/api/dashboard").json()["fleet"] == []
 
 
+class TestGoogleSignIn:
+    """"Continue with Google" - /api/auth/google/start and its callback.
+    Google itself is stubbed out; what's covered here is the account
+    matching and the failure paths, which is where the security-relevant
+    decisions actually live."""
+
+    def _register(self, client, mc_number: str, email: str) -> int:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Google Signin Co {mc_number}",
+            "email": email,
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        return reg.json()["company_id"]
+
+    def _state(self) -> str:
+        from miniapp.auth import create_token
+        return create_token({"purpose": "google_login"})
+
+    def test_start_returns_a_consent_url(self, client, monkeypatch):
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_ID", "fake-client-id")
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_SECRET", "fake-secret")
+        monkeypatch.setattr(
+            "services.google_identity_service.build_authorization_url",
+            lambda redirect_uri, state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+        )
+        response = client.get("/api/auth/google/start")
+        assert response.status_code == 200, response.text
+        assert response.json()["auth_url"].startswith("https://accounts.google.com/")
+
+    def test_start_is_unavailable_when_google_is_not_configured(self, client, monkeypatch):
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_ID", None)
+        assert client.get("/api/auth/google/start").status_code == 503
+
+    def test_callback_signs_in_the_matching_owner(self, client, monkeypatch):
+        self._register(client, "765000", "gsignin1@example.com")
+        monkeypatch.setattr(
+            "services.google_identity_service.exchange_code_for_email",
+            lambda code, redirect_uri: "gsignin1@example.com",
+        )
+
+        response = client.get(
+            f"/api/auth/google/callback?code=x&state={self._state()}", follow_redirects=False,
+        )
+        assert response.status_code in (302, 307), response.text
+        assert "/dashboard" in response.headers["location"]
+        # The session cookie must survive onto the redirect, or the browser
+        # arrives at /dashboard still logged out.
+        assert client.get("/api/me").status_code == 200
+
+    def test_callback_rejects_an_unknown_address(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "services.google_identity_service.exchange_code_for_email",
+            lambda code, redirect_uri: "nobody-here@example.com",
+        )
+        response = client.get(
+            f"/api/auth/google/callback?code=x&state={self._state()}", follow_redirects=False,
+        )
+        assert "google=no_account" in response.headers["location"]
+        assert client.get("/api/me").status_code == 401
+
+    def test_callback_refuses_a_forged_state(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "services.google_identity_service.exchange_code_for_email",
+            lambda code, redirect_uri: "gsignin1@example.com",
+        )
+        response = client.get(
+            "/api/auth/google/callback?code=x&state=not-a-real-token", follow_redirects=False,
+        )
+        assert "google=error" in response.headers["location"]
+        assert client.get("/api/me").status_code == 401
+
+    def test_callback_refuses_when_the_address_maps_to_two_accounts(self, client, monkeypatch):
+        self._register(client, "765001", "shared@example.com")
+        self._register(client, "765002", "shared@example.com")
+        monkeypatch.setattr(
+            "services.google_identity_service.exchange_code_for_email",
+            lambda code, redirect_uri: "shared@example.com",
+        )
+        response = client.get(
+            f"/api/auth/google/callback?code=x&state={self._state()}", follow_redirects=False,
+        )
+        assert "google=ambiguous" in response.headers["location"]
+        assert client.get("/api/me").status_code == 401
+
+    def test_matching_is_case_insensitive(self, client, monkeypatch):
+        self._register(client, "765003", "MixedCase@Example.com")
+        monkeypatch.setattr(
+            "services.google_identity_service.exchange_code_for_email",
+            lambda code, redirect_uri: "mixedcase@example.com",
+        )
+        response = client.get(
+            f"/api/auth/google/callback?code=x&state={self._state()}", follow_redirects=False,
+        )
+        assert "/dashboard" in response.headers["location"]
+
+
 class TestDispatcherBillingAccess:
     """Billing/subscription management isn't owner-only: in many companies
     the dispatcher is the one actually paying, so they can view the plan

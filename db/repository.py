@@ -472,6 +472,41 @@ def get_company_by_mc(mc_number: str) -> Company | None:
         )
 
 
+def get_companies_by_email(email: str) -> list[Company]:
+    """Every company registered under an email address, for "Continue with
+    Google" sign-in. Returns a list rather than one row because email is not
+    unique-constrained - the caller decides what to do when an address maps
+    to more than one account, instead of this silently picking the first.
+    Matched case-insensitively: addresses arrive from Google normalized to
+    lowercase, but older rows were stored however they were typed."""
+    from sqlalchemy import func
+
+    with get_session() as session:
+        rows = (
+            session.query(models.Company)
+            .filter(func.lower(models.Company.email) == email.strip().lower())
+            .all()
+        )
+        return [
+            Company(
+                id=r.id, mc_number=r.mc_number, company_name=r.company_name,
+                password_hash=r.password_hash, email=r.email,
+            )
+            for r in rows
+        ]
+
+
+def set_company_email(company_id: int, email: str) -> None:
+    """Records the address a company's Google account is connected as, so
+    password reset and Google sign-in can find them later. Kept lowercase to
+    match get_companies_by_email's comparison."""
+    with get_session() as session:
+        row = session.get(models.Company, company_id)
+        if row:
+            row.email = email.strip().lower()
+            session.commit()
+
+
 def set_company_password(company_id: int, password_hash: str) -> None:
     """Sets/updates the owner's Mini App login password (already hashed)."""
     with get_session() as session:

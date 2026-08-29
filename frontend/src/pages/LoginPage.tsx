@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { authApi, twoFaApi, publicApi, errorMessage } from '../services/api'
 import type { LoginSuccess, TwoFaChallenge } from '../services/api'
@@ -18,6 +18,19 @@ const METHOD_LABELS: Record<string, string> = {
 
 function isChallenge(data: LoginSuccess | TwoFaChallenge): data is TwoFaChallenge {
   return (data as TwoFaChallenge).requires_2fa === true
+}
+
+/** Google's four-colour "G". Their branding guidelines require the official
+ *  mark rather than a generic icon on a "Continue with Google" button. */
+function GoogleMark() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.91c1.7-1.57 2.69-3.88 2.69-6.62Z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.35 0-4.34-1.58-5.05-3.71H.96v2.33A9 9 0 0 0 9 18Z" />
+      <path fill="#FBBC05" d="M3.95 10.71a5.41 5.41 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l2.99-2.33Z" />
+      <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.96l2.99 2.33C4.66 5.16 6.65 3.58 9 3.58Z" />
+    </svg>
+  )
 }
 
 export default function LoginPage() {
@@ -43,6 +56,9 @@ export default function LoginPage() {
   // regardless of whether the credentials themselves are right.
   const [turnstileNonce, setTurnstileNonce] = useState(0)
 
+  const [googleBusy, setGoogleBusy] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const resetTurnstile = () => {
     setTurnstileToken(null)
     setTurnstileNonce((n) => n + 1)
@@ -51,6 +67,49 @@ export default function LoginPage() {
   useEffect(() => {
     if (isAuthenticated) navigate('/dashboard')
   }, [isAuthenticated, navigate])
+
+  // Handle the redirect back from Google. Two shapes: an outright failure
+  // reason (?google=...), or a 2FA-enabled account handing us a pending
+  // token to finish the second factor with (?google_2fa=...) - the same
+  // challenge step a password login would reach.
+  useEffect(() => {
+    const reason = searchParams.get('google')
+    const pending = searchParams.get('google_2fa')
+    if (!reason && !pending) return
+
+    queueMicrotask(() => {
+      if (pending) {
+        const methods = (searchParams.get('methods') || '')
+          .split(',')
+          .filter(Boolean) as TwoFaChallenge['methods']
+        setChallenge({ requires_2fa: true, pending_token: pending, methods })
+      } else if (reason === 'no_account') {
+        setError("No Freight Pilot account is linked to that Google address. Log in with your MC number, then connect Gmail from Settings.")
+      } else if (reason === 'ambiguous') {
+        setError('More than one account uses that Google address. Please log in with your MC number instead.')
+      } else {
+        setError("Google sign-in didn't complete. Please try again.")
+      }
+    })
+
+    searchParams.delete('google')
+    searchParams.delete('google_2fa')
+    searchParams.delete('methods')
+    setSearchParams(searchParams, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleGoogleLogin = async () => {
+    setError('')
+    setGoogleBusy(true)
+    try {
+      const { auth_url } = await authApi.googleLoginStart()
+      window.location.href = auth_url
+    } catch (err) {
+      setError(errorMessage(err, "Couldn't start Google sign-in."))
+      setGoogleBusy(false)
+    }
+  }
 
   useEffect(() => {
     publicApi.getConfig().then((c) => setTurnstileSiteKey(c.turnstile_site_key)).catch(() => {})
@@ -224,6 +283,20 @@ export default function LoginPage() {
                     {loading ? 'Logging in...' : 'Log in'}
                   </button>
                   {error && <p className="error">{error}</p>}
+
+                  {/* Owner accounts only - a dispatcher login is a username
+                      created by their owner, with no email to match against. */}
+                  <div className="auth-divider"><span>or</span></div>
+                  <button
+                    type="button"
+                    className="btn-google btn-full"
+                    onClick={handleGoogleLogin}
+                    disabled={googleBusy}
+                  >
+                    <GoogleMark />
+                    {googleBusy ? 'Opening Google...' : 'Continue with Google'}
+                  </button>
+
                   <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px', margin: 0 }}>
                     Don't have an account?{' '}
                     <Link to="/register" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
