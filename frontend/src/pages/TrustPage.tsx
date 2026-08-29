@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import { publicApi } from '../services/api'
+import { formatCount } from '../lib/format'
 
 interface Stats {
   companies: number
@@ -51,13 +52,13 @@ export default function TrustPage() {
             </div>
 
             <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : (stats?.active_trucks ?? 0).toLocaleString()}</div>
+              <div className="stat-number">{loading ? '—' : formatCount(stats?.active_trucks ?? 0)}</div>
               <div className="stat-label">Active Drivers</div>
               <p className="stat-desc">Drivers currently managed through the platform</p>
             </div>
 
             <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : (stats?.loads_delivered ?? 0).toLocaleString()}</div>
+              <div className="stat-number">{loading ? '—' : formatCount(stats?.loads_delivered ?? 0)}</div>
               <div className="stat-label">Loads Processed</div>
               <p className="stat-desc">Rate confirmations extracted and tracked</p>
             </div>

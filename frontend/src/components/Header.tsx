@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
 import EditStatusModal from './EditStatusModal'
@@ -16,6 +16,7 @@ export default function Header({ transparent = false }: HeaderProps) {
   const [statusModalOpen, setStatusModalOpen] = useState(false)
   const { isAuthenticated, user, logout } = useAuth()
   const profileMenuRef = useRef<HTMLDivElement>(null)
+  const location = useLocation()
 
   useEffect(() => {
     const handleScroll = () => {
@@ -43,6 +44,28 @@ export default function Header({ transparent = false }: HeaderProps) {
 
   const displayName = user?.role === 'owner' ? user?.companyName : user?.username
 
+  const closeMenus = () => {
+    setIsMenuOpen(false)
+    setIsProfileMenuOpen(false)
+  }
+
+  // Four items either way - inside the 5-7 a top nav can carry before it
+  // starts reading as a wall of links.
+  const NAV_ITEMS: { to: string; label: string; external?: boolean }[] = isAuthenticated
+    ? [
+        { to: '/dashboard', label: 'Dashboard' },
+        { to: '/monitoring', label: 'Live GPS' },
+        { to: '/settings', label: 'Settings' },
+      ]
+    : [
+        // No "Home" - the logo to its left already is the home link, and
+        // repeating it is the classic wasted nav slot.
+        { to: '/#features', label: 'Features', external: true },
+        { to: '/pages/pricing', label: 'Pricing' },
+        { to: '/pages/faq', label: 'FAQ' },
+        { to: '/pages/security', label: 'Security' },
+      ]
+
   return (
     <header className={headerClass} id="header">
       <nav className="nav container">
@@ -53,55 +76,29 @@ export default function Header({ transparent = false }: HeaderProps) {
 
         <div className={`nav-menu ${isMenuOpen ? 'show-menu' : ''}`} id="nav-menu">
           <ul className="nav-list">
-            <li className="nav-item">
-              <Link to="/" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Home
-              </Link>
-            </li>
-            <li className="nav-item">
-              <a href="/#features" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Features
-              </a>
-            </li>
-            <li className="nav-item">
-              <Link to="/pages/pricing" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Pricing
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link to="/pages/trust" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Trust & Stats
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link to="/pages/faq" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                FAQ
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link to="/pages/updates" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Updates
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link to="/pages/security" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                Security
-              </Link>
-            </li>
-            {isAuthenticated && (
-              <li className="nav-item nav-item-mobile-only">
-                <Link to="/dashboard" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                  Dashboard
-                </Link>
+            {/* Signed in, the header is the APP's navigation - a dispatcher
+                looking at live loads has no use for Pricing or FAQ, and
+                showing seven marketing links there was the main reason the
+                menus read as cluttered. Signed out it's the marketing site.
+                Trust & Stats and Updates aren't lost either way: the footer
+                links both. */}
+            {NAV_ITEMS.map((item) => (
+              <li className="nav-item" key={item.to}>
+                {item.external ? (
+                  <a href={item.to} className="nav-link" onClick={closeMenus}>
+                    {item.label}
+                  </a>
+                ) : (
+                  <Link
+                    to={item.to}
+                    className={`nav-link ${location.pathname === item.to ? 'is-current' : ''}`}
+                    onClick={closeMenus}
+                  >
+                    {item.label}
+                  </Link>
+                )}
               </li>
-            )}
-            {isAuthenticated && (
-              <li className="nav-item nav-item-mobile-only">
-                <Link to="/monitoring" className="nav-link" onClick={() => setIsMenuOpen(false)}>
-                  Live GPS
-                </Link>
-              </li>
-            )}
+            ))}
           </ul>
           <button type="button" className="nav-close" aria-label="Close menu" onClick={() => setIsMenuOpen(false)}>
             <Icon name="close" size={20} />
@@ -128,16 +125,10 @@ export default function Header({ transparent = false }: HeaderProps) {
               </button>
               {isProfileMenuOpen && (
                 <div className="nav-profile-menu">
-                  <Link
-                    to="/dashboard"
-                    className="nav-profile-menu-item"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false)
-                      setIsMenuOpen(false)
-                    }}
-                  >
-                    <Icon name="truck" size={16} /> Dashboard
-                  </Link>
+                  {/* Account actions only. Dashboard / Live GPS / Settings
+                      are the app's three areas and live in the main nav -
+                      listing them here too meant one screen offered the same
+                      destination twice, in two different places. */}
                   <button
                     type="button"
                     className="nav-profile-menu-item"
@@ -146,28 +137,8 @@ export default function Header({ transparent = false }: HeaderProps) {
                       setIsProfileMenuOpen(false)
                     }}
                   >
-                    <Icon name="check" size={16} /> Set Status
+                    <Icon name="check" size={16} /> Set status
                   </button>
-                  <Link
-                    to="/monitoring"
-                    className="nav-profile-menu-item"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false)
-                      setIsMenuOpen(false)
-                    }}
-                  >
-                    <Icon name="location" size={16} /> Live GPS
-                  </Link>
-                  <Link
-                    to="/settings"
-                    className="nav-profile-menu-item"
-                    onClick={() => {
-                      setIsProfileMenuOpen(false)
-                      setIsMenuOpen(false)
-                    }}
-                  >
-                    <Icon name="settings" size={16} /> Settings
-                  </Link>
                   <button
                     type="button"
                     className="nav-profile-menu-item is-danger"

@@ -72,19 +72,35 @@ export default function SettingsPage() {
 
   const isOwner = user?.role === 'owner'
 
+  // Nine tabs wrapped onto two rows, which is where a tab bar stops being
+  // navigation and starts being a list to read. Grouped into five related
+  // panels instead - the individual sections below are untouched, they just
+  // share a tab now. Every tab shows for both roles; the owner-only sections
+  // inside keep their own guards, so a dispatcher opening People simply sees
+  // Team and nothing else.
   type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'drivers' | 'dispatchers' | 'team' | 'security'
-  const [activeSection, setActiveSection] = useState<SettingsSection>('company')
-  const SETTINGS_NAV: { key: SettingsSection; label: string; icon: Parameters<typeof Icon>[0]['name']; ownerOnly?: boolean }[] = [
-    { key: 'company', label: 'Company', icon: 'briefcase' },
-    { key: 'preferences', label: 'App Preferences', icon: 'monitor' },
-    { key: 'billing', label: 'Billing', icon: 'money' },
+  type SettingsTab = 'general' | 'billing' | 'integrations' | 'people' | 'security'
+
+  const TAB_SECTIONS: Record<SettingsTab, SettingsSection[]> = {
+    general: ['company', 'preferences'],
+    billing: ['billing'],
+    integrations: ['integrations', 'alerts'],
+    people: ['drivers', 'dispatchers', 'team'],
+    security: ['security'],
+  }
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const SETTINGS_NAV: { key: SettingsTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
+    { key: 'general', label: 'General', icon: 'briefcase' },
+    { key: 'people', label: 'People', icon: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'email' },
-    { key: 'alerts', label: 'Location Alerts', icon: 'location', ownerOnly: true },
-    { key: 'drivers', label: 'Drivers', icon: 'drivers', ownerOnly: true },
-    { key: 'dispatchers', label: 'Dispatchers', icon: 'check', ownerOnly: true },
-    { key: 'team', label: 'Team', icon: 'users' },
+    { key: 'billing', label: 'Billing', icon: 'money' },
     { key: 'security', label: 'Security', icon: 'shield' },
   ]
+
+  /** Class for a section block - visible when its tab is the active one. */
+  const sectionClass = (section: SettingsSection) =>
+    `settings-section ${TAB_SECTIONS[activeTab].includes(section) ? '' : 'settings-section-hidden'}`
 
   const loadAll = async () => {
     if (!user) return
@@ -463,12 +479,12 @@ export default function SettingsPage() {
         )}
 
         <nav className="settings-nav">
-          {SETTINGS_NAV.filter((item) => !item.ownerOnly || isOwner).map((item) => (
+          {SETTINGS_NAV.map((item) => (
             <button
               key={item.key}
               type="button"
-              className={`settings-nav-item ${activeSection === item.key ? 'is-active' : ''}`}
-              onClick={() => setActiveSection(item.key)}
+              className={`settings-nav-item ${activeTab === item.key ? 'is-active' : ''}`}
+              onClick={() => setActiveTab(item.key)}
             >
               <Icon name={item.icon} size={16} /> {item.label}
             </button>
@@ -476,7 +492,7 @@ export default function SettingsPage() {
         </nav>
 
         {/* ---------------- Company info ---------------- */}
-        <section className={`settings-section ${activeSection === 'company' ? '' : 'settings-section-hidden'}`}>
+        <section className={sectionClass('company')}>
           <h2 className="section-title">Company</h2>
           <div className="card">
             <div className="settings-row">
@@ -495,7 +511,7 @@ export default function SettingsPage() {
         </section>
 
         {/* ---------------- App Preferences ---------------- */}
-        <section className={`settings-section ${activeSection === 'preferences' ? '' : 'settings-section-hidden'}`}>
+        <section className={sectionClass('preferences')}>
           <h2 className="section-title">App Preferences</h2>
           <div className="card">
             <div className="pref-row">
@@ -539,7 +555,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Billing ---------------- */}
         {billing && (
-          <section className={`settings-section ${activeSection === 'billing' ? '' : 'settings-section-hidden'}`}>
+          <section className={sectionClass('billing')}>
             <h2 className="section-title">Billing</h2>
             <div className="card billing-card">
               <div className="billing-row">
@@ -576,7 +592,7 @@ export default function SettingsPage() {
         )}
 
         {/* ---------------- Integrations ---------------- */}
-        <section className={`settings-section ${activeSection === 'integrations' ? '' : 'settings-section-hidden'}`}>
+        <section className={sectionClass('integrations')}>
           <h2 className="section-title">Integrations</h2>
 
           <div className="card integration-card">
@@ -586,12 +602,43 @@ export default function SettingsPage() {
                 <h3>Gmail</h3>
                 <p>Automatically finds rate confirmations in this inbox and sends PODs to brokers.</p>
               </div>
-              <span className={`status-badge ${settings?.gmail_connected ? 'is-connected' : 'is-disconnected'}`}>
-                {settings?.gmail_connected ? 'Connected' : 'Not connected'}
+              {/* Three states, not two: a stored token that Google has since
+                  revoked still counts as "connected", but nothing works -
+                  showing it as plain Connected is what made the dashboard's
+                  "reconnect it in Settings" banner lead to a dead end. */}
+              <span
+                className={`status-badge ${
+                  settings?.gmail_needs_reconnect
+                    ? 'is-warning'
+                    : settings?.gmail_connected
+                      ? 'is-connected'
+                      : 'is-disconnected'
+                }`}
+              >
+                {settings?.gmail_needs_reconnect
+                  ? 'Needs reconnect'
+                  : settings?.gmail_connected
+                    ? 'Connected'
+                    : 'Not connected'}
               </span>
             </div>
+            {settings?.gmail_needs_reconnect && (
+              <p className="integration-warning">
+                Google has stopped accepting this connection, so rate confirmations aren't being read.
+                Reconnecting takes a few seconds and fixes it.
+              </p>
+            )}
             <div className="integration-actions">
-              {settings?.gmail_connected ? (
+              {settings?.gmail_needs_reconnect ? (
+                <>
+                  <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
+                    Reconnect Gmail
+                  </button>
+                  <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
+                    Disconnect
+                  </button>
+                </>
+              ) : settings?.gmail_connected ? (
                 <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
                   Disconnect
                 </button>
@@ -630,7 +677,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Location alerts ---------------- */}
         {isOwner && (
-          <section className={`settings-section ${activeSection === 'alerts' ? '' : 'settings-section-hidden'}`}>
+          <section className={sectionClass('alerts')}>
             <h2 className="section-title">Location alerts</h2>
             <div className="card">
               <p className="settings-hint">
@@ -699,7 +746,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Drivers ---------------- */}
         {isOwner && (
-          <section className={`settings-section ${activeSection === 'drivers' ? '' : 'settings-section-hidden'}`}>
+          <section className={sectionClass('drivers')}>
             <h2 className="section-title">Drivers</h2>
             <div className="card">
               {drivers.length > 0 ? (
@@ -777,7 +824,7 @@ export default function SettingsPage() {
 
         {/* ---------------- Dispatchers ---------------- */}
         {isOwner && (
-          <section className={`settings-section ${activeSection === 'dispatchers' ? '' : 'settings-section-hidden'}`}>
+          <section className={sectionClass('dispatchers')}>
             <h2 className="section-title">Dispatchers</h2>
 
             <div className="card">
@@ -837,7 +884,7 @@ export default function SettingsPage() {
         )}
 
         {/* ---------------- Team - read-only roster, available to owner and dispatcher ---------------- */}
-        <section className={`settings-section ${activeSection === 'team' ? '' : 'settings-section-hidden'}`}>
+        <section className={sectionClass('team')}>
           <h2 className="section-title">Team</h2>
           <div className="card">
             {team.length > 0 ? (
@@ -859,7 +906,7 @@ export default function SettingsPage() {
         </section>
 
         {/* ---------------- Security (2FA) - available to owner and dispatcher ---------------- */}
-        <section className={`settings-section ${activeSection === 'security' ? '' : 'settings-section-hidden'}`}>
+        <section className={sectionClass('security')}>
           <h2 className="section-title">Security</h2>
           <TwoFactorSettings />
         </section>

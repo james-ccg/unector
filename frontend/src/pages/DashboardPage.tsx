@@ -12,6 +12,7 @@ import {
 } from '../services/api'
 import { PLAN_LABELS } from '../lib/plans'
 import './DashboardPage.css'
+import { formatCount, formatMoney } from '../lib/format'
 
 // Named for what the dispatcher is waiting on next, not for the bot command
 // that sets the status - "Awaiting BOL" is actionable, "loaded" isn't.
@@ -281,7 +282,7 @@ export default function DashboardPage() {
               <span className="stat-label">Loads run</span>
             </div>
             <div className="stat">
-              <span className="stat-value">${Math.round(dashboardData?.stats?.weekly_gross || 0).toLocaleString()}</span>
+              <span className="stat-value">{formatMoney(dashboardData?.stats?.weekly_gross)}</span>
               <span className="stat-label">Weekly gross</span>
             </div>
           </div>
@@ -293,7 +294,7 @@ export default function DashboardPage() {
                   <span className="callout-dot on" />
                   <span>
                     Top earner this week: <strong>{topDriver.full_name}</strong> — $
-                    {Math.round(topDriver.weekly_gross).toLocaleString()}
+                    {formatCount(Math.round(topDriver.weekly_gross))}
                   </span>
                 </div>
               )}
@@ -351,7 +352,7 @@ export default function DashboardPage() {
                       />
                       <Tooltip
                         cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                        content={<ChartTooltip formatter={(v: number) => `$${v.toLocaleString()}`} />}
+                        content={<ChartTooltip formatter={(v: number) => formatMoney(v)} />}
                       />
                       <Bar dataKey="gross" fill={CHART_COLORS.amber} radius={[0, 6, 6, 0]} barSize={16} />
                     </BarChart>
@@ -509,7 +510,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="driver-stat">
                       <span className="label">Weekly gross</span>
-                      <span className="value">${Math.round(driver.weekly_gross).toLocaleString()}</span>
+                      <span className="value">{formatMoney(driver.weekly_gross)}</span>
                     </div>
                   </div>
                 </div>
@@ -575,11 +576,11 @@ export default function DashboardPage() {
                   <div className="driver-stats driver-detail-stats">
                     <div className="driver-stat">
                       <span className="label">Weekly gross</span>
-                      <span className="value">${Math.round(driverDetail.weekly_gross).toLocaleString()}</span>
+                      <span className="value">{formatMoney(driverDetail.weekly_gross)}</span>
                     </div>
                     <div className="driver-stat">
                       <span className="label">Total gross</span>
-                      <span className="value">${Math.round(driverDetail.total_gross).toLocaleString()}</span>
+                      <span className="value">{formatMoney(driverDetail.total_gross)}</span>
                     </div>
                     <div className="driver-stat">
                       <span className="label">This week</span>
@@ -646,7 +647,7 @@ export default function DashboardPage() {
                               <td>{load.broker_name || '—'}</td>
                               <td>{load.pu_date || '—'}</td>
                               <td>{load.del_date || '—'}</td>
-                              <td>{load.rate_amount ? `$${Math.round(load.rate_amount).toLocaleString()}` : '—'}</td>
+                              <td>{load.rate_amount ? formatMoney(load.rate_amount) : '—'}</td>
                               <td>{load.status}</td>
                             </tr>
                           ))}

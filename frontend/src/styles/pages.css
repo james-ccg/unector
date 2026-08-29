@@ -1,11 +1,11 @@
 /* Shared Page Styles */
 .page-container {
-  padding: 40px 0 80px;
+  padding: 32px 0 64px;
 }
 
 .page-header {
   text-align: center;
-  margin-bottom: 60px;
+  margin-bottom: 44px;
 }
 
 .page-title {
@@ -14,7 +14,7 @@
   gap: 14px;
   font-family: var(--font-display);
   /* Fluid - see the note on .hero-title in HomePage.css. */
-  font-size: clamp(28px, 4vw, 42px);
+  font-size: clamp(26px, 3vw, 34px);
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 16px;
@@ -265,17 +265,17 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 24px;
-  margin-bottom: 80px;
+  margin-bottom: 56px;
 }
 
 .stat-card {
   text-align: center;
-  padding: 40px 24px;
+  padding: 28px 20px;
 }
 
 .stat-number {
   font-family: var(--font-display);
-  font-size: clamp(36px, 5vw, 56px);
+  font-size: clamp(32px, 4vw, 44px);
   font-weight: 800;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   -webkit-background-clip: text;
@@ -284,7 +284,7 @@
 }
 
 .stat-label {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 8px;
@@ -298,7 +298,7 @@
 
 /* Testimonials */
 .testimonials {
-  margin-top: 80px;
+  margin-top: 56px;
 }
 
 .testimonial-grid {

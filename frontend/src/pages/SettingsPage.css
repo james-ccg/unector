@@ -219,6 +219,18 @@
   color: var(--hint);
   border: 1px solid var(--border);
 }
+/* Connected-but-broken: reads as a problem, not as an off switch. */
+.status-badge.is-warning {
+  background: rgba(214, 62, 62, 0.14);
+  color: var(--red);
+  border: 1px solid rgba(214, 62, 62, 0.32);
+}
+.integration-warning {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
 .integration-actions {
   display: flex;
   justify-content: flex-end;
