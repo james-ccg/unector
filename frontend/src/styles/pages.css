@@ -13,10 +13,12 @@
   align-items: center;
   gap: 14px;
   font-family: var(--font-display);
-  font-size: 42px;
+  /* Fluid - see the note on .hero-title in HomePage.css. */
+  font-size: clamp(28px, 4vw, 42px);
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 16px;
+  text-wrap: balance;
 }
 
 .page-title svg {
@@ -196,7 +198,7 @@
 
 .price-amount {
   font-family: var(--font-display);
-  font-size: 48px;
+  font-size: clamp(34px, 4.5vw, 48px);
   font-weight: 800;
   color: var(--text-primary);
 }
@@ -273,7 +275,7 @@
 
 .stat-number {
   font-family: var(--font-display);
-  font-size: 56px;
+  font-size: clamp(36px, 5vw, 56px);
   font-weight: 800;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   -webkit-background-clip: text;
@@ -453,23 +455,44 @@
 }
 
 @media screen and (max-width: 768px) {
-  .page-title {
-    font-size: 32px;
+  /* .page-title / .stat-number are fluid (clamp) above - no override needed. */
+  .page-container {
+    padding: 28px 0 56px;
+  }
+
+  .page-header {
+    margin-bottom: 40px;
   }
 
   .pricing-grid {
     grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .pricing-card {
+    padding: 26px 22px;
   }
 
   .pricing-card.featured {
     transform: scale(1);
   }
 
-  .stat-number {
-    font-size: 42px;
+  .stat-card {
+    padding: 28px 18px;
   }
 
   .stats-showcase {
     grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  .legal-content h2 {
+    font-size: 20px;
+  }
+}
+
+@media screen and (max-width: 460px) {
+  .stats-showcase {
+    grid-template-columns: 1fr;
   }
 }

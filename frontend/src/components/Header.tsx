@@ -90,6 +90,13 @@ export default function Header({ transparent = false }: HeaderProps) {
             </li>
             {isAuthenticated && (
               <li className="nav-item nav-item-mobile-only">
+                <Link to="/dashboard" className="nav-link" onClick={() => setIsMenuOpen(false)}>
+                  Dashboard
+                </Link>
+              </li>
+            )}
+            {isAuthenticated && (
+              <li className="nav-item nav-item-mobile-only">
                 <Link to="/monitoring" className="nav-link" onClick={() => setIsMenuOpen(false)}>
                   Live GPS
                 </Link>
@@ -121,6 +128,16 @@ export default function Header({ transparent = false }: HeaderProps) {
               </button>
               {isProfileMenuOpen && (
                 <div className="nav-profile-menu">
+                  <Link
+                    to="/dashboard"
+                    className="nav-profile-menu-item"
+                    onClick={() => {
+                      setIsProfileMenuOpen(false)
+                      setIsMenuOpen(false)
+                    }}
+                  >
+                    <Icon name="truck" size={16} /> Dashboard
+                  </Link>
                   <button
                     type="button"
                     className="nav-profile-menu-item"

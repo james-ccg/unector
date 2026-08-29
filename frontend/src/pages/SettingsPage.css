@@ -55,6 +55,17 @@
   color: var(--text);
 }
 
+/* Also defined in LoginPage.css (the 2FA login step uses it too), but
+   TwoFactorSettings renders here on /settings, which never loads that
+   route's chunk - so these hints rendered unstyled. Kept identical to the
+   LoginPage copy so the same element reads the same in both places. */
+.method-hint {
+  color: var(--hint);
+  font-size: 13px;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
 /* ---------- Banners ---------- */
 .banner {
   display: flex;
@@ -84,14 +95,23 @@
 .banner-close {
   background: none;
   border: none;
+  border-radius: 6px;
   color: inherit;
   cursor: pointer;
   font-size: 13px;
   opacity: 0.7;
   flex-shrink: 0;
+  /* See the .modal-close note in DashboardPage.css - an icon-only control
+     needs a real target box, not just the glyph's own 14px. */
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .banner-close:hover {
   opacity: 1;
+  background: rgba(127, 127, 127, 0.14);
 }
 
 /* ---------- Company info rows ---------- */
