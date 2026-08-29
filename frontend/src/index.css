@@ -36,6 +36,10 @@
   --primary-dark: #a3d81a;
   --gradient-start: #ddff6b;
   --gradient-end: #9fd400;
+  /* Text that sits ON a --primary surface. Needed as a token because
+     --primary flips from signal-lime to near-black in light mode: a
+     hardcoded dark ink is right on lime and unreadable on black. */
+  --on-primary: #161616;
 
   /* Signal colors - same language as the Telegram bot's 🟢PU / 🔴DEL.
      Kept out of lime's hue range on purpose, so a status color is never
@@ -89,6 +93,8 @@
     --primary-dark: #000000;
     --gradient-start: #c3f832;
     --gradient-end: #86b800;
+    /* Light ink, because --primary is near-black here. */
+    --on-primary: #f5f4f0;
 
     --green: #1e9e56;
     --red: #d63e3e;
@@ -118,6 +124,8 @@
   --primary-dark: #000000;
   --gradient-start: #c3f832;
   --gradient-end: #86b800;
+  /* Light ink, because --primary is near-black here. */
+  --on-primary: #f5f4f0;
 
   --green: #1e9e56;
   --red: #d63e3e;

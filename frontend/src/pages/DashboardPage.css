@@ -363,16 +363,15 @@
    specificity so the app's own flatter button style actually applies, and
    the padding/font are restated for the same reason. */
 .btn.btn-primary {
-  background: var(--accent);
-  color: #161616;
-  box-shadow: none;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: var(--on-primary);
+  box-shadow: 0 4px 12px rgba(195, 248, 50, 0.28);
   padding: 10px 20px;
   font-size: 14px;
 }
 .btn.btn-primary:hover {
-  background: var(--accent-dark);
-  transform: none;
-  box-shadow: none;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(195, 248, 50, 0.38);
 }
 .btn-primary:disabled {
   opacity: 0.5;

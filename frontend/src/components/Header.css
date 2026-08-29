@@ -48,7 +48,7 @@
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 16px;
-  color: #161616;
+  color: var(--on-primary);
   box-shadow: 0 4px 12px rgba(195, 248, 50, 0.28);
 }
 
@@ -122,7 +122,7 @@
 
 .btn-primary {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #161616;
+  color: var(--on-primary);
   box-shadow: 0 4px 12px rgba(195, 248, 50, 0.28);
 }
 

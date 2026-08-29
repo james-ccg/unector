@@ -136,7 +136,7 @@
 
 .pricing-pill-option.active {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #161616;
+  color: var(--on-primary);
 }
 
 .pricing-grid {
@@ -181,7 +181,7 @@
 
 .pricing-badge.featured {
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  color: #161616;
+  color: var(--on-primary);
 }
 
 .pricing-name {
