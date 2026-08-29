@@ -4,43 +4,27 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 
 const STORAGE_KEY = 'fp-theme'
 
-// "Auto" (preference === 'system') follows the device's setting, but also
-// leans dark late at night even on a device that doesn't say so (e.g. no
-// prefers-color-scheme support, or a desktop left on "light" that nobody's
-// going to change just for one evening session). The device preference
-// still wins whenever it actively says dark - night hours only ever push
-// TOWARD dark, never override an explicit light-during-the-day signal from
-// a device that actually supports the media query and prefers light while
-// it's dark out for the user (unusual, but the device's stated preference
-// is still the stronger signal of the two).
-const NIGHT_START_HOUR = 19 // 7pm
-const NIGHT_END_HOUR = 7 // 7am
-
-function isLocalNightTime(): boolean {
-  const hour = new Date().getHours()
-  return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR
-}
-
+// "Auto" (preference === 'system') follows the device's setting, and only
+// that. It used to also flip to dark after 7pm on a device that hadn't
+// asked for it, which meant simply reloading the page in the evening
+// changed the theme out from under you - surprising on its own, and
+// indistinguishable from a bug when it happened. Auto now means what it
+// says everywhere else: mirror the OS.
 function resolveTheme(preference: ThemePreference): 'light' | 'dark' {
   if (preference === 'system') {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    if (media.matches) return 'dark'
-    // matchMedia can't distinguish "device actively prefers light" from "no
-    // preference is exposed at all" - media.matches on the dark query being
-    // false covers both, so time is free to weigh in either way here.
-    return isLocalNightTime() ? 'dark' : 'light'
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   }
   return preference
 }
 
 function applyTheme(preference: ThemePreference) {
-  // "system"/Auto stamps its CURRENT resolution (system preference, falling
-  // back to the time-of-day rule) as an explicit data-theme - it can't just
-  // remove the attribute and lean on index.css's prefers-color-scheme
-  // media query the way a pure system-only toggle could, since that query
-  // has no way to know it's nighttime. index.html's anti-flash script
-  // mirrors this same resolution for the instant before React mounts.
-  document.documentElement.setAttribute('data-theme', preference === 'system' ? resolveTheme('system') : preference)
+  // Auto stamps its current resolution as an explicit data-theme rather than
+  // clearing the attribute and leaning on index.css's prefers-color-scheme
+  // block. Both would render the same thing, but keeping the attribute
+  // always present means resolvedTheme (which components read) can never
+  // disagree with what's actually on screen. index.html's anti-flash script
+  // mirrors this for the instant before React mounts.
+  document.documentElement.setAttribute('data-theme', resolveTheme(preference))
 }
 
 interface ThemeContextValue {
@@ -70,11 +54,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Re-stamp on mount so React is the single source of truth for data-theme.
   // index.html's anti-flash script sets it first, but nothing here ever
   // re-applied it afterwards - so any disagreement between the two (storage
-  // that reads back empty, a write that silently failed, the two resolving
-  // 'system' either side of the night-hours boundary) left the page showing
-  // one theme while Settings showed another, with no way to self-correct.
-  // resolvedTheme is already correct from its own initializer - this effect
-  // only pushes that resolution out to the DOM.
+  // that reads back empty, a write that silently failed) left the page
+  // showing one theme while Settings showed another, with no way to
+  // self-correct. resolvedTheme is already right from its own initializer;
+  // this effect only pushes that resolution out to the DOM.
   useEffect(() => {
     applyTheme(preference)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,10 +77,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // If the user is on "auto", re-resolve live while the tab stays open -
-  // both when the OS theme changes (e.g. switches to dark mode at sunset)
-  // and, separately, when the clock crosses the night/day boundary this
-  // module's own time-of-day rule uses.
+  // On "auto", follow the OS live while the tab stays open. This used to
+  // also poll on a 5-minute timer, purely so the retired time-of-day rule
+  // could take effect mid-session; with Auto now meaning "mirror the OS",
+  // the media query's own change event is the only signal there is.
   useEffect(() => {
     if (preference !== 'system') return
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -106,11 +89,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setResolvedTheme(resolveTheme('system'))
     }
     media.addEventListener('change', onChange)
-    const interval = window.setInterval(onChange, 5 * 60 * 1000)
-    return () => {
-      media.removeEventListener('change', onChange)
-      window.clearInterval(interval)
-    }
+    return () => media.removeEventListener('change', onChange)
   }, [preference])
 
   return (

@@ -1,11 +1,46 @@
 """
 Test database models and repository functions.
 """
+import itertools
+
 import pytest
-import uuid
 from db.database import init_db, get_session
 from db import models, repository
 from miniapp.auth import hash_password
+
+
+# Unique identifiers for rows these tests create. Previously these were
+# sliced off the front of a uuid4 integer (str(uuid.uuid4().int)[:4]), which
+# looks random but is badly skewed: a uuid4 int is uniform over
+# [0, 2**128), and 2**128 is ~3.4e38, so the decimal form nearly always
+# starts with 1, 2 or 3 - measured, 65% of four-digit slices begin with 1
+# or 2, and 200k draws only ever produced ~8,990 of the nominal 10,000
+# values. Against the unique-constrained telegram_group_prefix that left
+# roughly a 1-in-100 chance per run of an IntegrityError in whichever test
+# happened to draw second, which is exactly the intermittent failure this
+# replaces. A counter cannot collide by construction.
+_ids = itertools.count(1)
+
+
+def _unique_mc() -> str:
+    """A six-digit MC number unique within this run. Zero-padded, so it also
+    can't collide with the hardcoded MC numbers over in test_api.py (which
+    share this database and all start with a non-zero digit)."""
+    return f"{next(_ids):06d}"
+
+
+def _unique_prefix(mc: str) -> str:
+    """Derived from the whole MC number, not a slice of it - a four-digit
+    slice of a zero-padded counter would be "0000" for the first 10,000
+    values, reintroducing the very collision this avoids."""
+    return f"T{mc}"
+
+
+def _unique_account_id() -> int:
+    """A synthetic account/company id for tables that only store the id as a
+    plain integer (credentials, 2FA). Offset well clear of the real
+    auto-increment ids the other tests create, which start at 1."""
+    return 9_000_000 + next(_ids)
 
 
 @pytest.fixture(scope="module")
@@ -20,8 +55,8 @@ class TestDatabaseModels:
     
     def test_create_company(self, setup_db):
         """Test creating a company"""
-        unique_mc = str(uuid.uuid4().int)[:6]  # Unique MC number
-        unique_prefix = f"T{unique_mc[:4]}"
+        unique_mc = _unique_mc()
+        unique_prefix = _unique_prefix(unique_mc)
         
         with get_session() as session:
             company = models.Company(
@@ -50,7 +85,7 @@ class TestCompanyCredentials:
     API's perspective, and "disconnect" always crashed."""
 
     def test_get_company_credential_returns_decrypted_value_when_present(self, setup_db):
-        company_id = int(str(uuid.uuid4().int)[:8])
+        company_id = _unique_account_id()
         repository.save_company_credential(company_id, "gmail_refresh_token", "super-secret-token")
 
         result = repository.get_company_credential(company_id, "gmail_refresh_token")
@@ -61,7 +96,7 @@ class TestCompanyCredentials:
         assert result is None
 
     def test_delete_company_credential_removes_it_without_raising(self, setup_db):
-        company_id = int(str(uuid.uuid4().int)[:8])
+        company_id = _unique_account_id()
         repository.save_company_credential(company_id, "samsara_api_key", "some-api-key")
         assert repository.get_company_credential(company_id, "samsara_api_key") == "some-api-key"
 
@@ -75,8 +110,8 @@ class TestRepository:
 
     def test_get_company_by_mc(self, setup_db):
         """Test getting company by MC number"""
-        unique_mc = str(uuid.uuid4().int)[:6]
-        unique_prefix = f"T{unique_mc[:4]}"
+        unique_mc = _unique_mc()
+        unique_prefix = _unique_prefix(unique_mc)
         
         # First create a test company
         with get_session() as session:
@@ -106,7 +141,7 @@ class TestWebauthnChallengeRepository:
     requires (see models.WebauthnChallenge's docstring)."""
 
     def test_consume_returns_the_stored_challenge_once(self, setup_db):
-        account_id = int(str(uuid.uuid4().int)[:8])
+        account_id = _unique_account_id()
         repository.create_webauthn_challenge("owner", account_id, "register", "abc123challenge")
 
         first = repository.consume_webauthn_challenge("owner", account_id, "register")
@@ -116,8 +151,11 @@ class TestWebauthnChallengeRepository:
         assert second is None
 
     def test_consume_is_scoped_to_account_and_purpose(self, setup_db):
-        account_id = int(str(uuid.uuid4().int)[:8])
-        other_account_id = account_id + 1
+        account_id = _unique_account_id()
+        # From the counter, not account_id + 1 - the next id the counter
+        # hands out IS account_id + 1, so deriving it that way would alias a
+        # later test's account.
+        other_account_id = _unique_account_id()
         repository.create_webauthn_challenge("owner", account_id, "register", "for-registration")
         repository.create_webauthn_challenge("owner", account_id, "login", "for-login")
 
@@ -130,7 +168,7 @@ class TestWebauthnChallengeRepository:
         assert repository.consume_webauthn_challenge("owner", account_id, "login") == "for-login"
 
     def test_consume_with_no_challenge_ever_issued_returns_none(self, setup_db):
-        account_id = int(str(uuid.uuid4().int)[:8])
+        account_id = _unique_account_id()
         assert repository.consume_webauthn_challenge("owner", account_id, "register") is None
 
 
@@ -141,12 +179,12 @@ class TestDriverDetailsTotalLoads:
     db/repository.py's get_driver_details."""
 
     def test_total_loads_counts_beyond_the_50_row_history_cap(self, setup_db):
-        unique_mc = str(uuid.uuid4().int)[:6]
+        unique_mc = _unique_mc()
         with get_session() as session:
             company = models.Company(
                 mc_number=unique_mc,
                 company_name=f"Total Loads Test {unique_mc}",
-                telegram_group_prefix=f"T{unique_mc[:4]}",
+                telegram_group_prefix=_unique_prefix(unique_mc),
             )
             session.add(company)
             session.commit()
@@ -174,12 +212,12 @@ class TestDriverRepository:
     see bot.py's handle_linkdriver and miniapp/api.py's POST /api/drivers)."""
 
     def _make_company_id(self) -> int:
-        unique_mc = str(uuid.uuid4().int)[:6]
+        unique_mc = _unique_mc()
         with get_session() as session:
             company = models.Company(
                 mc_number=unique_mc,
                 company_name=f"Driver Repo Test {unique_mc}",
-                telegram_group_prefix=f"T{unique_mc[:4]}",
+                telegram_group_prefix=_unique_prefix(unique_mc),
             )
             session.add(company)
             session.commit()

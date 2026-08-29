@@ -29,16 +29,12 @@
         if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
           theme = 'system';
         }
-        // "system"/Auto mirrors ThemeContext.tsx's resolveTheme(): the
-        // device's own preference wins whenever it actively says dark;
-        // otherwise it falls back to a simple night-hours-are-dark rule
-        // (matching device-says-light-but-it's-late, or no media query
-        // support at all) rather than defaulting to light either way.
+        // "system"/Auto mirrors ThemeContext.tsx's resolveTheme(): follow
+        // the device, and nothing else. Keep the two in step - if they ever
+        // resolve differently, the page paints one theme and React then
+        // corrects it, which is a visible flash.
         if (theme === 'system') {
-          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var hour = new Date().getHours();
-          var isNight = hour >= 19 || hour < 7;
-          theme = prefersDark || isNight ? 'dark' : 'light';
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', theme);
 
