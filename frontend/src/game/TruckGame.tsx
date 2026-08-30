@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Matter from 'matter-js'
 import { generateRoute, SEGMENT_WIDTH, type Route } from './route'
+import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
   createWorld, loadCrate, drive, brake, updateCargoState, currentPayout,
   type TruckWorld,
@@ -32,7 +33,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const worldRef = useRef<TruckWorld | null>(null)
   const inputRef = useRef({ throttle: 0, braking: false })
 
+  const [ticket, setTicket] = useState<Ticket | null>(null)
   const [route, setRoute] = useState<Route>(() => generateRoute(seed ?? (Math.random() * 2 ** 31) | 0))
+  const startedAt = useRef(0)
   const [phase, setPhase] = useState<Phase>('loading')
   const [placed, setPlaced] = useState(0)
   const [payout, setPayout] = useState(0)
@@ -49,12 +52,32 @@ export default function TruckGame({ seed, onFinish }: Props) {
     }
   }, [route])
 
-  const startOver = useCallback((nextSeed?: number) => {
-    setRoute(generateRoute(nextSeed ?? (Math.random() * 2 ** 31) | 0))
+  const startOver = useCallback(() => {
+    // A ticket carries the seed, so taking one is what picks the route. With
+    // none left (signed out, or offline having used the batch) the game still
+    // plays on a local seed - it just can't be submitted, which submitRun
+    // handles by having nothing to send.
+    const next = claimTicket()
+    setTicket(next)
+    setRoute(generateRoute(next ? next.seed : (Math.random() * 2 ** 31) | 0))
     setPhase('loading')
     setPlaced(0)
     setPayout(0)
     setProgress(0)
+  }, [])
+
+  // Top up tickets and push any runs finished offline, on load and whenever
+  // the connection comes back.
+  useEffect(() => {
+    const sync = () => {
+      void refillTickets().then(() => {
+        setTicket((current) => current ?? claimTicket())
+      })
+      void flushQueue()
+    }
+    sync()
+    window.addEventListener('online', sync)
+    return () => window.removeEventListener('online', sync)
   }, [])
 
   // ---- loading: drop the next crate at a chosen offset -----------------
@@ -67,6 +90,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
   const depart = () => {
     if (placed === 0) return
+    startedAt.current = performance.now()
     setPhase('driving')
   }
 
@@ -200,6 +224,15 @@ export default function TruckGame({ seed, onFinish }: Props) {
           setPhase(reached ? 'arrived' : 'failed')
           setPayout(final)
           onFinish?.({ payout: final, delivered, lost })
+          if (ticket) {
+            void submitRun({
+              token: ticket.token,
+              payout: final,
+              delivered,
+              lost,
+              duration_ms: Math.round(performance.now() - startedAt.current),
+            })
+          }
         }
       }
 
@@ -211,7 +244,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [route, phase, onFinish])
+  }, [route, phase, onFinish, ticket])
 
   // ---- keyboard --------------------------------------------------------
   useEffect(() => {
@@ -325,7 +358,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
                 ? `$${payout.toLocaleString('en-US')} of $${route.maxPayout.toLocaleString('en-US')} arrived intact.`
                 : 'Everything came off the trailer before the drop.'}
             </p>
-            <button type="button" className="btn btn-primary" onClick={() => startOver()}>
+            <button type="button" className="btn btn-primary" onClick={startOver}>
               New route
             </button>
           </div>

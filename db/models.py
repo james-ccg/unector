@@ -403,3 +403,61 @@ class TrialRedemption(Base):
     gmail_address: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     redeemed_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
+class GameSession(Base):
+    """A ticket to play one run, issued by the server before the run starts.
+
+    This is what makes the leaderboard defensible. The server picks the seed,
+    so it can regenerate the route (services/game_route.py) and know the most
+    that route could possibly pay; a submitted score above that is a lie. The
+    token is single-use, so the same good run can't be replayed for points.
+
+    Issued in batches on purpose: the game has to work with no connection, and
+    a client that can't reach the server can't ask for a ticket at kickoff.
+    Handing out several while online lets someone play offline and submit
+    later, without the client ever getting to choose its own seed."""
+    __tablename__ = "game_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+
+    seed: Mapped[int] = mapped_column()
+    # Cached so validating a submission doesn't have to regenerate the route,
+    # and so a later change to route generation can't retroactively invalidate
+    # tickets already in someone's pocket.
+    max_payout: Mapped[int] = mapped_column()
+
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class GameScore(Base):
+    """A completed, server-validated run.
+
+    Only written after the submission passed every check in
+    repository.record_game_score, so anything in this table can be shown on
+    the leaderboard without further question."""
+    __tablename__ = "game_scores"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column()
+    # Denormalised so the board can be listed without joining across owners
+    # and dispatchers, which live in separate tables.
+    display_name: Mapped[str] = mapped_column(String(120))
+
+    payout: Mapped[int] = mapped_column()
+    delivered: Mapped[int] = mapped_column()
+    lost: Mapped[int] = mapped_column()
+    seed: Mapped[int] = mapped_column()
+    duration_ms: Mapped[int] = mapped_column()
+
+    # When the server accepted it. Deliberately the basis for which week or
+    # month a score belongs to, rather than any timestamp the client sent -
+    # a device clock is not evidence.
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)

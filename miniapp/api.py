@@ -700,6 +700,93 @@ def get_team(user: dict = Depends(get_current_user)):
     return get_team_roster(user["company_id"])
 
 
+# ------------------------------------------------------------------
+# Offline truck game - /play. Tickets, score submission, leaderboard.
+# ------------------------------------------------------------------
+# Enough to cover a decent stretch with no connection without becoming a way
+# to bank a large number of attempts.
+MAX_GAME_SESSIONS = 5
+
+
+class GameScoreSubmission(BaseModel):
+    token: str
+    payout: int
+    delivered: int
+    lost: int
+    duration_ms: int
+
+
+def _display_name(user: dict) -> str:
+    return user.get("username") or user.get("company_name") or "Driver"
+
+
+@app.post("/api/game/sessions")
+@limiter.limit("20/minute")
+def issue_game_session(
+    request: Request, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    """Hands out play tickets, topping the account back up to
+    MAX_GAME_SESSIONS. Each carries a server-chosen seed.
+
+    Batched deliberately: the game is meant to work offline, and a client with
+    no connection can't ask for a ticket when the run starts. Pre-issuing lets
+    someone play offline and submit afterwards while keeping the seed - and so
+    the ceiling on what the route can pay - out of the client's hands."""
+    from db.repository import count_unconsumed_sessions, issue_game_sessions
+
+    account_type, account_id = _self_account(user)
+    have = count_unconsumed_sessions(account_type, account_id)
+    needed = max(0, MAX_GAME_SESSIONS - have)
+    issued = issue_game_sessions(account_type, account_id, needed) if needed else []
+    return {"issued": issued, "held": have + len(issued)}
+
+
+@app.post("/api/game/scores")
+@limiter.limit("30/minute")
+def submit_game_score(
+    request: Request, body: GameScoreSubmission,
+    user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    """Records a run, if it survives validation.
+
+    What this proves: the ticket was real, unused, issued to this account and
+    still valid, and the claimed payout is within what that route could
+    possibly pay. That defeats the realistic attacks on a browser leaderboard
+    - editing localStorage, replaying a good run, or POSTing an arbitrary
+    number.
+
+    What it does NOT prove: that the run was actually played. The physics runs
+    on the client, so someone who scripts plausible-looking input and posts a
+    believable payout inside the ceiling will get through. Closing that would
+    mean re-simulating the run server-side, which needs the physics to be
+    deterministic across platforms - it isn't, with a float-based rigid-body
+    engine - or shipping a second, simplified simulation and scoring that
+    instead. That was a deliberate trade: real physics for the player, a
+    ceiling rather than a proof for the board."""
+    from db.repository import GameScoreRejected, record_game_score
+
+    account_type, account_id = _self_account(user)
+    try:
+        return record_game_score(
+            account_type, account_id, _display_name(user),
+            body.token, body.payout, body.delivered, body.lost, body.duration_ms,
+        )
+    except GameScoreRejected as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/game/leaderboard")
+def game_leaderboard(period: str = "week"):
+    """Public on purpose - a board nobody can look at without signing in
+    isn't much of a board. Playing still requires an account, since tickets
+    are issued per account."""
+    from db.repository import get_game_leaderboard
+
+    if period not in ("week", "month"):
+        raise HTTPException(400, "period must be 'week' or 'month'")
+    return {"period": period, "entries": get_game_leaderboard(period)}
+
+
 @app.post("/api/auth/logout")
 def logout(response: Response):
     """Clears the session/CSRF cookies. Client-side JS can't read or delete

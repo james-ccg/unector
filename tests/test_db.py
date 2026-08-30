@@ -7,6 +7,7 @@ import pytest
 from db.database import init_db, get_session
 from db import models, repository
 from miniapp.auth import hash_password
+from tests.conftest import unique_mc
 
 
 # Unique identifiers for rows these tests create. Previously these were
@@ -19,14 +20,13 @@ from miniapp.auth import hash_password
 # roughly a 1-in-100 chance per run of an IntegrityError in whichever test
 # happened to draw second, which is exactly the intermittent failure this
 # replaces. A counter cannot collide by construction.
+#
+# The MC allocator lives in conftest so every suite draws from ONE sequence.
+# Two modules each running their own counter produced identical numbers and
+# reintroduced the very collision this was meant to end.
 _ids = itertools.count(1)
 
-
-def _unique_mc() -> str:
-    """A six-digit MC number unique within this run. Zero-padded, so it also
-    can't collide with the hardcoded MC numbers over in test_api.py (which
-    share this database and all start with a non-zero digit)."""
-    return f"{next(_ids):06d}"
+_unique_mc = unique_mc
 
 
 def _unique_prefix(mc: str) -> str:

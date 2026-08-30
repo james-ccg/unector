@@ -1947,3 +1947,184 @@ def clear_account_avatar(account_type: str, account_id: int) -> None:
             models.AccountAvatar.account_id == account_id,
         ).delete()
         session.commit()
+
+
+# ------------------------------------------------------------------
+# Offline truck game - sessions, score validation, leaderboard
+# ------------------------------------------------------------------
+# A ticket is good for this long. Long enough to cover a stretch offline,
+# short enough that a hoard of them isn't a way to bank scores indefinitely.
+GAME_SESSION_TTL = timedelta(days=7)
+# The route is 3600px and the rig cruises at roughly 90px/s, so nothing
+# honest finishes anywhere near this fast. Purely a floor against a script
+# posting instant runs.
+MIN_RUN_MS = 8_000
+MAX_RUN_MS = 60 * 60 * 1000
+
+
+def issue_game_sessions(account_type: str, account_id: int, count: int) -> list[dict]:
+    """Mints single-use tickets, each pinned to a server-chosen seed.
+
+    The client never picks its own seed - that is the whole point. Handing
+    out a batch is what lets the game be played with no connection."""
+    import secrets
+
+    from services.game_route import generate_route
+
+    issued = []
+    with get_session() as session:
+        for _ in range(count):
+            seed = secrets.randbelow(2**31)
+            route = generate_route(seed)
+            token = secrets.token_urlsafe(32)
+            session.add(models.GameSession(
+                token=token,
+                account_type=account_type,
+                account_id=account_id,
+                seed=seed,
+                max_payout=route.max_payout,
+            ))
+            issued.append({"token": token, "seed": seed, "max_payout": route.max_payout})
+        session.commit()
+    return issued
+
+
+def count_unconsumed_sessions(account_type: str, account_id: int) -> int:
+    with get_session() as session:
+        return (
+            session.query(models.GameSession)
+            .filter(
+                models.GameSession.account_type == account_type,
+                models.GameSession.account_id == account_id,
+                models.GameSession.consumed_at.is_(None),
+                models.GameSession.issued_at > datetime.now(timezone.utc) - GAME_SESSION_TTL,
+            )
+            .count()
+        )
+
+
+class GameScoreRejected(Exception):
+    """A submission that failed validation. The message is safe to show."""
+
+
+def record_game_score(
+    account_type: str,
+    account_id: int,
+    display_name: str,
+    token: str,
+    payout: int,
+    delivered: int,
+    lost: int,
+    duration_ms: int,
+) -> dict:
+    """Validates a submitted run and records it, or raises GameScoreRejected.
+
+    Every check here exists because the client is not trusted: it runs the
+    physics, so it could claim anything. What the server can prove is that the
+    ticket was real, unused, and issued to this account, and that the claimed
+    payout is within what the route it named could possibly pay.
+
+    This does NOT re-simulate the run - see the note in
+    miniapp/api.py's submit endpoint about what that would take and what this
+    does and doesn't stop."""
+    if payout < 0 or delivered < 0 or lost < 0:
+        raise GameScoreRejected("Score values must not be negative.")
+    if not MIN_RUN_MS <= duration_ms <= MAX_RUN_MS:
+        raise GameScoreRejected("That run time isn't possible.")
+
+    with get_session() as session:
+        ticket = (
+            session.query(models.GameSession)
+            .filter(models.GameSession.token == token)
+            .first()
+        )
+        if ticket is None:
+            raise GameScoreRejected("Unknown game session.")
+        # Tied to the account it was issued to, so a token can't be handed
+        # around to post scores under someone else's name.
+        if ticket.account_type != account_type or ticket.account_id != account_id:
+            raise GameScoreRejected("That session belongs to another account.")
+        if ticket.consumed_at is not None:
+            raise GameScoreRejected("That run has already been submitted.")
+        if ticket.issued_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) - GAME_SESSION_TTL:
+            raise GameScoreRejected("That session has expired.")
+        if payout > ticket.max_payout:
+            raise GameScoreRejected("Score is higher than that route can pay.")
+
+        ticket.consumed_at = datetime.now(timezone.utc)
+        score = models.GameScore(
+            account_type=account_type,
+            account_id=account_id,
+            display_name=display_name[:120],
+            payout=payout,
+            delivered=delivered,
+            lost=lost,
+            seed=ticket.seed,
+            duration_ms=duration_ms,
+        )
+        session.add(score)
+        session.commit()
+        session.refresh(score)
+        return {
+            "id": score.id,
+            "payout": score.payout,
+            "recorded_at": score.recorded_at.isoformat(),
+        }
+
+
+def get_game_leaderboard(period: str, limit: int = 20) -> list[dict]:
+    """Best single run per account for the current week or month.
+
+    Ranked on one run rather than a total, so the board rewards the best haul
+    someone managed rather than how many times they played."""
+    from sqlalchemy import func
+
+    now = datetime.now(timezone.utc)
+    if period == "week":
+        # Monday as the week start, matching ISO convention.
+        start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+    elif period == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        raise ValueError(f"Unknown leaderboard period: {period!r}")
+
+    with get_session() as session:
+        rows = (
+            session.query(
+                models.GameScore.account_type,
+                models.GameScore.account_id,
+                func.max(models.GameScore.payout).label("best"),
+            )
+            .filter(models.GameScore.recorded_at >= start)
+            .group_by(models.GameScore.account_type, models.GameScore.account_id)
+            .order_by(func.max(models.GameScore.payout).desc())
+            .limit(limit)
+            .all()
+        )
+
+        board = []
+        for rank, (acc_type, acc_id, best) in enumerate(rows, start=1):
+            # The name is read off the run itself, so a display name that has
+            # since changed still shows as it was when the score was set.
+            detail = (
+                session.query(models.GameScore)
+                .filter(
+                    models.GameScore.account_type == acc_type,
+                    models.GameScore.account_id == acc_id,
+                    models.GameScore.payout == best,
+                    models.GameScore.recorded_at >= start,
+                )
+                .order_by(models.GameScore.recorded_at.asc())
+                .first()
+            )
+            board.append({
+                "rank": rank,
+                "name": detail.display_name if detail else "—",
+                "payout": int(best),
+                "delivered": detail.delivered if detail else 0,
+                "lost": detail.lost if detail else 0,
+                "recorded_at": detail.recorded_at.isoformat() if detail else None,
+            })
+        return board

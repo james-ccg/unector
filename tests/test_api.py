@@ -18,31 +18,10 @@ from miniapp.api import app
 from miniapp.auth import CSRF_COOKIE_NAME
 
 
-@pytest.fixture(autouse=True)
-def _disable_turnstile(monkeypatch):
-    """Register/login call out to Cloudflare's live siteverify endpoint
-    whenever TURNSTILE_SECRET_KEY is set - which breaks these tests (no
-    token to send) as soon as a real key is configured in .env. Tests
-    shouldn't depend on a live external service or on what's in .env, so
-    force it off here regardless of the environment's actual config."""
-    monkeypatch.setattr(api_module, "TURNSTILE_SECRET_KEY", None)
-
-
-@pytest.fixture
-def client():
-    # Rate-limit counters live on the shared `app.state.limiter`, not per
-    # TestClient instance - without resetting, tests would trip each
-    # other's limits since they all originate from the same test IP.
-    app.state.limiter.reset()
-    return TestClient(app)
-
-
-def _csrf_headers(client: TestClient) -> dict:
-    """Reads the CSRF cookie the last login/register response set on this
-    client and returns the header a mutating request must send alongside it."""
-    token = client.cookies.get(CSRF_COOKIE_NAME)
-    assert token, "no CSRF cookie set - must log in/register on this client first"
-    return {"X-CSRF-Token": token}
+# client and _disable_turnstile now live in conftest.py - more than one
+# module drives the API, and a fixture defined in a test module is invisible
+# to the others.
+from tests.conftest import csrf_headers as _csrf_headers  # noqa: E402
 
 
 class TestAuth:

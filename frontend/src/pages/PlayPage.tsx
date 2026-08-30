@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 
 const TruckGame = lazy(() => import('../game/TruckGame'))
+const Leaderboard = lazy(() => import('../game/Leaderboard'))
 import './PlayPage.css'
 
 /** The game on its own page, reachable from the 404 and from the offline
@@ -21,6 +22,10 @@ export default function PlayPage() {
 
           <Suspense fallback={<p className="play-text">Loading the yard…</p>}>
             <TruckGame />
+          </Suspense>
+
+          <Suspense fallback={null}>
+            <Leaderboard />
           </Suspense>
 
           <p className="play-back">
