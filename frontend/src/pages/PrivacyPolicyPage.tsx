@@ -74,10 +74,28 @@ export default function PrivacyPolicyPage() {
               <h3>Automatically collected data</h3>
               <p>
                 Our servers log standard technical data (IP address, request timestamps, user agent) for security
-                and troubleshooting, and use two cookies on the dashboard: one to keep you signed in, and one to
-                prevent cross-site request forgery. Neither is used for advertising or cross-site tracking, and we
-                use no third-party analytics or ad trackers.
+                and troubleshooting. We use no third-party analytics, no advertising, and no cross-site trackers
+                of any kind.
               </p>
+
+              <h3>Cookies and browser storage</h3>
+              <p>
+                This is the complete list &mdash; there is nothing else. You can change the optional choices at
+                any time from Settings &rarr; App Preferences &rarr; What we store, and withdrawing a choice
+                deletes what was stored under it.
+              </p>
+              <p><strong>Required, and not optional</strong> &mdash; the site cannot work without these:</p>
+              <ul>
+                <li><code>fp_session</code> &mdash; keeps you signed in. Set by the server and not readable by page scripts.</li>
+                <li><code>fp_csrf</code> &mdash; stops other sites making requests as you.</li>
+                <li><code>fp-register-plan</code> &mdash; carries the plan you picked through signup.</li>
+                <li><code>fp-consent</code> &mdash; remembers your answer to the question below, so you aren&apos;t asked repeatedly.</li>
+              </ul>
+              <p><strong>Optional, off until you allow them:</strong></p>
+              <ul>
+                <li><strong>Appearance</strong> (<code>fp-theme</code>, <code>fp-font</code>, <code>fp-reduce-motion</code>) &mdash; remembers your theme, interface font and reduced-motion setting between visits. Declined, the app still follows your device settings; it just won&apos;t remember changes you make here.</li>
+                <li><strong>Truck game</strong> (<code>fp-game-tickets</code>, <code>fp-game-queue</code>) &mdash; play tickets and any scores finished offline, so they upload when you reconnect. Only used on the game page.</li>
+              </ul>
             </section>
 
             <section>

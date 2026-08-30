@@ -5,6 +5,7 @@ import App from './App'
 import ScrollToTop from './components/ScrollToTop'
 import ErrorBoundary from './components/ErrorBoundary'
 import OfflineGate from './components/OfflineGate'
+import CookieConsent from './components/CookieConsent'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -18,6 +19,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <OfflineGate>
           <App />
         </OfflineGate>
+        {/* Outside OfflineGate: the choice is about local storage, which is
+            just as relevant with no connection. */}
+        <CookieConsent />
       </BrowserRouter>
     </ErrorBoundary>
   </React.StrictMode>,

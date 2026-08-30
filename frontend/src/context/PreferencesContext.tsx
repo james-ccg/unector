@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { MotionConfig } from 'motion/react'
+import { readStored, storeIfAllowed } from '../lib/consent'
 
 export type FontChoice = 'default' | 'system' | 'serif'
 
@@ -8,20 +9,9 @@ const REDUCE_MOTION_KEY = 'fp-reduce-motion'
 
 // Storage can throw outright, not just come back empty - a private window or
 // a browser set to block site data - so every read/write here is guarded.
-function readStored(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
 function writeStored(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // Non-fatal - the choice just won't outlive this tab.
-  }
+  // Gated on the appearance category - see lib/consent.ts.
+  storeIfAllowed('preferences', key, value)
 }
 
 function readStoredFont(): FontChoice {

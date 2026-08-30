@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { readStored, storeIfAllowed } from '../lib/consent'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -39,12 +40,8 @@ function readStoredPreference(): ThemePreference {
   // Storage can throw outright, not just come back empty - a private window
   // or a browser set to block site data. Falling back to Auto is correct
   // there; letting it throw would take the whole provider down.
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
-  } catch {
-    return 'system'
-  }
+  const stored = readStored(STORAGE_KEY)
+  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -70,11 +67,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // appearing to do nothing.
     applyTheme(next)
     setResolvedTheme(resolveTheme(next))
-    try {
-      localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-      // Non-fatal - the choice just won't outlive this tab.
-    }
+    // Only persisted with consent. Declined, the theme still applies for
+    // this tab - it just isn't remembered, which is exactly what was agreed.
+    storeIfAllowed('preferences', STORAGE_KEY, next)
   }
 
   // On "auto", follow the OS live while the tab stays open. This used to

@@ -455,6 +455,16 @@
   color: var(--text-primary);
 }
 
+.legal-content code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--dark-lighter);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text);
+}
+
 .legal-content a {
   color: var(--primary);
   text-decoration: underline;

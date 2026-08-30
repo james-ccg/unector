@@ -1,0 +1,125 @@
+.consent {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  padding: 16px;
+  /* Deliberately a bar, not a full-screen modal. The site stays readable
+     and usable while the choice is pending - blocking the page to force an
+     answer is the coercive pattern this is trying to avoid. */
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.consent-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.consent-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.consent-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 78ch;
+}
+
+.consent-text strong {
+  color: var(--text);
+}
+
+.consent-text a {
+  color: var(--accent);
+}
+
+.consent-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.consent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 14px;
+  background: var(--dark-lighter);
+  border-bottom: 1px solid var(--border);
+}
+
+.consent-row:last-child {
+  border-bottom: none;
+}
+
+.consent-row-label {
+  margin: 0 0 2px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.consent-row-detail {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  max-width: 76ch;
+}
+
+.consent-locked-tag {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hint);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Accept and decline are the same size and the same shape. The only
+   difference is fill, and that is not allowed to become a difference in
+   how easy either one is to find or press. */
+.consent-actions .btn {
+  min-width: 132px;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .consent-actions {
+    flex-direction: column-reverse;
+  }
+  .consent-actions .btn {
+    width: 100%;
+  }
+  .consent-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}

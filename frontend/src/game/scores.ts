@@ -1,4 +1,5 @@
 import { apiRequest } from '../services/api'
+import { allows } from '../lib/consent'
 
 /**
  * Play tickets and score submission, built to survive having no connection.
@@ -53,6 +54,10 @@ function read<T>(key: string, fallback: T): T {
 }
 
 function write(key: string, value: unknown) {
+  // Without consent for the game category nothing is kept between visits.
+  // A run still plays and still submits while online; what's lost is the
+  // offline queue surviving a reload, which is the trade that was agreed.
+  if (!allows('game')) return
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch {

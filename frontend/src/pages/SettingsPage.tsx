@@ -621,6 +621,22 @@ export default function SettingsPage() {
             </div>
             <div className="pref-row">
               <div>
+                <p className="settings-row-label">What we store</p>
+                <p className="settings-row-hint">
+                  Change what Freight Pilot keeps in this browser. Withdrawing a choice clears
+                  what was stored under it.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => window.dispatchEvent(new CustomEvent('fp:open-consent'))}
+              >
+                Review
+              </button>
+            </div>
+            <div className="pref-row">
+              <div>
                 <p className="settings-row-label">Appearance</p>
                 <p className="settings-row-hint">Auto matches your device's setting, or the time of day if it doesn't have one.</p>
               </div>
