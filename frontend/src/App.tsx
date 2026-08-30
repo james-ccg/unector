@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { PreferencesProvider } from './context/PreferencesContext'
 import PrivateRoute from './components/PrivateRoute'
+import ScrollToHash from './components/ScrollToHash'
 import RequireGmailConnected from './components/RequireGmailConnected'
 import HomePage from './pages/HomePage'
 
@@ -41,6 +42,7 @@ function App() {
     <ThemeProvider>
       <PreferencesProvider>
       <AuthProvider>
+        <ScrollToHash />
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />

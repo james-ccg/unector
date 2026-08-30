@@ -144,6 +144,10 @@
 
 html {
   scroll-behavior: smooth;
+  /* The header is position: fixed and 70px tall, so an element scrolled to
+     by its #hash would otherwise land underneath it. Set globally rather
+     than per-section so any future anchor gets the same clearance. */
+  scroll-padding-top: 90px;
 }
 
 body {
@@ -289,4 +293,11 @@ a {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
+}
+
+/* Anchor targets sit under the fixed 70px header once scrolled to, so they
+   need their own offset - see components/ScrollToHash.tsx. */
+:target,
+[id]:target {
+  scroll-margin-top: 90px;
 }

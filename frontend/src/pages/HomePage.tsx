@@ -1,6 +1,7 @@
 import { motion, type Variants } from 'motion/react'
 import { Zap, Bot, Mail, Map, Smartphone, BarChart3, Users, type LucideIcon } from 'lucide-react'
 import Layout from '../components/Layout'
+import TelegramPreview from '../components/TelegramPreview'
 import './HomePage.css'
 
 const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
@@ -73,8 +74,8 @@ export default function HomePage() {
               <motion.a
                 href="/register"
                 className="btn-primary btn-lg"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
+                whileHover={{ y: -2 }}
+                whileTap={{ y: 0 }}
               >
                 <span>Start Free Trial</span>
                 <span>→</span>
@@ -82,13 +83,14 @@ export default function HomePage() {
               <motion.a
                 href="#features"
                 className="btn-secondary btn-lg"
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
+                whileHover={{ y: -2 }}
+                whileTap={{ y: 0 }}
               >
                 <span>See Features</span>
               </motion.a>
             </div>
           </motion.div>
+          <TelegramPreview />
         </div>
       </section>
 

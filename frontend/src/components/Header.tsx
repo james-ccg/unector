@@ -58,7 +58,7 @@ export default function Header({ transparent = false }: HeaderProps) {
 
   // Four items either way - inside the 5-7 a top nav can carry before it
   // starts reading as a wall of links.
-  const NAV_ITEMS: { to: string; label: string; external?: boolean }[] = isAppRoute
+  const NAV_ITEMS: { to: string; label: string }[] = isAppRoute
     ? [
         { to: '/dashboard', label: 'Dashboard' },
         { to: '/monitoring', label: 'Live GPS' },
@@ -67,7 +67,9 @@ export default function Header({ transparent = false }: HeaderProps) {
     : [
         // No "Home" - the logo to its left already is the home link, and
         // repeating it is the classic wasted nav slot.
-        { to: '/#features', label: 'Features', external: true },
+        // A router Link, not a plain <a>: an <a> would reload the whole SPA
+        // just to move down one page. ScrollToHash handles the #features.
+        { to: '/#features', label: 'Features' },
         { to: '/pages/pricing', label: 'Pricing' },
         { to: '/pages/faq', label: 'FAQ' },
         { to: '/pages/security', label: 'Security' },
@@ -91,19 +93,13 @@ export default function Header({ transparent = false }: HeaderProps) {
                 links both. */}
             {NAV_ITEMS.map((item) => (
               <li className="nav-item" key={item.to}>
-                {item.external ? (
-                  <a href={item.to} className="nav-link" onClick={closeMenus}>
-                    {item.label}
-                  </a>
-                ) : (
-                  <Link
-                    to={item.to}
-                    className={`nav-link ${location.pathname === item.to ? 'is-current' : ''}`}
-                    onClick={closeMenus}
-                  >
-                    {item.label}
-                  </Link>
-                )}
+                <Link
+                  to={item.to}
+                  className={`nav-link ${location.pathname === item.to ? 'is-current' : ''}`}
+                  onClick={closeMenus}
+                >
+                  {item.label}
+                </Link>
               </li>
             ))}
           </ul>
