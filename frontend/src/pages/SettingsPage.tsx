@@ -9,6 +9,7 @@ import TwoFactorSettings from '../components/TwoFactorSettings'
 import ThemeToggle from '../components/ThemeToggle'
 import FontToggle from '../components/FontToggle'
 import AvatarPicker from '../components/AvatarPicker'
+import Alert from '../components/Alert'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
@@ -464,18 +465,15 @@ export default function SettingsPage() {
           </div>
         </header>
         {banner && (
-          <div className={`banner banner-${banner.kind}`}>
-            <span>{banner.text}</span>
-            <button className="banner-close" onClick={() => setBanner(null)} aria-label="Dismiss">
-              <Icon name="close" size={14} />
-            </button>
-          </div>
+          <Alert kind={banner.kind} onDismiss={() => setBanner(null)}>
+            {banner.text}
+          </Alert>
         )}
 
         {!isOwner && (
-          <div className="banner banner-info">
-            <span>You're signed in as a dispatcher. Integrations and dispatcher management are owner-only.</span>
-          </div>
+          <Alert kind="info">
+            You're signed in as a dispatcher. Integrations and dispatcher management are owner-only.
+          </Alert>
         )}
 
         <nav className="settings-nav">

@@ -1,0 +1,91 @@
+.notfound {
+  /* Enough height that the footer sits below the fold rather than crowding
+     a deliberately sparse page, without pushing the message off-screen. */
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  padding: 64px 0 80px;
+}
+
+.notfound-inner {
+  max-width: 560px;
+}
+
+.notfound-code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin: 0 0 12px;
+}
+
+.notfound-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.notfound-text {
+  color: var(--text-muted);
+  line-height: 1.65;
+  margin: 0 0 28px;
+}
+
+.notfound-path {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: var(--text);
+  /* A long unknown path must wrap instead of widening the page. */
+  overflow-wrap: anywhere;
+}
+
+.notfound-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 40px;
+}
+
+.notfound-links-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hint);
+  margin: 0 0 12px;
+}
+
+.notfound-links ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.notfound-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.notfound-links a:hover {
+  color: var(--accent);
+}
+
+@media screen and (max-width: 560px) {
+  .notfound-title {
+    font-size: 24px;
+  }
+}

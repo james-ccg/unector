@@ -5,6 +5,7 @@ import { Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import ErrorMessage from '../components/ErrorMessage'
+import Alert from '../components/Alert'
 import { useAuth } from '../context/AuthContext'
 import {
   dashboardApi, errorMessage,
@@ -259,13 +260,10 @@ export default function DashboardPage() {
               bot can't read rate confirmations at all, so every figure
               below it is quietly going stale. */}
           {dashboardData?.gmail_needs_reconnect && (
-            <div className="banner banner-error dashboard-banner">
-              <Icon name="warning" size={16} />
-              <span>
-                Gmail has disconnected, so new rate confirmations aren't being picked up.{' '}
-                <Link to="/settings">Reconnect it in Settings</Link> to start processing loads again.
-              </span>
-            </div>
+            <Alert kind="error">
+              Gmail has disconnected, so new rate confirmations aren't being picked up.{' '}
+              <Link to="/settings">Reconnect it in Settings</Link> to start processing loads again.
+            </Alert>
           )}
 
           <div className="stats-row">

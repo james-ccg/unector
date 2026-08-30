@@ -28,6 +28,7 @@ const TrustPage = lazy(() => import('./pages/TrustPage'))
 const UpdatesPage = lazy(() => import('./pages/UpdatesPage'))
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'))
 const TermsOfServicePage = lazy(() => import('./pages/TermsOfServicePage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function RouteFallback() {
   return (
@@ -93,6 +94,9 @@ function App() {
                 </PrivateRoute>
               }
             />
+            {/* Must stay last: "*" matches anything the routes above didn't.
+                Without it an unknown URL rendered a blank page. */}
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </AuthProvider>

@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { twoFaApi, errorMessage, type TwoFaStatus } from '../services/api'
 import { isWebAuthnSupported, createCredential } from '../services/webauthn'
 import Icon from './Icon'
+import Alert from './Alert'
 
 type Banner = { kind: 'success' | 'error'; text: string } | null
 
@@ -277,12 +278,11 @@ export default function TwoFactorSettings() {
 
   return (
     <div className="twofa-section">
-      {banner && <div className={`banner banner-${banner.kind}`}>
-        <span>{banner.text}</span>
-        <button className="banner-close" onClick={() => setBanner(null)} aria-label="Dismiss">
-          <Icon name="close" size={14} />
-        </button>
-      </div>}
+      {banner && (
+        <Alert kind={banner.kind} onDismiss={() => setBanner(null)}>
+          {banner.text}
+        </Alert>
+      )}
 
       {/* ---------------- Authenticator app ---------------- */}
       <div className="card twofa-card">
