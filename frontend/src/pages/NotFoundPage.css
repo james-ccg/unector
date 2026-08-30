@@ -53,6 +53,22 @@
   margin-bottom: 40px;
 }
 
+.notfound-play {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: -24px 0 36px;
+}
+
+.notfound-play a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.notfound-play a:hover {
+  text-decoration: underline;
+}
+
 .notfound-links-label {
   font-size: 12px;
   font-weight: 600;

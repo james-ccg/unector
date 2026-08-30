@@ -34,6 +34,10 @@ export default function NotFoundPage() {
             </Link>
           </div>
 
+          <p className="notfound-play">
+            Since you&apos;re here anyway &mdash; <Link to="/play">take the truck for a run</Link>.
+          </p>
+
           <div className="notfound-links">
             <p className="notfound-links-label">Or try one of these</p>
             <ul>
