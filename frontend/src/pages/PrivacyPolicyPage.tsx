@@ -91,10 +91,11 @@ export default function PrivacyPolicyPage() {
                 <li><code>fp-register-plan</code> &mdash; carries the plan you picked through signup.</li>
                 <li><code>fp-consent</code> &mdash; remembers your answer to the question below, so you aren&apos;t asked repeatedly.</li>
               </ul>
-              <p><strong>Optional, off until you allow them:</strong></p>
+              <p><strong>Optional, off until you allow them</strong> &mdash; grouped under a single
+                &ldquo;Remember my settings&rdquo; choice:</p>
               <ul>
-                <li><strong>Appearance</strong> (<code>fp-theme</code>, <code>fp-font</code>, <code>fp-reduce-motion</code>) &mdash; remembers your theme, interface font and reduced-motion setting between visits. Declined, the app still follows your device settings; it just won&apos;t remember changes you make here.</li>
-                <li><strong>Truck game</strong> (<code>fp-game-tickets</code>, <code>fp-game-queue</code>) &mdash; play tickets and any scores finished offline, so they upload when you reconnect. Only used on the game page.</li>
+                <li><code>fp-theme</code>, <code>fp-font</code>, <code>fp-reduce-motion</code> &mdash; your theme, interface font and reduced-motion setting. Declined, the app still follows your device settings; it just won&apos;t remember changes you make here.</li>
+                <li><code>fp-game-tickets</code>, <code>fp-game-queue</code> &mdash; progress on the offline page at <code>/play</code>, held until it can be uploaded.</li>
               </ul>
             </section>
 

@@ -19,22 +19,21 @@ import './CookieConsent.css'
  * thorough would misrepresent what's actually stored.
  */
 
-const CATEGORIES: {
-  key: ConsentCategory
-  label: string
-  detail: string
-}[] = [
-  {
-    key: 'preferences',
-    label: 'Appearance',
-    detail: 'Remembers your theme, interface font, and reduced-motion setting between visits. Decline and the app still respects your device settings, it just won’t remember changes you make here.',
-  },
-  {
-    key: 'game',
-    label: 'Truck game',
-    detail: 'Stores play tickets and any scores finished offline, so they can be uploaded when you reconnect. Only used on the /play page.',
-  },
-]
+/**
+ * Presented as ONE optional switch, though the gate underneath still tracks
+ * both categories separately.
+ *
+ * Splitting them out named a page most visitors will never find, in the one
+ * dialog everybody sees - which turned an easter egg into an advertised
+ * feature. The exact keys are still itemised on the privacy page, where
+ * someone looking for that detail will go; this is the summary, and it
+ * covers the same ground truthfully without the tour.
+ */
+const OPTIONAL_STORAGE = {
+  label: 'Remember my settings',
+  detail:
+    'Keeps your appearance choices - theme, interface font, reduced motion - and anything you have in progress, on this device between visits. Decline and the app still follows your device settings; it just won’t remember changes you make here.',
+}
 
 export default function CookieConsent() {
   // Read once in the initializer rather than in a mount effect: this reads
@@ -78,8 +77,8 @@ export default function CookieConsent() {
           <p className="consent-title">A note on what we store</p>
           <p className="consent-text">
             Freight Pilot keeps you signed in with a session cookie, which it needs to work at all.
-            Beyond that it stores only your appearance settings and, if you play it, the truck
-            game. <strong>No analytics, no advertising, no third-party trackers.</strong>{' '}
+            Beyond that it only remembers settings you choose on this device.{' '}
+            <strong>No analytics, no advertising, no third-party trackers.</strong>{' '}
             <Link to="/pages/privacy">Read the privacy policy</Link>.
           </p>
         </div>
@@ -97,25 +96,23 @@ export default function CookieConsent() {
               <span className="consent-locked-tag">Required</span>
             </div>
 
-            {CATEGORIES.map((category) => (
-              <div className="consent-row" key={category.key}>
-                <div>
-                  <p className="consent-row-label">{category.label}</p>
-                  <p className="consent-row-detail">{category.detail}</p>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={choice[category.key]}
-                    onChange={(e) =>
-                      setChoice((prev) => ({ ...prev, [category.key]: e.target.checked }))
-                    }
-                    aria-label={category.label}
-                  />
-                  <span className="switch-track"><span className="switch-thumb" /></span>
-                </label>
+            <div className="consent-row">
+              <div>
+                <p className="consent-row-label">{OPTIONAL_STORAGE.label}</p>
+                <p className="consent-row-detail">{OPTIONAL_STORAGE.detail}</p>
               </div>
-            ))}
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={choice.preferences && choice.game}
+                  onChange={(e) =>
+                    setChoice({ preferences: e.target.checked, game: e.target.checked })
+                  }
+                  aria-label={OPTIONAL_STORAGE.label}
+                />
+                <span className="switch-track"><span className="switch-thumb" /></span>
+              </label>
+            </div>
           </div>
         )}
 
