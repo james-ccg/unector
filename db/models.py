@@ -61,6 +61,44 @@ class Dispatcher(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 
+class Trailer(Base):
+    """A trailer, identified by the unit number painted on it. Tracked
+    separately from the truck because trailers get dropped, swapped and
+    re-hooked constantly - the pairing is current state, not an identity."""
+    __tablename__ = "trailers"
+    __table_args__ = (UniqueConstraint("company_id", "unit_number", name="uq_trailer_unit_per_company"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    unit_number: Mapped[str] = mapped_column(String(30))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
+class Truck(Base):
+    """A truck, identified by its unit number - the fleet's stable unit.
+
+    Drivers come and go against a given truck, so the truck (not the person)
+    is what dispatch actually organises around: "where is 3001" outlives
+    whoever is driving it this month. That's why the GPS link lives here
+    rather than on Driver, where it used to sit - the telematics device is
+    bolted to the vehicle.
+
+    trailer_id is the trailer currently hooked to it, and is expected to
+    change often; it is not ownership."""
+    __tablename__ = "trucks"
+    __table_args__ = (UniqueConstraint("company_id", "unit_number", name="uq_truck_unit_per_company"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    unit_number: Mapped[str] = mapped_column(String(30))
+    samsara_vehicle_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trailer_id: Mapped[int | None] = mapped_column(ForeignKey("trailers.id"), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+    trailer: Mapped["Trailer"] = relationship(lazy="joined")
+
+
 class Driver(Base):
     __tablename__ = "drivers"
 
@@ -71,12 +109,15 @@ class Driver(Base):
     telegram_group_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     telegram_group_title: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Guruh nomi
     telegram_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    samsara_vehicle_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Which truck this driver is currently on. Nullable: a driver can be
+    # between trucks, and a truck can sit without a driver.
+    truck_id: Mapped[int | None] = mapped_column(ForeignKey("trucks.id"), nullable=True)
     dispatcher_id: Mapped[int | None] = mapped_column(ForeignKey("dispatchers.id"), nullable=True)
     subscription_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
     dispatcher: Mapped["Dispatcher"] = relationship(lazy="joined")
+    truck: Mapped["Truck"] = relationship(lazy="joined")
 
 
 class Load(Base):

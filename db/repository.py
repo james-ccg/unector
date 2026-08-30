@@ -92,7 +92,9 @@ def get_driver_by_group(telegram_group_id: int) -> Driver | None:
             dispatcher_username=dispatcher_username,
             telegram_group_id=row.telegram_group_id,
             telegram_group_title=row.telegram_group_title,
-            samsara_vehicle_id=row.samsara_vehicle_id,
+            # Resolved through the driver's truck - the column on drivers is
+            # a leftover the trucks migration stopped writing to.
+            samsara_vehicle_id=row.truck.samsara_vehicle_id if row.truck else None,
         )
 
 
@@ -271,13 +273,237 @@ def update_load_status(load_pk: int, status: str) -> None:
 # ------------------------------------------------------------------
 # Samsara GPS monitoring
 # ------------------------------------------------------------------
-def set_driver_vehicle(driver_pk: int, samsara_vehicle_id: str) -> None:
-    """Links a driver to their Samsara vehicle ID (used by /setvehicle)."""
+def set_driver_vehicle(driver_pk: int, samsara_vehicle_id: str) -> bool:
+    """Links the Samsara vehicle ID to the truck this driver is on (used by
+    /setvehicle). The device is fitted to the vehicle, so it belongs to the
+    truck, not the person - which means the driver has to be on a truck for
+    this to have anywhere to go. Returns False when they aren't, so the
+    caller can say so rather than silently doing nothing."""
     with get_session() as session:
-        row = session.get(models.Driver, driver_pk)
-        if row:
-            row.samsara_vehicle_id = samsara_vehicle_id
-            session.commit()
+        driver = session.get(models.Driver, driver_pk)
+        if not driver or not driver.truck_id:
+            return False
+        truck = session.get(models.Truck, driver.truck_id)
+        if not truck:
+            return False
+        truck.samsara_vehicle_id = samsara_vehicle_id
+        session.commit()
+        return True
+
+
+# ------------------------------------------------------------------
+# Trucks and trailers - the fleet's own assets, managed by owner OR
+# dispatcher. See models.Truck for why the truck (not the driver) is the
+# unit dispatch organises around.
+# ------------------------------------------------------------------
+def list_trucks(company_id: int) -> list[dict]:
+    """Every truck, with its current trailer and driver folded in - the
+    dashboard shows all three together, so resolving them here keeps that to
+    one query set instead of one per card."""
+    with get_session() as session:
+        trucks = (
+            session.query(models.Truck)
+            .filter(models.Truck.company_id == company_id)
+            .order_by(models.Truck.unit_number)
+            .all()
+        )
+        if not trucks:
+            return []
+
+        drivers = (
+            session.query(models.Driver)
+            .filter(models.Driver.truck_id.in_([t.id for t in trucks]))
+            .all()
+        )
+        driver_by_truck = {d.truck_id: d for d in drivers}
+
+        rows = []
+        for t in trucks:
+            driver = driver_by_truck.get(t.id)
+            rows.append({
+                "id": t.id,
+                "unit_number": t.unit_number,
+                "samsara_vehicle_id": t.samsara_vehicle_id,
+                "active": t.active,
+                "trailer": (
+                    {"id": t.trailer.id, "unit_number": t.trailer.unit_number} if t.trailer else None
+                ),
+                "driver": (
+                    {
+                        "id": driver.id,
+                        "full_name": driver.full_name,
+                        "driver_bot_id": driver.driver_bot_id,
+                        "telegram_group_title": driver.telegram_group_title,
+                        "subscription_active": driver.subscription_active,
+                    }
+                    if driver else None
+                ),
+            })
+        return rows
+
+
+def create_truck(company_id: int, unit_number: str) -> dict | None:
+    """None when that unit number is already on the books for this company -
+    two trucks answering to "3001" would make every dispatch ambiguous."""
+    unit_number = unit_number.strip()
+    with get_session() as session:
+        clash = (
+            session.query(models.Truck)
+            .filter(models.Truck.company_id == company_id, models.Truck.unit_number == unit_number)
+            .first()
+        )
+        if clash:
+            return None
+        row = models.Truck(company_id=company_id, unit_number=unit_number)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {"id": row.id, "unit_number": row.unit_number, "active": row.active}
+
+
+def delete_truck(truck_id: int, company_id: int) -> bool:
+    with get_session() as session:
+        row = (
+            session.query(models.Truck)
+            .filter(models.Truck.id == truck_id, models.Truck.company_id == company_id)
+            .first()
+        )
+        if not row:
+            return False
+        # Unhook any driver first - the FK would otherwise leave them
+        # pointing at a truck that no longer exists.
+        session.query(models.Driver).filter(models.Driver.truck_id == truck_id).update(
+            {"truck_id": None}, synchronize_session=False
+        )
+        session.delete(row)
+        session.commit()
+        return True
+
+
+def assign_truck(truck_id: int, company_id: int, *, driver_id: int | None = ..., trailer_id: int | None = ...) -> bool:
+    """Sets the truck's current driver and/or trailer. Ellipsis means "leave
+    alone" so that None stays usable as a real value - unhooking the trailer
+    or taking the driver off is exactly what this is for."""
+    with get_session() as session:
+        truck = (
+            session.query(models.Truck)
+            .filter(models.Truck.id == truck_id, models.Truck.company_id == company_id)
+            .first()
+        )
+        if not truck:
+            return False
+
+        if trailer_id is not ...:
+            if trailer_id is not None:
+                trailer = (
+                    session.query(models.Trailer)
+                    .filter(models.Trailer.id == trailer_id, models.Trailer.company_id == company_id)
+                    .first()
+                )
+                if not trailer:
+                    return False
+            truck.trailer_id = trailer_id
+
+        if driver_id is not ...:
+            # One driver per truck: clear whoever is on it now before seating
+            # the new one, or a stale row would leave the truck showing two.
+            session.query(models.Driver).filter(models.Driver.truck_id == truck_id).update(
+                {"truck_id": None}, synchronize_session=False
+            )
+            if driver_id is not None:
+                driver = (
+                    session.query(models.Driver)
+                    .filter(models.Driver.id == driver_id, models.Driver.company_id == company_id)
+                    .first()
+                )
+                if not driver:
+                    return False
+                driver.truck_id = truck_id
+
+        session.commit()
+        return True
+
+
+def delete_driver(driver_id: int, company_id: int) -> tuple[bool, str | None]:
+    """Removes a driver. Returns (deleted, refusal_reason).
+
+    Refuses while the driver still has loads against them: those rows carry
+    the company's dispatch history and its gross figures, and cascading the
+    delete would quietly rewrite past weeks' numbers. Deactivating the
+    driver is the right move there, and the message says so."""
+    with get_session() as session:
+        row = (
+            session.query(models.Driver)
+            .filter(models.Driver.id == driver_id, models.Driver.company_id == company_id)
+            .first()
+        )
+        if not row:
+            return False, None
+
+        load_count = session.query(models.Load).filter(models.Load.driver_id == driver_id).count()
+        if load_count:
+            return False, (
+                f"This driver has {load_count} load(s) on record. Deleting them would remove that "
+                "history from your totals - deactivate the driver instead."
+            )
+
+        session.delete(row)
+        session.commit()
+        return True, None
+
+
+def list_trailers(company_id: int) -> list[dict]:
+    with get_session() as session:
+        rows = (
+            session.query(models.Trailer)
+            .filter(models.Trailer.company_id == company_id)
+            .order_by(models.Trailer.unit_number)
+            .all()
+        )
+        hooked = {
+            t.trailer_id
+            for t in session.query(models.Truck).filter(models.Truck.company_id == company_id).all()
+            if t.trailer_id
+        }
+        return [
+            {"id": r.id, "unit_number": r.unit_number, "in_use": r.id in hooked}
+            for r in rows
+        ]
+
+
+def create_trailer(company_id: int, unit_number: str) -> dict | None:
+    unit_number = unit_number.strip()
+    with get_session() as session:
+        clash = (
+            session.query(models.Trailer)
+            .filter(models.Trailer.company_id == company_id, models.Trailer.unit_number == unit_number)
+            .first()
+        )
+        if clash:
+            return None
+        row = models.Trailer(company_id=company_id, unit_number=unit_number)
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {"id": row.id, "unit_number": row.unit_number}
+
+
+def delete_trailer(trailer_id: int, company_id: int) -> bool:
+    with get_session() as session:
+        row = (
+            session.query(models.Trailer)
+            .filter(models.Trailer.id == trailer_id, models.Trailer.company_id == company_id)
+            .first()
+        )
+        if not row:
+            return False
+        # Unhook it from any truck first, same FK reason as delete_truck.
+        session.query(models.Truck).filter(models.Truck.trailer_id == trailer_id).update(
+            {"trailer_id": None}, synchronize_session=False
+        )
+        session.delete(row)
+        session.commit()
+        return True
 
 
 @dataclass
@@ -298,20 +524,25 @@ class MonitoredLoad:
 
 
 def get_active_loads_for_monitoring() -> list[MonitoredLoad]:
-    """Returns every load that (a) isn't finished yet, (b) has a driver linked
-    to a Samsara vehicle, and (c) has at least one geocoded destination -
-    i.e. everything the location-monitor loop needs to check on each pass."""
+    """Returns every load that (a) isn't finished yet, (b) is on a truck with
+    a Samsara vehicle linked, and (c) has at least one geocoded destination -
+    i.e. everything the location-monitor loop needs to check on each pass.
+
+    The GPS link now hangs off the truck rather than the driver (the device
+    is fitted to the vehicle), so this reaches it through the driver's
+    current truck."""
     with get_session() as session:
         rows = (
-            session.query(models.Load, models.Driver)
+            session.query(models.Load, models.Driver, models.Truck)
             .join(models.Driver, models.Load.driver_id == models.Driver.id)
+            .join(models.Truck, models.Driver.truck_id == models.Truck.id)
             .filter(models.Load.status.in_(["dispatched", "loaded", "bol_ok"]))
-            .filter(models.Driver.samsara_vehicle_id.isnot(None))
+            .filter(models.Truck.samsara_vehicle_id.isnot(None))
             .filter(models.Driver.telegram_group_id.isnot(None))
             .all()
         )
         result = []
-        for load, driver in rows:
+        for load, driver, truck in rows:
             result.append(
                 MonitoredLoad(
                     id=load.id,
@@ -319,7 +550,7 @@ def get_active_loads_for_monitoring() -> list[MonitoredLoad]:
                     load_id=load.load_id,
                     status=load.status,
                     telegram_group_id=driver.telegram_group_id,
-                    samsara_vehicle_id=driver.samsara_vehicle_id,
+                    samsara_vehicle_id=truck.samsara_vehicle_id,
                     pu_lat=float(load.pu_lat) if load.pu_lat is not None else None,
                     pu_lng=float(load.pu_lng) if load.pu_lng is not None else None,
                     del_lat=float(load.del_lat) if load.del_lat is not None else None,
@@ -661,7 +892,14 @@ def get_drivers_by_company(company_id: int) -> list[dict]:
                     "telegram_group_title": d.telegram_group_title,
                     "dispatcher_username": d.dispatcher.username if d.dispatcher else None,
                     "subscription_active": d.subscription_active,
-                    "samsara_vehicle_id": d.samsara_vehicle_id,
+                    "samsara_vehicle_id": d.truck.samsara_vehicle_id if d.truck else None,
+                    "truck": (
+                        {"id": d.truck.id, "unit_number": d.truck.unit_number} if d.truck else None
+                    ),
+                    "trailer": (
+                        {"id": d.truck.trailer.id, "unit_number": d.truck.trailer.unit_number}
+                        if d.truck and d.truck.trailer else None
+                    ),
                     "load_count": load_counts.get(d.id, 0),
                     "weekly_gross": float(weekly_gross_by_driver.get(d.id) or 0.0),
                     "weekly_loads": weekly_loads_by_driver.get(d.id, 0),
@@ -765,7 +1003,15 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             "telegram_username": driver.telegram_username,
             "dispatcher_username": driver.dispatcher.username if driver.dispatcher else None,
             "subscription_active": driver.subscription_active,
-            "samsara_vehicle_id": driver.samsara_vehicle_id,
+            "samsara_vehicle_id": driver.truck.samsara_vehicle_id if driver.truck else None,
+            "truck": (
+                {"id": driver.truck.id, "unit_number": driver.truck.unit_number}
+                if driver.truck else None
+            ),
+            "trailer": (
+                {"id": driver.truck.trailer.id, "unit_number": driver.truck.trailer.unit_number}
+                if driver.truck and driver.truck.trailer else None
+            ),
             "weekly_gross": float(weekly_gross),
             "weekly_loads": weekly_loads,
             "total_gross": float(total_gross),

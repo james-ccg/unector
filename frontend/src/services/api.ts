@@ -340,6 +340,29 @@ export const twoFaApi = {
     }),
 }
 
+/** A truck or trailer, identified by the unit number painted on it. */
+export interface Unit {
+  id: number
+  unit_number: string
+}
+
+export interface Truck extends Unit {
+  samsara_vehicle_id: string | null
+  active: boolean
+  trailer: Unit | null
+  driver: {
+    id: number
+    full_name: string | null
+    driver_bot_id: string
+    telegram_group_title: string | null
+    subscription_active: boolean
+  } | null
+}
+
+export interface Trailer extends Unit {
+  in_use: boolean
+}
+
 export interface Driver {
   id: number
   driver_bot_id: string
@@ -348,7 +371,11 @@ export interface Driver {
   telegram_group_title: string | null
   dispatcher_username: string | null
   subscription_active: boolean
+  // Resolved through the driver's current truck - the GPS device is fitted
+  // to the vehicle, not issued to the person.
   samsara_vehicle_id: string | null
+  truck: Unit | null
+  trailer: Unit | null
   load_count: number
   weekly_gross: number
   weekly_loads: number
@@ -480,6 +507,40 @@ export const dashboardApi = {
 
   listDrivers: () =>
     apiRequest<Driver[]>('/api/drivers'),
+
+  deleteDriver: (driverId: number) =>
+    apiRequest<{ success: boolean }>(`/api/drivers/${driverId}`, { method: 'DELETE' }),
+
+  // Fleet assets - both owner and dispatcher can manage these.
+  listTrucks: () => apiRequest<Truck[]>('/api/trucks'),
+
+  createTruck: (unitNumber: string) =>
+    apiRequest<Unit>('/api/trucks', {
+      method: 'POST',
+      body: JSON.stringify({ unit_number: unitNumber }),
+    }),
+
+  deleteTruck: (truckId: number) =>
+    apiRequest<{ success: boolean }>(`/api/trucks/${truckId}`, { method: 'DELETE' }),
+
+  /** Omit a field to leave it as it is; pass null to clear it. Sending
+   *  `{ trailer_id: null }` unhooks the trailer without touching the driver. */
+  assignTruck: (truckId: number, assignment: { driver_id?: number | null; trailer_id?: number | null }) =>
+    apiRequest<{ success: boolean }>(`/api/trucks/${truckId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(assignment),
+    }),
+
+  listTrailers: () => apiRequest<Trailer[]>('/api/trailers'),
+
+  createTrailer: (unitNumber: string) =>
+    apiRequest<Unit>('/api/trailers', {
+      method: 'POST',
+      body: JSON.stringify({ unit_number: unitNumber }),
+    }),
+
+  deleteTrailer: (trailerId: number) =>
+    apiRequest<{ success: boolean }>(`/api/trailers/${trailerId}`, { method: 'DELETE' }),
 
   createDriver: (fullName: string) =>
     apiRequest<NewDriver>('/api/drivers', {

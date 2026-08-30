@@ -872,7 +872,7 @@ def _issue_driver_link_code(driver_id: int) -> dict:
 
 @app.post("/api/drivers")
 def add_driver(
-    body: CreateDriverRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+    body: CreateDriverRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     """Creates a driver (active immediately, same as seed.py's path) and
     returns a one-time code to link it to a Telegram group - see
@@ -912,7 +912,7 @@ def add_driver(
 
 @app.post("/api/drivers/{driver_id}/link-token")
 def regenerate_driver_link_code(
-    driver_id: int, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+    driver_id: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
 ):
     """Issues a fresh linking code for an existing driver - e.g. the first
     code expired, or the driver needs to be (re)linked to a different group."""
@@ -927,6 +927,133 @@ def regenerate_driver_link_code(
             raise HTTPException(403, "Access denied")
 
     return _issue_driver_link_code(driver_id)
+
+
+# ------------------------------------------------------------------
+# Fleet assets - trucks and trailers.
+#
+# Open to owner AND dispatcher, unlike driver/dispatcher management. Keeping
+# the fleet list current is day-to-day dispatch work: trailers get swapped
+# and drivers move between trucks constantly, and routing every one of those
+# through the owner would just stall the board.
+# ------------------------------------------------------------------
+class UnitNumberRequest(BaseModel):
+    unit_number: str
+
+    @field_validator("unit_number")
+    @classmethod
+    def _check(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Unit number is required")
+        if len(v) > 30:
+            raise ValueError("Unit number must be 30 characters or fewer")
+        return v
+
+
+class TruckAssignRequest(BaseModel):
+    # None is a real value here (unhook the trailer / take the driver off),
+    # so "absent" has to mean something different from "null". Pydantic's
+    # exclude_unset on the dump below is what tells them apart.
+    driver_id: int | None = None
+    trailer_id: int | None = None
+
+
+@app.get("/api/trucks")
+def list_company_trucks(user: dict = Depends(get_current_user)):
+    from db.repository import list_trucks
+
+    return list_trucks(user["company_id"])
+
+
+@app.post("/api/trucks")
+def add_truck(
+    body: UnitNumberRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import create_truck
+
+    truck = create_truck(user["company_id"], body.unit_number)
+    if truck is None:
+        raise HTTPException(400, f"Truck {body.unit_number} already exists.")
+    return truck
+
+
+@app.patch("/api/trucks/{truck_id}")
+def assign_truck_endpoint(
+    truck_id: int, body: TruckAssignRequest,
+    user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    """Seats a driver on the truck and/or hooks a trailer to it. Omit a field
+    to leave it as it is; send it as null to clear it."""
+    from db.repository import assign_truck
+
+    provided = body.model_dump(exclude_unset=True)
+    if not provided:
+        raise HTTPException(400, "Nothing to update.")
+
+    updated = assign_truck(
+        truck_id, user["company_id"],
+        driver_id=provided["driver_id"] if "driver_id" in provided else ...,
+        trailer_id=provided["trailer_id"] if "trailer_id" in provided else ...,
+    )
+    if not updated:
+        raise HTTPException(404, "Truck, driver or trailer not found")
+    return {"success": True}
+
+
+@app.delete("/api/trucks/{truck_id}")
+def remove_truck(
+    truck_id: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import delete_truck
+
+    if not delete_truck(truck_id, user["company_id"]):
+        raise HTTPException(404, "Truck not found")
+    return {"success": True}
+
+
+@app.delete("/api/drivers/{driver_id}")
+def remove_driver(
+    driver_id: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import delete_driver
+
+    deleted, refusal = delete_driver(driver_id, user["company_id"])
+    if refusal:
+        raise HTTPException(409, refusal)
+    if not deleted:
+        raise HTTPException(404, "Driver not found")
+    return {"success": True}
+
+
+@app.get("/api/trailers")
+def list_company_trailers(user: dict = Depends(get_current_user)):
+    from db.repository import list_trailers
+
+    return list_trailers(user["company_id"])
+
+
+@app.post("/api/trailers")
+def add_trailer(
+    body: UnitNumberRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import create_trailer
+
+    trailer = create_trailer(user["company_id"], body.unit_number)
+    if trailer is None:
+        raise HTTPException(400, f"Trailer {body.unit_number} already exists.")
+    return trailer
+
+
+@app.delete("/api/trailers/{trailer_id}")
+def remove_trailer(
+    trailer_id: int, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import delete_trailer
+
+    if not delete_trailer(trailer_id, user["company_id"]):
+        raise HTTPException(404, "Trailer not found")
+    return {"success": True}
 
 
 # ------------------------------------------------------------------

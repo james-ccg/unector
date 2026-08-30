@@ -307,6 +307,37 @@
   font-weight: 700;
   margin: 0;
   color: var(--text);
+  /* Unit numbers are read digit by digit and compared down the column, so
+     they need the monospace face and even digit widths. */
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* "Truck" / "Trailer" are labels for the numbers, not the content - kept
+   quiet so the unit numbers themselves carry the line. */
+.unit-label {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hint);
+  margin-right: 2px;
+}
+
+.unit-sep {
+  color: var(--border);
+  margin: 0 7px;
+}
+
+/* The person currently on the truck. Secondary by design: drivers turn
+   over, the truck doesn't. */
+.driver-person {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .driver-status {

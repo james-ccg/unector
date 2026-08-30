@@ -478,3 +478,57 @@
   font-size: 13px;
   letter-spacing: 0.03em;
 }
+
+/* ---------- Fleet: trucks and trailers ---------- */
+/* Unit numbers are identifiers read digit by digit, so they get the mono
+   face and even digit widths, same as on the dashboard cards. */
+.unit-chip {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--dark-lighter);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 9px;
+  flex-shrink: 0;
+}
+
+.unit-select {
+  background: var(--dark-lighter);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  max-width: 150px;
+}
+
+.unit-select:disabled {
+  opacity: 0.55;
+}
+
+/* The add-a-unit forms are a single field plus its button, so they lay out
+   as a row rather than the stacked default the other forms use. */
+.form-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.form-inline input {
+  flex: 1;
+  min-width: 180px;
+}
+
+@media screen and (max-width: 640px) {
+  /* Below this the row can't hold two selects and two buttons, so it wraps
+     into a block instead of squeezing every control to unusable widths. */
+  .unit-select {
+    max-width: none;
+    flex: 1 1 100%;
+  }
+}

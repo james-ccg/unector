@@ -1282,6 +1282,144 @@ class TestGmailReconnectWarning:
         assert gmail_service.token_invalid_since(company_id) is None
 
 
+class TestFleetAssets:
+    """Trucks and trailers - the fleet's own assets. Both roles manage them,
+    since swapping a trailer or moving a driver between trucks is routine
+    dispatch work. See models.Truck for why the truck, not the driver, is
+    the unit the board is organised around."""
+
+    def _register_owner(self, client, mc_number: str) -> None:
+        reg = client.post("/api/auth/register", json={
+            "mc_number": mc_number,
+            "company_name": f"Fleet Co {mc_number}",
+            "email": f"owner{mc_number}@fleettest.com",
+            "password": "ownerpass123",
+            "confirm_password": "ownerpass123",
+        })
+        assert reg.status_code == 200, reg.text
+
+    def _as_dispatcher(self, client, username: str) -> None:
+        created = client.post(
+            "/api/dispatchers", json={"username": username, "password": "dispatcherpass123"},
+            headers=_csrf_headers(client),
+        )
+        assert created.status_code == 200, created.text
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+        client.post("/api/auth/dispatcher", json={"username": username, "password": "dispatcherpass123"})
+
+    def test_truck_and_trailer_roundtrip(self, client):
+        self._register_owner(client, "766000")
+        truck = client.post("/api/trucks", json={"unit_number": "3001"}, headers=_csrf_headers(client))
+        assert truck.status_code == 200, truck.text
+        trailer = client.post("/api/trailers", json={"unit_number": "373783"}, headers=_csrf_headers(client))
+        assert trailer.status_code == 200, trailer.text
+
+        listed = client.get("/api/trucks").json()
+        assert [t["unit_number"] for t in listed] == ["3001"]
+        assert listed[0]["trailer"] is None and listed[0]["driver"] is None
+
+    def test_duplicate_unit_number_is_rejected(self, client):
+        self._register_owner(client, "766001")
+        client.post("/api/trucks", json={"unit_number": "4001"}, headers=_csrf_headers(client))
+        again = client.post("/api/trucks", json={"unit_number": "4001"}, headers=_csrf_headers(client))
+        assert again.status_code == 400
+
+    def test_assigning_driver_and_trailer_shows_on_the_truck(self, client):
+        self._register_owner(client, "766002")
+        truck = client.post("/api/trucks", json={"unit_number": "5001"}, headers=_csrf_headers(client)).json()
+        trailer = client.post("/api/trailers", json={"unit_number": "9001"}, headers=_csrf_headers(client)).json()
+        driver = client.post("/api/drivers", json={"full_name": "Rustam"}, headers=_csrf_headers(client)).json()
+
+        assigned = client.patch(
+            f"/api/trucks/{truck['id']}",
+            json={"driver_id": driver["id"], "trailer_id": trailer["id"]},
+            headers=_csrf_headers(client),
+        )
+        assert assigned.status_code == 200, assigned.text
+
+        row = client.get("/api/trucks").json()[0]
+        assert row["trailer"]["unit_number"] == "9001"
+        assert row["driver"]["full_name"] == "Rustam"
+
+    def test_null_unhooks_but_omitted_field_is_left_alone(self, client):
+        self._register_owner(client, "766003")
+        truck = client.post("/api/trucks", json={"unit_number": "5002"}, headers=_csrf_headers(client)).json()
+        trailer = client.post("/api/trailers", json={"unit_number": "9002"}, headers=_csrf_headers(client)).json()
+        driver = client.post("/api/drivers", json={"full_name": "Jasur"}, headers=_csrf_headers(client)).json()
+        client.patch(
+            f"/api/trucks/{truck['id']}",
+            json={"driver_id": driver["id"], "trailer_id": trailer["id"]},
+            headers=_csrf_headers(client),
+        )
+
+        # Explicit null drops the trailer; driver_id isn't sent, so it stays.
+        client.patch(
+            f"/api/trucks/{truck['id']}", json={"trailer_id": None}, headers=_csrf_headers(client),
+        )
+        row = client.get("/api/trucks").json()[0]
+        assert row["trailer"] is None
+        assert row["driver"]["full_name"] == "Jasur"
+
+    def test_dispatcher_can_manage_the_fleet(self, client):
+        self._register_owner(client, "766004")
+        self._as_dispatcher(client, "fleet_dispatcher")
+
+        truck = client.post("/api/trucks", json={"unit_number": "6001"}, headers=_csrf_headers(client))
+        assert truck.status_code == 200, truck.text
+        trailer = client.post("/api/trailers", json={"unit_number": "8001"}, headers=_csrf_headers(client))
+        assert trailer.status_code == 200, trailer.text
+        assert client.delete(
+            f"/api/trailers/{trailer.json()['id']}", headers=_csrf_headers(client)
+        ).status_code == 200
+
+    def test_deleting_a_truck_frees_its_driver(self, client):
+        self._register_owner(client, "766005")
+        truck = client.post("/api/trucks", json={"unit_number": "7001"}, headers=_csrf_headers(client)).json()
+        driver = client.post("/api/drivers", json={"full_name": "Sardor"}, headers=_csrf_headers(client)).json()
+        client.patch(
+            f"/api/trucks/{truck['id']}", json={"driver_id": driver["id"]}, headers=_csrf_headers(client),
+        )
+
+        assert client.delete(f"/api/trucks/{truck['id']}", headers=_csrf_headers(client)).status_code == 200
+        # The driver must survive - only the truck was deleted.
+        detail = client.get(f"/api/drivers/{driver['id']}").json()
+        assert detail["truck"] is None
+
+    def test_driver_with_loads_cannot_be_deleted(self, client):
+        """Loads carry the company's gross figures; cascading them away on a
+        driver delete would silently rewrite past weeks."""
+        self._register_owner(client, "766006")
+        driver = client.post("/api/drivers", json={"full_name": "Otabek"}, headers=_csrf_headers(client)).json()
+
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            company = session.query(models.Company).filter_by(mc_number="766006").first()
+            session.add(models.Load(
+                company_id=company.id, driver_id=driver["id"], load_id="L-766006", status="dispatched",
+            ))
+            session.commit()
+
+        refused = client.delete(f"/api/drivers/{driver['id']}", headers=_csrf_headers(client))
+        assert refused.status_code == 409
+        assert "deactivate" in refused.json()["detail"].lower()
+
+    def test_driver_without_loads_can_be_deleted(self, client):
+        self._register_owner(client, "766007")
+        driver = client.post("/api/drivers", json={"full_name": "Bobur"}, headers=_csrf_headers(client)).json()
+        assert client.delete(f"/api/drivers/{driver['id']}", headers=_csrf_headers(client)).status_code == 200
+        assert client.get("/api/drivers").json() == []
+
+    def test_fleet_is_scoped_to_the_company(self, client):
+        self._register_owner(client, "766008")
+        client.post("/api/trucks", json={"unit_number": "TENANT-A"}, headers=_csrf_headers(client))
+        client.post("/api/auth/logout", headers=_csrf_headers(client))
+
+        self._register_owner(client, "766009")
+        assert client.get("/api/trucks").json() == []
+
+
 class TestGoogleSignIn:
     """"Continue with Google" - /api/auth/google/start and its callback.
     Google itself is stubbed out; what's covered here is the account
@@ -1598,7 +1736,10 @@ class TestDriverCreation:
         response = client.post("/api/drivers", json={"full_name": "   "}, headers=_csrf_headers(client))
         assert response.status_code == 422
 
-    def test_dispatcher_cannot_create_driver(self, client):
+    def test_dispatcher_can_create_driver(self, client):
+        """Adding a driver is day-to-day dispatch work, not an ownership
+        decision - drivers turn over constantly, and routing every hire
+        through the owner would stall the board."""
         self._register_owner(client, "931111")
         client.post(
             "/api/dispatchers",
@@ -1609,7 +1750,7 @@ class TestDriverCreation:
         client.post("/api/auth/dispatcher", json={"username": "driver_creation_dispatcher", "password": "password123"})
 
         response = client.post("/api/drivers", json={"full_name": "Nope"}, headers=_csrf_headers(client))
-        assert response.status_code == 403
+        assert response.status_code == 200, response.text
 
     def test_create_driver_requires_csrf(self, client):
         self._register_owner(client, "941111")

@@ -15,7 +15,7 @@ import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
   type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
-  type Driver, type DriverLinkCode, type TeamMember,
+  type Driver, type DriverLinkCode, type TeamMember, type Truck, type Trailer,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
@@ -54,6 +54,14 @@ export default function SettingsPage() {
   const [editDispatcherError, setEditDispatcherError] = useState('')
   const [editDispatcherBusy, setEditDispatcherBusy] = useState(false)
 
+  // Fleet assets - trucks and trailers, managed by either role.
+  const [trucks, setTrucks] = useState<Truck[]>([])
+  const [trailers, setTrailers] = useState<Trailer[]>([])
+  const [newTruckUnit, setNewTruckUnit] = useState('')
+  const [newTrailerUnit, setNewTrailerUnit] = useState('')
+  const [fleetError, setFleetError] = useState('')
+  const [fleetBusy, setFleetBusy] = useState(false)
+
   // Drivers - self-service creation + Telegram group linking
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [newDriverName, setNewDriverName] = useState('')
@@ -79,20 +87,22 @@ export default function SettingsPage() {
   // share a tab now. Every tab shows for both roles; the owner-only sections
   // inside keep their own guards, so a dispatcher opening People simply sees
   // Team and nothing else.
-  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'drivers' | 'dispatchers' | 'team' | 'security'
-  type SettingsTab = 'general' | 'billing' | 'integrations' | 'people' | 'security'
+  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'fleet' | 'drivers' | 'dispatchers' | 'team' | 'security'
+  type SettingsTab = 'general' | 'billing' | 'integrations' | 'fleet' | 'people' | 'security'
 
   const TAB_SECTIONS: Record<SettingsTab, SettingsSection[]> = {
     general: ['company', 'preferences'],
     billing: ['billing'],
     integrations: ['integrations', 'alerts'],
-    people: ['drivers', 'dispatchers', 'team'],
+    fleet: ['fleet', 'drivers'],
+    people: ['dispatchers', 'team'],
     security: ['security'],
   }
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const SETTINGS_NAV: { key: SettingsTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
     { key: 'general', label: 'General', icon: 'briefcase' },
+    { key: 'fleet', label: 'Fleet', icon: 'truck' },
     { key: 'people', label: 'People', icon: 'users' },
     { key: 'integrations', label: 'Integrations', icon: 'email' },
     { key: 'billing', label: 'Billing', icon: 'money' },
@@ -114,13 +124,16 @@ export default function SettingsPage() {
       setBilling(billingData)
       const teamData = await teamApi.list()
       setTeam(teamData)
+      // Fleet and drivers load for both roles - keeping the board current is
+      // dispatch work, not an ownership decision.
+      setTrucks(await dashboardApi.listTrucks())
+      setTrailers(await dashboardApi.listTrailers())
+      setDrivers(await dashboardApi.listDrivers())
       if (user.role === 'owner') {
         const dispatcherData = await dashboardApi.listDispatchers()
         setDispatchers(dispatcherData)
         const alertRuleData = await settingsApi.listAlertRules()
         setAlertRules(alertRuleData)
-        const driverData = await dashboardApi.listDrivers()
-        setDrivers(driverData)
       }
     } catch (err) {
       console.error(err)
@@ -322,6 +335,59 @@ export default function SettingsPage() {
     }
   }
 
+  /** Every fleet mutation goes through here: they all share the same
+   *  busy/error handling and all end by refreshing the lists, so the UI can
+   *  never drift from what the server actually holds. */
+  const runFleetAction = async (action: () => Promise<unknown>, fallback: string) => {
+    setFleetBusy(true)
+    setFleetError('')
+    try {
+      await action()
+      setTrucks(await dashboardApi.listTrucks())
+      setTrailers(await dashboardApi.listTrailers())
+      setDrivers(await dashboardApi.listDrivers())
+      return true
+    } catch (err) {
+      setFleetError(errorMessage(err, fallback))
+      return false
+    } finally {
+      setFleetBusy(false)
+    }
+  }
+
+  const handleAddTruck = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTruckUnit.trim()) return
+    const ok = await runFleetAction(
+      () => dashboardApi.createTruck(newTruckUnit.trim()), 'Could not add that truck.',
+    )
+    if (ok) setNewTruckUnit('')
+  }
+
+  const handleAddTrailer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newTrailerUnit.trim()) return
+    const ok = await runFleetAction(
+      () => dashboardApi.createTrailer(newTrailerUnit.trim()), 'Could not add that trailer.',
+    )
+    if (ok) setNewTrailerUnit('')
+  }
+
+  const handleDeleteTruck = (truck: Truck) => {
+    if (!window.confirm(`Delete truck ${truck.unit_number}? Its driver stays, and is unassigned.`)) return
+    runFleetAction(() => dashboardApi.deleteTruck(truck.id), 'Could not delete that truck.')
+  }
+
+  const handleDeleteTrailer = (trailer: Trailer) => {
+    if (!window.confirm(`Delete trailer ${trailer.unit_number}?`)) return
+    runFleetAction(() => dashboardApi.deleteTrailer(trailer.id), 'Could not delete that trailer.')
+  }
+
+  const handleDeleteDriver = (driver: Driver) => {
+    if (!window.confirm(`Remove ${driver.full_name || driver.driver_bot_id}?`)) return
+    runFleetAction(() => dashboardApi.deleteDriver(driver.id), 'Could not remove that driver.')
+  }
+
   const handleAddDriver = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
@@ -336,7 +402,18 @@ export default function SettingsPage() {
       const created = await dashboardApi.createDriver(name)
       setNewDriverName('')
       setBanner({ kind: 'success', text: `${created.full_name} added.` })
-      setDrivers((prev) => [...prev, { ...created, dispatcher_username: null, samsara_vehicle_id: null, load_count: 0, weekly_gross: 0, weekly_loads: 0 }])
+      // A driver starts unassigned - a truck is put against them afterwards,
+      // from the Fleet tab.
+      setDrivers((prev) => [...prev, {
+        ...created,
+        dispatcher_username: null,
+        samsara_vehicle_id: null,
+        truck: null,
+        trailer: null,
+        load_count: 0,
+        weekly_gross: 0,
+        weekly_loads: 0,
+      }])
       setLinkDriverId(created.id)
       setLinkCode({ code: created.link_code, bot_command: created.bot_command })
     } catch (err) {
@@ -742,9 +819,148 @@ export default function SettingsPage() {
           </section>
         )}
 
+        {/* ---------------- Fleet: trucks and trailers ---------------- */}
+        <section className={sectionClass('fleet')}>
+          <h2 className="section-title">Trucks</h2>
+          <div className="card">
+            {trucks.length > 0 ? (
+              <div className="dispatcher-list">
+                {trucks.map((t) => (
+                  <div key={t.id} className="dispatcher-row">
+                    <span className="unit-chip">{t.unit_number}</span>
+                    <span className="dispatcher-username">
+                      {t.driver ? (t.driver.full_name || t.driver.driver_bot_id) : (
+                        <span className="text-warn">No driver</span>
+                      )}
+                    </span>
+
+                    {/* Assignment happens inline. Hooking a trailer or moving
+                        a driver is something dispatch does several times a
+                        day, so it shouldn't cost a modal each time. */}
+                    <select
+                      className="unit-select"
+                      aria-label={`Trailer for truck ${t.unit_number}`}
+                      value={t.trailer?.id ?? ''}
+                      disabled={fleetBusy}
+                      onChange={(e) =>
+                        runFleetAction(
+                          () => dashboardApi.assignTruck(t.id, {
+                            trailer_id: e.target.value ? Number(e.target.value) : null,
+                          }),
+                          'Could not change the trailer.',
+                        )
+                      }
+                    >
+                      <option value="">No trailer</option>
+                      {trailers
+                        // A trailer already on another truck isn't available,
+                        // but this truck's own stays listed so it can show as
+                        // the current selection.
+                        .filter((tr) => !tr.in_use || tr.id === t.trailer?.id)
+                        .map((tr) => (
+                          <option key={tr.id} value={tr.id}>{tr.unit_number}</option>
+                        ))}
+                    </select>
+
+                    <select
+                      className="unit-select"
+                      aria-label={`Driver for truck ${t.unit_number}`}
+                      value={t.driver?.id ?? ''}
+                      disabled={fleetBusy}
+                      onChange={(e) =>
+                        runFleetAction(
+                          () => dashboardApi.assignTruck(t.id, {
+                            driver_id: e.target.value ? Number(e.target.value) : null,
+                          }),
+                          'Could not change the driver.',
+                        )
+                      }
+                    >
+                      <option value="">No driver</option>
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.id}>{d.full_name || d.driver_bot_id}</option>
+                      ))}
+                    </select>
+
+                    <button
+                      className="btn btn-danger-ghost btn-sm"
+                      onClick={() => handleDeleteTruck(t)}
+                      disabled={fleetBusy}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty">No trucks yet. Add your first unit below.</p>
+            )}
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <h3 className="settings-subtitle">Add a truck</h3>
+            <form className="form form-inline" onSubmit={handleAddTruck}>
+              <input
+                type="text"
+                value={newTruckUnit}
+                onChange={(e) => setNewTruckUnit(e.target.value)}
+                placeholder="Unit number, e.g. 3001"
+                maxLength={30}
+                required
+              />
+              <button className="btn btn-primary" type="submit" disabled={fleetBusy}>
+                {fleetBusy ? 'Saving...' : 'Add truck'}
+              </button>
+            </form>
+          </div>
+
+          <h2 className="section-title" style={{ marginTop: 32 }}>Trailers</h2>
+          <div className="card">
+            {trailers.length > 0 ? (
+              <div className="dispatcher-list">
+                {trailers.map((tr) => (
+                  <div key={tr.id} className="dispatcher-row">
+                    <span className="unit-chip">{tr.unit_number}</span>
+                    <span className="dispatcher-username">
+                      {tr.in_use ? 'Hooked to a truck' : <span className="settings-row-hint">Available</span>}
+                    </span>
+                    <button
+                      className="btn btn-danger-ghost btn-sm"
+                      onClick={() => handleDeleteTrailer(tr)}
+                      disabled={fleetBusy}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="empty">No trailers yet.</p>
+            )}
+          </div>
+
+          <div className="card" style={{ marginTop: 12 }}>
+            <h3 className="settings-subtitle">Add a trailer</h3>
+            <form className="form form-inline" onSubmit={handleAddTrailer}>
+              <input
+                type="text"
+                value={newTrailerUnit}
+                onChange={(e) => setNewTrailerUnit(e.target.value)}
+                placeholder="Unit number, e.g. 373783"
+                maxLength={30}
+                required
+              />
+              <button className="btn btn-primary" type="submit" disabled={fleetBusy}>
+                {fleetBusy ? 'Saving...' : 'Add trailer'}
+              </button>
+            </form>
+          </div>
+
+          {fleetError && <Alert kind="error" onDismiss={() => setFleetError('')}>{fleetError}</Alert>}
+        </section>
+
         {/* ---------------- Drivers ---------------- */}
-        {isOwner && (
-          <section className={sectionClass('drivers')}>
+        <section className={sectionClass('drivers')}>
             <h2 className="section-title">Drivers</h2>
             <div className="card">
               {drivers.length > 0 ? (
@@ -767,6 +983,13 @@ export default function SettingsPage() {
                             {linkDriverId === d.id && linkCode ? 'New code' : 'Get linking code'}
                           </button>
                         )}
+                        <button
+                          className="btn btn-danger-ghost btn-sm"
+                          onClick={() => handleDeleteDriver(d)}
+                          disabled={fleetBusy}
+                        >
+                          Remove
+                        </button>
                       </div>
                       {linkDriverId === d.id && linkCode && (
                         <div className="twofa-enroll">
@@ -818,7 +1041,6 @@ export default function SettingsPage() {
               </form>
             </div>
           </section>
-        )}
 
         {/* ---------------- Dispatchers ---------------- */}
         {isOwner && (

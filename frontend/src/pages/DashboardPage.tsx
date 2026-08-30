@@ -159,6 +159,10 @@ export default function DashboardPage() {
         if (!search.trim()) return true
         const q = search.toLowerCase()
         return (
+          // Unit numbers first: with the board organised around trucks,
+          // "3001" is what a dispatcher actually types to find a rig.
+          d.truck?.unit_number.toLowerCase().includes(q) ||
+          d.trailer?.unit_number.toLowerCase().includes(q) ||
           d.full_name?.toLowerCase().includes(q) ||
           d.driver_bot_id?.toLowerCase().includes(q) ||
           d.dispatcher_username?.toLowerCase().includes(q)
@@ -451,7 +455,7 @@ export default function DashboardPage() {
               <input
                 className="driver-search"
                 type="text"
-                placeholder="Search by name, ID, or dispatcher..."
+                placeholder="Search by truck, trailer, or driver..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -482,15 +486,34 @@ export default function DashboardPage() {
                     if (e.key === 'Enter' || e.key === ' ') setSelectedDriverId(driver.id)
                   }}
                 >
+                  {/* The equipment leads, the person follows. A truck is the
+                      fleet's stable unit - "where is 3001" outlives whoever
+                      is driving it this month - so the unit number is the
+                      heading and the driver reads as its current occupant. */}
                   <div className="driver-header">
                     <div className="driver-name-row">
                       <span className={`status-dot ${driver.subscription_active ? 'on' : 'off'}`} />
-                      <h3 className="driver-name">{driver.full_name}</h3>
+                      <h3 className="driver-name">
+                        {driver.truck ? (
+                          <>
+                            <span className="unit-label">Truck</span> {driver.truck.unit_number}
+                            {driver.trailer && (
+                              <>
+                                <span className="unit-sep">·</span>
+                                <span className="unit-label">Trailer</span> {driver.trailer.unit_number}
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-warn">No truck assigned</span>
+                        )}
+                      </h3>
                     </div>
                     <span className={`driver-status ${driver.subscription_active ? 'active' : 'inactive'}`}>
                       {driver.subscription_active ? 'Active' : 'Inactive'}
                     </span>
                   </div>
+                  <p className="driver-person">{driver.full_name || 'No driver assigned'}</p>
                   <div className="driver-meta-row">
                     <span className="mono">#{driver.driver_bot_id}</span>
                     {driver.dispatcher_username && <span>· {driver.dispatcher_username}</span>}
