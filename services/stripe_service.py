@@ -100,6 +100,20 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
         success_url=f"{FRONTEND_URL}/settings?billing=success",
         cancel_url=f"{FRONTEND_URL}/pages/pricing?billing=cancelled",
         metadata={"company_id": str(company_id), "tier": tier, "interval": interval},
+        # Stripe turns Managed Payments (Stripe as merchant of record, handling
+        # tax remittance) on by default for new accounts, but it needs API
+        # version 2025-03-31.basil or newer - the pinned stripe 11.4.1 sends
+        # 2024-12-18.acacia, so every Checkout Session died with "Managed
+        # Payments is not supported on API version ...", surfacing in the app
+        # as a bare 500 on the upgrade button.
+        #
+        # Opting out explicitly rather than upgrading the SDK: whether Stripe
+        # or Freight Pilot is the merchant of record decides who is liable for
+        # collecting and remitting sales tax, which is a business decision, not
+        # something to adopt silently as a side effect of a version bump. Turn
+        # this on deliberately (and upgrade the SDK with it) when that call is
+        # actually made.
+        managed_payments={"enabled": False},
     )
     return session.url
 

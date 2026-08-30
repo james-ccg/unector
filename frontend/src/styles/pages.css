@@ -504,3 +504,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The upgrade error sits between the intro and the cards, so it needs the
+   same column width as the grid rather than running the full container. */
+.pricing-alert {
+  max-width: 760px;
+  margin: 0 auto 28px;
+}

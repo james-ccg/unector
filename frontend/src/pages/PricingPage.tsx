@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import Layout from '../components/Layout'
+import Alert from '../components/Alert'
 import { useAuth } from '../context/AuthContext'
 import { billingApi, errorMessage } from '../services/api'
 
@@ -104,6 +105,16 @@ export default function PricingPage() {
             </p>
           </div>
 
+          {/* Above the cards, not below them. Sitting underneath, this was
+              overlapped by the featured card's glow and fell outside the
+              viewport the click happened in - so a failed upgrade looked like
+              the button simply did nothing. */}
+          {upgradeError && (
+            <Alert kind="error" className="pricing-alert" onDismiss={() => setUpgradeError('')}>
+              {upgradeError}
+            </Alert>
+          )}
+
           <div className="pricing-grid">
             <div className="pricing-card">
               <h3 className="pricing-name">Free</h3>
@@ -200,8 +211,6 @@ export default function PricingPage() {
               </button>
             </div>
           </div>
-
-          {upgradeError && <p className="error" style={{ textAlign: 'center' }}>{upgradeError}</p>}
 
           <p className="pricing-footnote">
             Prices shown do not include tax. A trial isn't available twice for the same email,

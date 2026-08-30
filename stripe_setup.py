@@ -34,11 +34,29 @@ ENV_VAR_NAMES = {
 }
 
 
+# "Software as a Service (SaaS) - Business Use". Freight Pilot is sold to
+# trucking companies, not consumers, so the business-use code is the right
+# one - the consumer variant is taxed differently in several US states.
+#
+# This is not optional decoration: Stripe enables Managed Payments by default
+# on new accounts, and a Checkout Session for a product with no tax code is
+# rejected outright with "the product tax code is missing", which surfaced in
+# the app as a bare 500 on the upgrade button.
+SAAS_TAX_CODE = "txcd_10103001"
+
+
 def _find_or_create_product(name: str) -> str:
     existing = stripe.Product.search(query=f'name:"{name}" AND active:"true"')
     if existing.data:
-        return existing.data[0].id
-    product = stripe.Product.create(name=name)
+        product = existing.data[0]
+        # Backfill, so re-running this script repairs products that were
+        # created before the tax code was set rather than silently leaving
+        # checkout broken for them.
+        if not product.get("tax_code"):
+            stripe.Product.modify(product.id, tax_code=SAAS_TAX_CODE)
+            print(f"  set tax code on existing product {product.id} ({name})")
+        return product.id
+    product = stripe.Product.create(name=name, tax_code=SAAS_TAX_CODE)
     return product.id
 
 
