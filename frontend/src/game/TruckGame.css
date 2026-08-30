@@ -1,0 +1,185 @@
+.tg {
+  width: 100%;
+  max-width: 940px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* In fullscreen the shell becomes the whole screen, so it has to paint its
+   own background - otherwise it composites over black and the light theme
+   looks broken. */
+.tg:fullscreen {
+  max-width: none;
+  background: var(--bg);
+  padding: 24px;
+  justify-content: center;
+}
+
+.tg-hud {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--hint);
+}
+
+.tg-stat b {
+  color: var(--text);
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tg-stat.is-muted b {
+  color: var(--hint);
+}
+
+.tg-icon-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tg-icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tg-stage {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.tg-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 900 / 520;
+}
+
+.tg:fullscreen .tg-canvas {
+  aspect-ratio: auto;
+  height: calc(100vh - 190px);
+}
+
+.tg-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.tg-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.tg-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: color-mix(in srgb, var(--card) 86%, transparent);
+}
+
+/* The loading overlay holds real controls, so unlike the end-of-run one it
+   must stay interactive. */
+.tg-overlay-loading {
+  justify-content: flex-end;
+  padding-bottom: 28px;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--card) 94%, transparent) 40%,
+    transparent 100%
+  );
+}
+
+.tg-overlay-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.tg-overlay-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 48ch;
+}
+
+.tg-place-row {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.tg-controls {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 1fr;
+  gap: 8px;
+}
+
+.tg-pedal {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* Stops a held pedal turning into a text selection or a long-press menu
+     on touch, which otherwise cancels the input mid-hill. */
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.tg-pedal:active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tg-pedal.is-brake:active {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.tg-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--hint);
+}
+
+@media (max-width: 560px) {
+  .tg-hud {
+    gap: 12px;
+    font-size: 11px;
+  }
+  /* The keyboard hint means nothing on a phone, where the pedals are the
+     only control. */
+  .tg-hint {
+    display: none;
+  }
+}

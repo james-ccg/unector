@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import TruckGame from './TruckGame'
+
+// Lazy, so the physics engine stays out of the bundle every visitor
+// downloads - it's an easter egg, not a feature of the product. The
+// chunk is warmed in the background while online (see prefetchGame), so
+// it is already in the service worker's cache by the time the
+// connection actually drops.
+const TruckGame = lazy(() => import('../game/TruckGame'))
 import Icon from './Icon'
 import './OfflineGate.css'
 
@@ -42,7 +48,9 @@ export default function OfflineGate({ children }: { children: React.ReactNode })
           off as soon as you&apos;re back &mdash; the page returns on its own.
         </p>
 
-        <TruckGame />
+        <Suspense fallback={<p className="offline-text">Loading the yard…</p>}>
+          <TruckGame />
+        </Suspense>
 
         <p className="offline-back">
           Connection back already? <Link to="/">Reload Freight Pilot</Link>

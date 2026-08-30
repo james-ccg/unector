@@ -34,3 +34,25 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     })
   })
 }
+
+/** Pulls the game's chunk down quietly once the page is idle and online.
+ *
+ * The game is lazy so the physics engine isn't in everyone's first load, but
+ * that alone would make it unavailable in exactly the situation it exists
+ * for: a visitor who never opened /play has nothing cached when the
+ * connection drops. Fetching it during idle time puts it through the service
+ * worker - and therefore into the cache - long before it's needed, at no cost
+ * to the initial render. */
+function prefetchGame() {
+  if (!navigator.onLine) return
+  import('./game/TruckGame').catch(() => {
+    // Offline already, or the chunk 404s after a deploy - either way the
+    // lazy import will simply try again when the game is actually opened.
+  })
+}
+
+if ('requestIdleCallback' in window) {
+  ;(window as Window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(prefetchGame)
+} else {
+  setTimeout(prefetchGame, 3000)
+}

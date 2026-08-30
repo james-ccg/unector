@@ -1,6 +1,8 @@
+import { lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
-import TruckGame from '../components/TruckGame'
+
+const TruckGame = lazy(() => import('../game/TruckGame'))
 import './PlayPage.css'
 
 /** The game on its own page, reachable from the 404 and from the offline
@@ -17,7 +19,9 @@ export default function PlayPage() {
             Nothing to dispatch for a minute? See how far you can get without hitting anything.
           </p>
 
-          <TruckGame />
+          <Suspense fallback={<p className="play-text">Loading the yard…</p>}>
+            <TruckGame />
+          </Suspense>
 
           <p className="play-back">
             <Link to="/">← Back to Freight Pilot</Link>

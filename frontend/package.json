@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/matter-js": "^0.20.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.33.0",
+    "matter-js": "^0.20.0",
     "motion": "^13.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
