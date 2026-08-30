@@ -195,10 +195,17 @@
   border: 1px solid var(--border);
 }
 /* Connected-but-broken: reads as a problem, not as an off switch. */
+/* Two distinct severities, not one: "expires in 2 days" and "already dead"
+   need different urgency, and painting both red trains people to ignore it. */
 .status-badge.is-warning {
-  background: rgba(214, 62, 62, 0.14);
+  background: color-mix(in srgb, var(--amber) 14%, transparent);
+  color: var(--amber);
+  border: 1px solid color-mix(in srgb, var(--amber) 34%, transparent);
+}
+.status-badge.is-error {
+  background: color-mix(in srgb, var(--red) 14%, transparent);
   color: var(--red);
-  border: 1px solid rgba(214, 62, 62, 0.32);
+  border: 1px solid color-mix(in srgb, var(--red) 34%, transparent);
 }
 .integration-warning {
   margin: 0 0 14px;

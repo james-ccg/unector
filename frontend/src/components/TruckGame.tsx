@@ -28,6 +28,19 @@ interface Obstacle {
   kind: 'cone' | 'pallet' | 'barrel'
 }
 
+/** Freight to pick up. The point of the run isn't distance survived, it's
+ *  gross hauled - the same number the real dashboard leads with - so loads
+ *  sit at jump height and the jump doubles as the way to earn. */
+interface Freight {
+  x: number
+  y: number
+  rate: number
+  taken: boolean
+}
+
+// Round hundreds, in the range a short haul actually pays.
+const RATES = [450, 600, 750, 900, 1200]
+
 function readHighScore(): number {
   try {
     const raw = localStorage.getItem(HIGH_SCORE_KEY)
@@ -50,7 +63,8 @@ function writeHighScore(score: number) {
 export default function TruckGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [phase, setPhase] = useState<Phase>('ready')
-  const [score, setScore] = useState(0)
+  const [gross, setGross] = useState(0)
+  const [loadsHauled, setLoadsHauled] = useState(0)
   const [highScore, setHighScore] = useState(readHighScore)
 
   // Everything the loop mutates lives in refs: React state re-renders, and a
@@ -61,7 +75,11 @@ export default function TruckGame() {
     speed: START_SPEED,
     distance: 0,
     obstacles: [] as Obstacle[],
+    freight: [] as Freight[],
     nextSpawn: 90,
+    nextFreight: 220,
+    gross: 0,
+    loads: 0,
     phase: 'ready' as Phase,
   })
 
@@ -80,9 +98,14 @@ export default function TruckGame() {
     s.speed = START_SPEED
     s.distance = 0
     s.obstacles = []
+    s.freight = []
     s.nextSpawn = 90
+    s.nextFreight = 220
+    s.gross = 0
+    s.loads = 0
     s.phase = 'running'
-    setScore(0)
+    setGross(0)
+    setLoadsHauled(0)
     setPhase('running')
   }
 
@@ -130,6 +153,30 @@ export default function TruckGame() {
       const airtimeFrames = (2 * Math.abs(JUMP_V)) / GRAVITY
       const minGap = airtimeFrames * s.speed + 90
       s.nextSpawn = minGap + Math.random() * 190
+    }
+
+    const spawnFreight = () => {
+      const s = state.current
+      // Placed at a height the truck only reaches mid-jump, so collecting a
+      // load is a decision with risk attached rather than something that
+      // happens on its own.
+      s.freight.push({
+        x: WORLD.w + 40,
+        y: GROUND_Y - 74 - Math.random() * 26,
+        rate: RATES[Math.floor(Math.random() * RATES.length)],
+        taken: false,
+      })
+      s.nextFreight = 420 + Math.random() * 420
+    }
+
+    const drawFreight = (f: Freight) => {
+      // A crate on a pallet, in the brand accent so it reads as the thing to
+      // go for - the obstacles are the only red on screen.
+      ctx.fillStyle = COLORS.accent
+      ctx.fillRect(f.x, f.y, 22, 18)
+      ctx.fillStyle = COLORS.border
+      ctx.fillRect(f.x, f.y + 18, 22, 4)
+      ctx.fillRect(f.x + 9, f.y, 4, 18)
     }
 
     const drawTruck = (x: number, y: number) => {
@@ -192,30 +239,44 @@ export default function TruckGame() {
         for (const o of s.obstacles) o.x -= s.speed * dt
         s.obstacles = s.obstacles.filter((o) => o.x + o.w > -20)
 
+        s.nextFreight -= s.speed * dt
+        if (s.nextFreight <= 0) spawnFreight()
+        for (const f of s.freight) f.x -= s.speed * dt
+        s.freight = s.freight.filter((f) => f.x > -40 && !f.taken)
+
         // Hitbox is inset from the drawing on purpose - a runner feels
         // unfair when the corners of the sprite count.
         const tx = 60 + 6
         const tw = 68 - 12
         const ty = s.y - 34 + 4
         const th = 30
+        for (const f of s.freight) {
+          if (!f.taken && tx < f.x + 22 && tx + tw > f.x && ty < f.y + 22 && ty + th > f.y) {
+            f.taken = true
+            s.gross += f.rate
+            s.loads += 1
+            setGross(s.gross)
+            setLoadsHauled(s.loads)
+          }
+        }
+
         for (const o of s.obstacles) {
           const oy = GROUND_Y - o.h
           if (tx < o.x + o.w && tx + tw > o.x && ty < oy + o.h && ty + th > oy) {
             s.phase = 'over'
             setPhase('over')
-            const final = Math.floor(s.distance / 12)
-            setScore(final)
+            // The run is scored on gross hauled, not ground covered - it's
+            // the number the product itself leads with.
             setHighScore((prev) => {
-              if (final > prev) {
-                writeHighScore(final)
-                return final
+              if (s.gross > prev) {
+                writeHighScore(s.gross)
+                return s.gross
               }
               return prev
             })
             break
           }
         }
-        if (s.phase === 'running') setScore(Math.floor(s.distance / 12))
       }
 
       // Ground
@@ -237,6 +298,7 @@ export default function TruckGame() {
       ctx.stroke()
       ctx.setLineDash([])
 
+      for (const f of s.freight) drawFreight(f)
       for (const o of s.obstacles) drawObstacle(o)
       drawTruck(60, s.y)
 
@@ -268,11 +330,14 @@ export default function TruckGame() {
     <div className="truck-game">
       <div className="truck-game-hud">
         <span className="truck-game-score">
-          Score <b>{String(score).padStart(5, '0')}</b>
+          Loads <b>{loadsHauled}</b>
+        </span>
+        <span className="truck-game-score">
+          Gross <b>${gross.toLocaleString('en-US')}</b>
         </span>
         {highScore > 0 && (
           <span className="truck-game-score is-best">
-            Best <b>{String(highScore).padStart(5, '0')}</b>
+            Best <b>${highScore.toLocaleString('en-US')}</b>
           </span>
         )}
       </div>
@@ -291,8 +356,10 @@ export default function TruckGame() {
             </p>
             <p className="truck-game-overlay-text">
               {phase === 'ready'
-                ? 'Jump the obstacles. Press Space, or tap the button below.'
-                : `You made it ${score} before the crash.`}
+                ? 'Grab the freight, clear the road. Press Space, or tap the button below.'
+                : loadsHauled > 0
+                  ? `${loadsHauled} load${loadsHauled === 1 ? '' : 's'} hauled, $${gross.toLocaleString('en-US')} gross.`
+                  : 'No loads picked up that run.'}
             </p>
           </div>
         )}

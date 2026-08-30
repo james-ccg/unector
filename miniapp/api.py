@@ -490,7 +490,10 @@ def register_company(request: Request, body: RegisterRequest, response: Response
             session.refresh(new_company)
 
             if pending_gmail:
+                from services.gmail_service import mark_token_connected
+
                 save_company_credential(new_company.id, "gmail_refresh_token", pending_gmail["gmail_refresh_token"])
+                mark_token_connected(new_company.id)
 
             token = create_token({"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name})
             set_session_cookies(response, token)
@@ -1149,13 +1152,20 @@ def get_settings(user: dict = Depends(get_current_user)):
     gmail_token = get_company_credential(company_id, "gmail_refresh_token")
     samsara_key = get_company_credential(company_id, "samsara_api_key")
 
-    from services.gmail_service import token_invalid_since
+    from services.gmail_service import connection_status
+
+    gmail = connection_status(company_id)
 
     return {
         "gmail_connected": bool(gmail_token),
-        # Connected, but Google has since stopped accepting the stored token -
-        # the owner has to reconnect. Only meaningful while gmail_connected.
-        "gmail_needs_reconnect": bool(gmail_token) and bool(token_invalid_since(company_id)),
+        # "ok" | "expiring" | "expired" - see gmail_service.connection_status.
+        # The UI only offers a reconnect for the latter two, so a healthy
+        # connection isn't cluttered with an action nobody needs to take.
+        "gmail_state": gmail["state"],
+        "gmail_expires_at": gmail["expires_at"],
+        # Kept for the dashboard banner, which only cares about the hard
+        # failure case.
+        "gmail_needs_reconnect": gmail["state"] == "expired",
         "samsara_connected": bool(samsara_key) or SAMSARA_TEST_MODE,
         "company_name": company.company_name,
         "mc_number": company.mc_number
@@ -1197,7 +1207,7 @@ def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owne
 @app.get("/api/settings/gmail/callback")
 def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     from fastapi.responses import RedirectResponse
-    from services.gmail_service import exchange_code_for_refresh_token
+    from services.gmail_service import exchange_code_for_refresh_token, mark_token_connected
 
     # Best-effort recovery of where to send the owner back to, even on an
     # error/expired-state path - falls back to Settings, the safer default.
@@ -1220,6 +1230,9 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
             # access at myaccount.google.com/permissions and try again.
             return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_no_refresh_token")
         save_company_credential(payload["company_id"], "gmail_refresh_token", refresh_token)
+        # Starts the expiry clock Settings warns against, and clears any
+        # "broken" flag left by the connection this one replaces.
+        mark_token_connected(payload["company_id"])
         # Fresh token - retire any "needs reconnect" warning from the old one.
         from services.gmail_service import clear_token_invalid
         clear_token_invalid(payload["company_id"])

@@ -25,6 +25,13 @@ TELEGRAM_PROXY_URL = os.getenv("TELEGRAM_PROXY_URL", "").strip() or None
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
+# Whether the Google OAuth consent screen is still in "Testing" publishing
+# status. While it is, Google revokes every refresh token it issued after
+# 7 days, so the Gmail connection silently dies on a timer and Settings
+# warns ahead of each expiry. Publish the consent screen and set this to
+# false: tokens then last indefinitely and the countdown is meaningless.
+GOOGLE_OAUTH_TESTING_MODE = os.getenv("GOOGLE_OAUTH_TESTING_MODE", "true").strip().lower() != "false"
+
 # Samsara GPS monitoring settings. Each company's own Samsara API key is
 # stored encrypted in the DB (see samsara_setup.py) - these two are just
 # tuning knobs, not secrets.

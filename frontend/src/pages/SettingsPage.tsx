@@ -21,6 +21,17 @@ import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 import './SettingsPage.css'
 
+/** Turns an expiry timestamp into something worth reading on a card. Lives
+ *  outside the component because it reads the clock - fine in an event
+ *  handler, not during render. */
+function describeExpiry(iso: string | null | undefined): string {
+  if (!iso) return 'soon'
+  const hours = (new Date(iso).getTime() - Date.now()) / 3_600_000
+  if (hours <= 1) return 'within the hour'
+  if (hours < 24) return `in about ${Math.round(hours)} hours`
+  return `in ${Math.round(hours / 24)} days`
+}
+
 export default function SettingsPage() {
   const { user } = useAuth()
   const { reduceMotion, setReduceMotion } = usePreferences()
@@ -81,6 +92,17 @@ export default function SettingsPage() {
 
   const isOwner = user?.role === 'owner'
 
+  // Gmail connection health. 'expiring' exists because Google revokes the
+  // refresh tokens of an app still in review after 7 days - warning only once
+  // it's already dead means the owner finds out from a driver asking where
+  // their load went.
+  const gmailState = settings?.gmail_state ?? (settings?.gmail_needs_reconnect ? 'expired' : 'ok')
+  const needsReconnect = gmailState === 'expired' || gmailState === 'expiring'
+  // Phrased once when settings arrive rather than on every render: reading
+  // the clock during render makes the output depend on when React happened
+  // to re-run, which is exactly what the purity rule is guarding against.
+  const [gmailExpiresIn, setGmailExpiresIn] = useState('soon')
+
   // Nine tabs wrapped onto two rows, which is where a tab bar stops being
   // navigation and starts being a list to read. Grouped into five related
   // panels instead - the individual sections below are untouched, they just
@@ -118,6 +140,7 @@ export default function SettingsPage() {
     try {
       const settingsData = await settingsApi.getSettings()
       setSettings(settingsData)
+      setGmailExpiresIn(describeExpiry(settingsData.gmail_expires_at))
       // Billing is shared: whoever's paying (owner or dispatcher) can view
       // and manage the plan, so this loads regardless of role.
       const billingData = await billingApi.getStatus()
@@ -683,44 +706,56 @@ export default function SettingsPage() {
                   "reconnect it in Settings" banner lead to a dead end. */}
               <span
                 className={`status-badge ${
-                  settings?.gmail_needs_reconnect
-                    ? 'is-warning'
-                    : settings?.gmail_connected
-                      ? 'is-connected'
-                      : 'is-disconnected'
+                  gmailState === 'expired'
+                    ? 'is-error'
+                    : gmailState === 'expiring'
+                      ? 'is-warning'
+                      : settings?.gmail_connected
+                        ? 'is-connected'
+                        : 'is-disconnected'
                 }`}
               >
-                {settings?.gmail_needs_reconnect
-                  ? 'Needs reconnect'
-                  : settings?.gmail_connected
-                    ? 'Connected'
-                    : 'Not connected'}
+                {gmailState === 'expired'
+                  ? 'Disconnected'
+                  : gmailState === 'expiring'
+                    ? 'Expires soon'
+                    : settings?.gmail_connected
+                      ? 'Connected'
+                      : 'Not connected'}
               </span>
             </div>
-            {settings?.gmail_needs_reconnect && (
+            {gmailState === 'expired' && (
               <p className="integration-warning">
-                Google has stopped accepting this connection, so rate confirmations aren't being read.
-                Reconnecting takes a few seconds and fixes it.
+                Google has stopped accepting this connection, so rate confirmations aren&apos;t being
+                read. Reconnecting takes a few seconds and fixes it.
+              </p>
+            )}
+            {gmailState === 'expiring' && (
+              <p className="integration-warning">
+                This connection expires {gmailExpiresIn}. Google revokes access for apps still in
+                review, so reconnect before then to keep rate confirmations flowing.
               </p>
             )}
             <div className="integration-actions">
-              {settings?.gmail_needs_reconnect ? (
+              {/* Reconnect is only offered when it would actually achieve
+                  something - the connection is dead, or about to be. On a
+                  healthy connection the only action is Disconnect, so the
+                  card doesn't push a fix for a problem nobody has. */}
+              {!settings?.gmail_connected ? (
+                <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
+                  Connect Gmail
+                </button>
+              ) : (
                 <>
-                  <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
-                    Reconnect Gmail
-                  </button>
+                  {needsReconnect && (
+                    <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
+                      Reconnect Gmail
+                    </button>
+                  )}
                   <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
                     Disconnect
                   </button>
                 </>
-              ) : settings?.gmail_connected ? (
-                <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
-                  Disconnect
-                </button>
-              ) : (
-                <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
-                  Connect Gmail
-                </button>
               )}
             </div>
           </div>

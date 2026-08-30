@@ -48,6 +48,68 @@ TOKEN_URI = "https://oauth2.googleapis.com/token"
 # changing. All of them need the same fix: reconnect from Settings.
 _TOKEN_INVALID_CRED = "gmail_token_invalid_at"
 
+# When the current refresh token was issued. Needed to warn BEFORE the
+# connection dies rather than only after: a broken Gmail link means rate
+# confirmations stop being read, and the owner finds out from a driver
+# asking where their load is.
+_CONNECTED_AT_CRED = "gmail_connected_at"
+
+# Google revokes refresh tokens from an OAuth app in "Testing" publishing
+# status after exactly 7 days. Once the consent screen is published this
+# stops applying and tokens last indefinitely, so the countdown is behind a
+# config flag rather than assumed forever - see GOOGLE_OAUTH_TESTING_MODE.
+TESTING_TOKEN_LIFETIME_DAYS = 7
+WARN_WITHIN_DAYS = 2
+
+
+def mark_token_connected(company_id: int) -> None:
+    """Records the moment a fresh refresh token was stored, and clears any
+    stale "this is broken" flag from the connection it replaces."""
+    from datetime import datetime, timezone
+
+    save_company_credential(company_id, _CONNECTED_AT_CRED, datetime.now(timezone.utc).isoformat())
+    clear_token_invalid(company_id)
+
+
+def connection_status(company_id: int) -> dict:
+    """What Settings needs to decide whether to offer a reconnect, and how
+    loudly. Returns `state` as one of:
+
+      "ok"       - working, nothing to show
+      "expiring" - still working, but due to be revoked within WARN_WITHIN_DAYS
+      "expired"  - a real call has already failed; nothing is being read
+
+    Purely a read of stored state - no Gmail call, so it costs nothing on a
+    page load."""
+    from datetime import datetime, timedelta, timezone
+
+    from config import GOOGLE_OAUTH_TESTING_MODE
+
+    if not get_company_credential(company_id, "gmail_refresh_token"):
+        return {"connected": False, "state": "ok", "expires_at": None}
+
+    if token_invalid_since(company_id):
+        return {"connected": True, "state": "expired", "expires_at": None}
+
+    expires_at = None
+    if GOOGLE_OAUTH_TESTING_MODE:
+        raw = get_company_credential(company_id, _CONNECTED_AT_CRED)
+        if raw:
+            try:
+                connected_at = datetime.fromisoformat(raw)
+            except ValueError:
+                connected_at = None
+            if connected_at:
+                if connected_at.tzinfo is None:
+                    connected_at = connected_at.replace(tzinfo=timezone.utc)
+                expiry = connected_at + timedelta(days=TESTING_TOKEN_LIFETIME_DAYS)
+                expires_at = expiry.isoformat()
+                remaining = expiry - datetime.now(timezone.utc)
+                if remaining <= timedelta(days=WARN_WITHIN_DAYS):
+                    return {"connected": True, "state": "expiring", "expires_at": expires_at}
+
+    return {"connected": True, "state": "ok", "expires_at": expires_at}
+
 
 def mark_token_invalid(company_id: int) -> None:
     from datetime import datetime, timezone

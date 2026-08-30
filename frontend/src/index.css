@@ -45,6 +45,7 @@
      Kept out of lime's hue range on purpose, so a status color is never
      mistaken for the brand accent. */
   --green: #34c759;
+  --amber: #e0b854;
   --red: #ff5c52;
   --blue: #5b9dd9;
   --success: #34c759;
@@ -97,6 +98,7 @@
     --on-primary: #f5f4f0;
 
     --green: #1e9e56;
+    --amber: #9a6f0a;
     --red: #d63e3e;
     --blue: #3d7cb8;
     --success: #1e9e56;
@@ -128,6 +130,7 @@
   --on-primary: #f5f4f0;
 
   --green: #1e9e56;
+  --amber: #9a6f0a;
   --red: #d63e3e;
   --blue: #3d7cb8;
   --success: #1e9e56;
