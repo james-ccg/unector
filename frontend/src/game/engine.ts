@@ -166,6 +166,9 @@ export const DECK_MIN_OFFSET = -120
 export const DECK_MAX_OFFSET = 54
 /** Height of the bulkhead between the deck and the cab. */
 const HEADBOARD_H = 62
+/** Height of the cab above the frame - twice the deck height, as on a real
+ *  tractor. The drawing uses the same figure. */
+const CAB_H = 71
 
 /** Where the wheels sit, measured from the chassis rectangle's centre. */
 const REAR_AXLE = { x: -92, y: 30 }
@@ -439,8 +442,28 @@ export function createWorld(route: Route): TruckWorld {
     TRUCK_START_X + FRONT_AXLE.x, startY + FRONT_AXLE.y, WHEEL_R, wheelOptions,
   )
 
+  /**
+   * The cab, as something the load can land on rather than fall through.
+   *
+   * It was drawn but not built. Anything that got past the bulkhead sank
+   * into it and sat inside the windscreen, which made the cab look like a
+   * painted backdrop - because that is what it was. It is a box now, so a
+   * crate that comes over the top rides the roof or slides off the front,
+   * which is what would actually happen.
+   *
+   * Light for its size on purpose: a real cab is a shell, and giving it the
+   * chassis's density would put the centre of mass high enough to change how
+   * the whole rig handles.
+   */
+  const cab = Matter.Bodies.rectangle(
+    TRUCK_START_X + (DECK_MAX_OFFSET + CHASSIS_W / 2) / 2,
+    startY - CHASSIS_H / 2 - CAB_H / 2,
+    CHASSIS_W / 2 - DECK_MAX_OFFSET, CAB_H,
+    { density: 0.0015, friction: 1, label: 'cab' },
+  )
+
   const truckBody = Matter.Body.create({
-    parts: [chassis, bed, headboard, rearLip, rearWheel, frontWheel],
+    parts: [chassis, bed, headboard, rearLip, cab, rearWheel, frontWheel],
     // This is the deck's grip, and the only friction the rig has - see the
     // note on the ground slabs above.
     friction: 1.2,

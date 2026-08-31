@@ -36,9 +36,16 @@ const VIEW = { w: 900, h: 520 }
 /** Keyboard nudge per press while aiming - fine enough to thread a gap. */
 const AIM_STEP = 4
 
-/** How long the wreck plays before the result takes over the screen. The
- *  debris is real physics, so this is long enough for it to land. */
+/**
+ * How long an ending plays before the result panel takes over.
+ *
+ * Both are real physics rather than a canned animation - the rig comes apart
+ * into loose bodies, and a load being written off shatters into its own - so
+ * covering them the instant the outcome is decided threw away the only part
+ * the player was watching.
+ */
 const WRECK_MS = 2400
+const LOSS_MS = 1600
 
 const KIND_LABEL: Record<Crate['kind'], string> = {
   pallet: 'Pallet',
@@ -68,8 +75,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const [condition, setCondition] = useState(1)
   const [fuel, setFuel] = useState(1)
   const [canRecover, setCanRecover] = useState(false)
-  // Only the wreck has anything to watch before the result panel covers it.
-  const [wreckPlayed, setWreckPlayed] = useState(false)
+  // An ending with something to watch holds the panel back until it has
+  // been watched.
+  const [endingPlayed, setEndingPlayed] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Aiming lives in a ref, not in state: it updates on every pointermove,
@@ -129,7 +137,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setCondition(1)
     setFuel(1)
     setCanRecover(false)
-    setWreckPlayed(false)
+    setEndingPlayed(false)
     setReloadCrate(null)
     setRotated(false)
     aimRef.current = { offset: -30, rotated: false }
@@ -236,9 +244,12 @@ export default function TruckGame({ seed, onFinish }: Props) {
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
     const cam = cameraRef.current
+    // The same pixels-per-world-unit on both axes, because the frame is
+    // scaled off the width and the height simply follows.
+    const perPixel = VIEW.w / (rect.width * cam.zoom)
     return {
-      x: ((clientX - rect.left) * VIEW.w) / (rect.width * cam.zoom) + cam.x,
-      y: ((clientY - rect.top) * VIEW.h) / (rect.height * cam.zoom) + cam.y,
+      x: (clientX - rect.left) * perPixel + cam.x,
+      y: (clientY - rect.top) * perPixel + cam.y,
     }
   }
 
@@ -700,9 +711,10 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // scored on outcome would mean the monitor decides the score.
       const elapsed = Math.min(now - last, 60)
       last = now
-      // 'wrecked' steps too, without input: the debris is real physics and
-      // has to fall somewhere.
-      if (phase !== 'arrived' && phase !== 'failed' && phase !== 'stranded') {
+      // The losing endings keep stepping, without input, until their
+      // wreckage has landed - it is real physics and has to fall somewhere.
+      const settling = (phase === 'wrecked' || phase === 'failed') && !endingPlayed
+      if (phase === 'driving' || phase === 'loading' || phase === 'reloading' || settling) {
         const steps = Math.max(1, Math.round(elapsed / (1000 / 60)))
         for (let i = 0; i < steps; i++) {
           if (phase === 'driving') {
@@ -724,17 +736,28 @@ export default function TruckGame({ seed, onFinish }: Props) {
       const rect = canvas.getBoundingClientRect()
       const scale = (rect.width * dpr) / VIEW.w
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
+
+      // How much world fits vertically, worked out from the canvas rather
+      // than assumed.
+      //
+      // Everything scales off the WIDTH, so on a tall canvas - full screen,
+      // most of all - the drawing ran past VIEW.h and the extra was filled
+      // by the ground polygon, which is why the earth was taking up half the
+      // screen. The camera now frames against the real height, so the road
+      // sits at the same place on screen whatever shape the window is.
+      const viewH = (VIEW.w * rect.height) / rect.width
+
       ctx.fillStyle = COLORS.sky
-      ctx.fillRect(0, 0, VIEW.w, VIEW.h)
+      ctx.fillRect(0, 0, VIEW.w, viewH)
       // A little light at the top. The tokens give one flat background
       // colour, so depth has to be added over it rather than picked from a
       // palette - and a translucent wash works in either theme, where a
       // second hard-coded colour would only work in one.
-      const sky = ctx.createLinearGradient(0, 0, 0, VIEW.h * 0.7)
+      const sky = ctx.createLinearGradient(0, 0, 0, viewH * 0.7)
       sky.addColorStop(0, 'rgba(255,255,255,0.07)')
       sky.addColorStop(1, 'rgba(255,255,255,0)')
       ctx.fillStyle = sky
-      ctx.fillRect(0, 0, VIEW.w, VIEW.h)
+      ctx.fillRect(0, 0, VIEW.w, viewH)
 
       // Camera trails the truck, keeping it left-of-centre so the road ahead
       // is what the player is actually looking at. Aiming pulls in close
@@ -745,9 +768,12 @@ export default function TruckGame({ seed, onFinish }: Props) {
       const camX = closeUp
         ? world.chassis.position.x - VIEW.w / (2 * zoom)
         : Math.max(0, world.chassis.position.x - VIEW.w * 0.35)
+      // The road sits low in the frame: three quarters of the way down, so
+      // what the player is looking at is mostly the sky ahead and the load,
+      // not the dirt under it.
       const camY = closeUp
-        ? world.chassis.position.y - (VIEW.h * 0.62) / zoom
-        : Math.max(0, world.chassis.position.y - VIEW.h * 0.55)
+        ? world.chassis.position.y - (viewH * 0.6) / zoom
+        : world.chassis.position.y - viewH * 0.74
       cameraRef.current = { x: camX, y: camY, zoom }
       ctx.save()
       if (zoom !== 1) ctx.scale(zoom, zoom)
@@ -757,7 +783,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // fill: the earth and the surface you drive on are different things,
       // and the road edge is the line the player is actually reading when
       // they judge a washout.
-      const floor = camY + VIEW.h / zoom + 400
+      const floor = camY + viewH / zoom + 400
 
       // Two ranges of hills behind the road, drawn from the route's own
       // heights at a lower frequency and scrolled slower than the ground.
@@ -1121,7 +1147,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
         // Muted rather than the brand green: a whole truck in the accent
         // colour was the loudest thing on the page by a wide margin.
         for (const part of world.chassis.parts.slice(1)) {
-          if (part.label !== 'wheel') drawBody(part, COLORS.muted)
+          // 'cab' is excluded because the cab is drawn by hand below; the
+          // part exists so freight can land on it, not to be looked at.
+          if (part.label !== 'wheel' && part.label !== 'cab') drawBody(part, COLORS.muted)
         }
 
         // Everything below is in the chassis rectangle's own frame: x runs
@@ -1410,7 +1438,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
           ctx.save()
           ctx.globalAlpha = flash * 0.75
           ctx.fillStyle = COLORS.amber
-          ctx.fillRect(0, 0, VIEW.w, VIEW.h)
+          ctx.fillRect(0, 0, VIEW.w, viewH)
           ctx.restore()
         }
       }
@@ -1493,13 +1521,15 @@ export default function TruckGame({ seed, onFinish }: Props) {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', resize)
     }
-  }, [route, phase, onFinish, ticket])
+  }, [route, phase, onFinish, ticket, endingPlayed])
 
-  // The wreck plays out before the result panel covers it up. Every other
-  // ending has nothing to watch, so its panel is derived rather than timed.
+  // A wreck and a total loss both have wreckage to watch; arriving and
+  // running dry do not, so those show their panel straight away.
   useEffect(() => {
-    if (phase !== 'wrecked') return
-    const timer = setTimeout(() => setWreckPlayed(true), WRECK_MS)
+    if (phase !== 'wrecked' && phase !== 'failed') return
+    const timer = setTimeout(
+      () => setEndingPlayed(true), phase === 'wrecked' ? WRECK_MS : LOSS_MS,
+    )
     return () => clearTimeout(timer)
   }, [phase])
 
@@ -1705,8 +1735,8 @@ export default function TruckGame({ seed, onFinish }: Props) {
           </div>
         )}
 
-        {(phase === 'arrived' || phase === 'failed' || phase === 'stranded'
-          || (phase === 'wrecked' && wreckPlayed)) && (
+        {(phase === 'arrived' || phase === 'stranded'
+          || ((phase === 'failed' || phase === 'wrecked') && endingPlayed)) && (
           <div className="tg-overlay">
             <p className="tg-overlay-title">
               {phase === 'arrived' ? 'Delivered'
