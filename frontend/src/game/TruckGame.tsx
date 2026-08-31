@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Matter from 'matter-js'
-import { generateRoute, SEGMENT_WIDTH, type Crate, type Route } from './route'
+import { generateRoute, SEGMENT_WIDTH, BASE_GROUND_Y as BASE, type Crate, type Route } from './route'
 import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
   createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, planDrop,
-  drive, brake, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  drive, brake, coast, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
   type CargoBody, type TruckWorld,
 } from './engine'
 import './TruckGame.css'
@@ -329,25 +329,51 @@ export default function TruckGame({ seed, onFinish }: Props) {
     // The shape is the whole basis of the loading decision, so the player has
     // to be able to read it at a glance: a drum stood on end looks precarious
     // because it is.
+    /**
+     * Materials, not theme colours.
+     *
+     * These are objects in a scene rather than parts of the interface, and
+     * they were all drawn in one muted grey, which made a stack read as a
+     * row of identical slabs - when telling a heavy timber pallet from a
+     * steel drum at a glance is the entire loading decision. Fixed tones
+     * work in both themes because the ground behind them is textured and
+     * mid-dark either way.
+     */
+    const MATERIAL: Record<Crate['kind'], { base: string; light: string; dark: string }> = {
+      pallet: { base: '#8a6a43', light: 'rgba(255,236,205,0.16)', dark: 'rgba(40,26,12,0.4)' },
+      crate: { base: '#a5804f', light: 'rgba(255,240,214,0.18)', dark: 'rgba(48,32,14,0.4)' },
+      drum: { base: '#6f7b86', light: 'rgba(226,240,255,0.2)', dark: 'rgba(16,24,32,0.45)' },
+    }
+
     const drawCargo = (entry: CargoBody) => {
       const { body, w, h } = entry
-      const fill = entry.damage > 0.6 ? COLORS.danger : entry.damage > 0.2 ? COLORS.amber : COLORS.muted
+      const skin = MATERIAL[entry.crate.kind]
       ctx.save()
       ctx.translate(body.position.x, body.position.y)
       ctx.rotate(body.angle)
-      ctx.fillStyle = fill
+      ctx.fillStyle = skin.base
 
       if (entry.crate.kind === 'drum') {
-        const r = Math.min(w, h) * 0.32
-        ctx.beginPath()
-        if (ctx.roundRect) ctx.roundRect(-w / 2, -h / 2, w, h, r)
-        else ctx.rect(-w / 2, -h / 2, w, h)
-        ctx.fill()
-        // Hoops, drawn across the drum's own short axis whichever way it is
-        // lying, so a laid-down drum still reads as a drum.
-        ctx.strokeStyle = COLORS.sky
-        ctx.lineWidth = 2
-        for (const t of [-0.2, 0.2]) {
+        const r = Math.min(w, h) * 0.3
+        const barrel = new Path2D()
+        barrel.roundRect(-w / 2, -h / 2, w, h, r)
+        ctx.fill(barrel)
+        // Rolled steel: a bright line down one side and shade on the other.
+        ctx.save()
+        ctx.clip(barrel)
+        const sheen = h >= w
+          ? ctx.createLinearGradient(-w / 2, 0, w / 2, 0)
+          : ctx.createLinearGradient(0, -h / 2, 0, h / 2)
+        sheen.addColorStop(0, skin.dark)
+        sheen.addColorStop(0.32, skin.light)
+        sheen.addColorStop(1, skin.dark)
+        ctx.fillStyle = sheen
+        ctx.fill(barrel)
+        ctx.restore()
+        // Rolling hoops, across the drum's short axis whichever way it lies.
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)'
+        ctx.lineWidth = 2.5
+        for (const t of [-0.26, 0.26]) {
           ctx.beginPath()
           if (h >= w) {
             ctx.moveTo(-w / 2, h * t)
@@ -360,9 +386,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
         }
       } else {
         ctx.fillRect(-w / 2, -h / 2, w, h)
-        // Boards. Timber crates are built from planks and read as timber
-        // the moment you can see them; a plain rectangle reads as a brick.
-        ctx.strokeStyle = 'rgba(0,0,0,0.22)'
+        // Boards. Timber reads as timber the moment the planks are visible;
+        // a plain rectangle reads as a brick.
+        ctx.strokeStyle = skin.dark
         ctx.lineWidth = 1
         const boards = Math.max(2, Math.round(h / 9))
         for (let i = 1; i < boards; i++) {
@@ -372,28 +398,46 @@ export default function TruckGame({ seed, onFinish }: Props) {
           ctx.lineTo(w / 2, y)
           ctx.stroke()
         }
-        ctx.strokeStyle = COLORS.sky
-        ctx.lineWidth = 2
-        ctx.beginPath()
         if (entry.crate.kind === 'pallet') {
-          // Fork pockets along the underside.
-          ctx.moveTo(-w / 2, h / 2 - 3)
-          ctx.lineTo(w / 2, h / 2 - 3)
+          // The pallet itself: a darker base with feet under the load.
+          ctx.fillStyle = 'rgba(0,0,0,0.35)'
+          ctx.fillRect(-w / 2, h / 2 - 6, w, 6)
+          ctx.fillStyle = skin.base
+          for (const t of [-0.42, 0, 0.42]) {
+            ctx.fillRect(w * t - 4, h / 2 - 5, 8, 4)
+          }
         } else {
-          ctx.moveTo(-w / 2, -h / 2)
-          ctx.lineTo(w / 2, h / 2)
+          // Corner bracing, the way a shipping crate is actually built.
+          ctx.strokeStyle = skin.dark
+          ctx.lineWidth = 2
+          ctx.strokeRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4)
+          ctx.beginPath()
+          ctx.moveTo(-w / 2 + 2, -h / 2 + 2)
+          ctx.lineTo(w / 2 - 2, h / 2 - 2)
+          ctx.stroke()
         }
-        ctx.stroke()
       }
-      // A lit top edge, so the stack has some depth to it rather than
-      // reading as a row of flat cut-outs.
-      ctx.fillStyle = 'rgba(255,255,255,0.10)'
-      ctx.fillRect(-w / 2, -h / 2, w, 2)
+
+      // A lit top edge, so a stack has depth instead of reading as a row of
+      // flat cut-outs.
+      ctx.fillStyle = skin.light
+      ctx.fillRect(-w / 2, -h / 2, w, 2.5)
+
+      // Damage as a wash over the material rather than a replacement colour,
+      // so a battered crate is still recognisably a crate.
+      if (entry.damage > 0.02) {
+        ctx.fillStyle = entry.damage > 0.55
+          ? `rgba(214,64,52,${0.25 + entry.damage * 0.5})`
+          : `rgba(214,150,52,${entry.damage * 0.6})`
+        ctx.fillRect(-w / 2, -h / 2, w, h)
+      }
 
       if (entry.crate.fragile) {
         ctx.strokeStyle = COLORS.amber
         ctx.lineWidth = 2
+        ctx.setLineDash([5, 4])
         ctx.strokeRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3)
+        ctx.setLineDash([])
       }
       ctx.restore()
     }
@@ -466,6 +510,11 @@ export default function TruckGame({ seed, onFinish }: Props) {
             drive(world, inputRef.current.throttle)
             if (inputRef.current.braking) brake(world)
           }
+          // Rolling resistance and the hold that keeps a parked rig parked.
+          // Applied in every live phase, not just while driving: with the
+          // wheels frictionless it is the only thing stopping the truck
+          // sliding off down a slope while the player is still loading it.
+          coast(world)
           Matter.Engine.update(world.engine, 1000 / 60)
         }
         updateCargoState(world)
@@ -477,6 +526,15 @@ export default function TruckGame({ seed, onFinish }: Props) {
       const scale = (rect.width * dpr) / VIEW.w
       ctx.setTransform(scale, 0, 0, scale, 0, 0)
       ctx.fillStyle = COLORS.sky
+      ctx.fillRect(0, 0, VIEW.w, VIEW.h)
+      // A little light at the top. The tokens give one flat background
+      // colour, so depth has to be added over it rather than picked from a
+      // palette - and a translucent wash works in either theme, where a
+      // second hard-coded colour would only work in one.
+      const sky = ctx.createLinearGradient(0, 0, 0, VIEW.h * 0.7)
+      sky.addColorStop(0, 'rgba(255,255,255,0.07)')
+      sky.addColorStop(1, 'rgba(255,255,255,0)')
+      ctx.fillStyle = sky
       ctx.fillRect(0, 0, VIEW.w, VIEW.h)
 
       // Camera trails the truck, keeping it left-of-centre so the road ahead
@@ -501,6 +559,32 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // and the road edge is the line the player is actually reading when
       // they judge a washout.
       const floor = camY + VIEW.h / zoom + 400
+
+      // Two ranges of hills behind the road, drawn from the route's own
+      // heights at a lower frequency and scrolled slower than the ground.
+      // Without them the truck reads as driving on a line in an empty void;
+      // the parallax is what makes the road feel like it is somewhere.
+      const drawRidge = (shift: number, lift: number, squash: number, tint: string) => {
+        ctx.save()
+        ctx.translate(camX * (1 - shift), 0)
+        ctx.fillStyle = tint
+        ctx.beginPath()
+        ctx.moveTo(-VIEW.w, floor)
+        for (let i = 0; i < route.heights.length; i += 3) {
+          const h = route.heights[i]
+          ctx.lineTo(
+            i * SEGMENT_WIDTH * shift + camX * 0,
+            BASE + (h - BASE) * squash - lift,
+          )
+        }
+        ctx.lineTo(route.heights.length * SEGMENT_WIDTH, floor)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+      }
+      drawRidge(0.35, 96, 0.5, 'rgba(255,255,255,0.045)')
+      drawRidge(0.6, 44, 0.7, 'rgba(0,0,0,0.22)')
+
       const surface = new Path2D()
       surface.moveTo(0, route.heights[0])
       for (let i = 1; i < route.heights.length; i++) {
@@ -516,6 +600,18 @@ export default function TruckGame({ seed, onFinish }: Props) {
       earth.closePath()
       ctx.fillStyle = grain
       ctx.fill(earth)
+      // Subsoil: everything below a fixed depth goes darker, so the cut
+      // through the ground at a washout reads as depth rather than as a
+      // flat shape with a notch in it.
+      ctx.save()
+      ctx.clip(earth)
+      const soil = ctx.createLinearGradient(0, camY, 0, floor)
+      soil.addColorStop(0, 'rgba(0,0,0,0)')
+      soil.addColorStop(0.35, 'rgba(0,0,0,0.35)')
+      soil.addColorStop(1, 'rgba(0,0,0,0.6)')
+      ctx.fillStyle = soil
+      ctx.fill(earth)
+      ctx.restore()
 
       // Asphalt.
       ctx.save()
@@ -570,29 +666,53 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.closePath()
         ctx.fill()
       }
-      const drawTyre = (x: number, y: number, r: number, spin: number) => {
+      const drawTyre = (x: number, y: number, r: number, spin: number, tilt: number) => {
         ctx.save()
         ctx.translate(x, y)
-        ctx.fillStyle = COLORS.ink
+        // Tyre.
+        ctx.fillStyle = 'rgba(0,0,0,0.85)'
         ctx.beginPath()
         ctx.arc(0, 0, r, 0, Math.PI * 2)
         ctx.fill()
+        ctx.save()
         ctx.rotate(spin)
-        // Hub and one spoke. The wheels are no longer bodies of their own
-        // and cannot rotate, so this is turned by distance travelled - a
-        // wheel that visibly does not turn makes the whole rig read as
-        // sliding, which is exactly what it is doing and the one part of
-        // that the player should not have to notice.
-        ctx.strokeStyle = COLORS.muted
-        ctx.lineWidth = 3
-        ctx.beginPath()
-        ctx.moveTo(-r * 0.62, 0)
-        ctx.lineTo(r * 0.62, 0)
-        ctx.stroke()
+        // Tread, as notches around the edge rather than a drawn ring: it is
+        // the only thing at this size that makes the rotation readable.
+        ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+        ctx.lineWidth = 2
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * Math.PI * 2
+          ctx.beginPath()
+          ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4))
+          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+          ctx.stroke()
+        }
+        // Rim and spokes.
         ctx.fillStyle = COLORS.muted
         ctx.beginPath()
-        ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2)
+        ctx.arc(0, 0, r * 0.52, 0, Math.PI * 2)
         ctx.fill()
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+        ctx.lineWidth = 2.5
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2
+          ctx.beginPath()
+          ctx.moveTo(0, 0)
+          ctx.lineTo(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5)
+          ctx.stroke()
+        }
+        ctx.restore()
+        ctx.fillStyle = COLORS.ink
+        ctx.beginPath()
+        ctx.arc(0, 0, r * 0.17, 0, Math.PI * 2)
+        ctx.fill()
+        // Mudguard, which belongs to the body and so follows its pitch.
+        ctx.rotate(tilt)
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+        ctx.lineWidth = 5
+        ctx.beginPath()
+        ctx.arc(0, 0, r + 5, Math.PI * 1.15, Math.PI * 1.95)
+        ctx.stroke()
         ctx.restore()
       }
 
@@ -601,49 +721,94 @@ export default function TruckGame({ seed, onFinish }: Props) {
         // like anything else.
         for (const piece of world.debris) {
           if (piece.circleRadius) {
-            drawTyre(piece.position.x, piece.position.y, piece.circleRadius, piece.angle)
+            drawTyre(piece.position.x, piece.position.y, piece.circleRadius, piece.angle, 0)
           } else {
             drawBody(piece, COLORS.danger)
           }
         }
       } else {
+        // The physics parts first, so the silhouette on screen is exactly the
+        // shape the collisions use - then the detail over the top of it.
+        // Muted rather than the brand green: a whole truck in the accent
+        // colour was the loudest thing on the page by a wide margin.
         for (const part of world.chassis.parts.slice(1)) {
-          // The wheels are parts of the same rigid body now, so they would
-          // otherwise be drawn twice - once as a 25-sided polygon in the
-          // body colour, once as the tyre below.
-          if (part.label !== 'wheel') drawBody(part, bodyColor)
+          if (part.label !== 'wheel') drawBody(part, COLORS.muted)
         }
 
-        // Cab, glass and lamp, drawn in the chassis rectangle's own frame so
-        // they pitch with it. The flatbed reads as a flatbed once there is
-        // something at the front of it that is obviously where the driver
-        // sits; without that it is a plank on two wheels.
-        const hull = world.chassis.parts.find((part) => part.label === 'chassis')
-        if (hull) {
-          ctx.save()
-          ctx.translate(hull.position.x, hull.position.y)
-          ctx.rotate(hull.angle)
-          ctx.fillStyle = bodyColor
-          ctx.fillRect(54, -52, 70, 39)
-          ctx.fillStyle = 'rgba(0,0,0,0.45)'
-          ctx.fillRect(62, -46, 42, 21)
-          ctx.fillStyle = COLORS.amber
+        // Everything below is in the chassis rectangle's own frame: x runs
+        // -125 to 125 along the rig, y is -13 to 13 through the frame rail,
+        // and the deck surface sits at -21.
+        //
+        // It is reached through the BODY's angle, not the part's. Matter
+        // rotates a part's vertices and position but never writes back
+        // part.angle, which stays 0 for the life of the body - so detail
+        // drawn with the part's own angle sat bolt upright while the rig
+        // pitched underneath it, and the cab appeared to fall off.
+        ctx.save()
+        ctx.translate(world.chassis.position.x, world.chassis.position.y)
+        ctx.rotate(world.chassis.angle)
+        ctx.translate(world.hullOffset.x, world.hullOffset.y)
+
+        // Deck planking.
+        ctx.strokeStyle = 'rgba(0,0,0,0.28)'
+        ctx.lineWidth = 1
+        for (let x = -118; x < 52; x += 11) {
           ctx.beginPath()
-          ctx.arc(119, -18, 3.5, 0, Math.PI * 2)
-          ctx.fill()
-          // Frame rail under the deck, and a fuel tank slung off it.
-          ctx.fillStyle = 'rgba(0,0,0,0.3)'
-          ctx.fillRect(-125, 8, 250, 5)
-          ctx.fillStyle = COLORS.muted
-          ctx.fillRect(-30, 13, 46, 13)
-          ctx.restore()
+          ctx.moveTo(x, -21)
+          ctx.lineTo(x, -14)
+          ctx.stroke()
         }
+        // Frame rail, and the shadow the deck casts on it.
+        ctx.fillStyle = 'rgba(0,0,0,0.38)'
+        ctx.fillRect(-125, 6, 250, 7)
+        ctx.fillStyle = 'rgba(0,0,0,0.2)'
+        ctx.fillRect(-125, -13, 250, 3)
+
+        // Cab: a sloped nose, a deep windscreen and a door line. This is
+        // what makes it read as a truck rather than a plank on wheels.
+        ctx.fillStyle = bodyColor
+        ctx.beginPath()
+        ctx.moveTo(54, -13)
+        ctx.lineTo(54, -54)
+        ctx.lineTo(102, -54)
+        ctx.lineTo(124, -30)
+        ctx.lineTo(124, -13)
+        ctx.closePath()
+        ctx.fill()
+        // Windscreen and side glass.
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'
+        ctx.beginPath()
+        ctx.moveTo(78, -49)
+        ctx.lineTo(99, -49)
+        ctx.lineTo(115, -32)
+        ctx.lineTo(78, -32)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillRect(60, -49, 14, 17)
+        // Door line and handle.
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(76, -50)
+        ctx.lineTo(76, -14)
+        ctx.stroke()
+        // Exhaust stack behind the cab.
+        ctx.fillStyle = COLORS.muted
+        ctx.fillRect(48, -62, 5, 42)
+        // Lamp and grille.
+        ctx.fillStyle = COLORS.amber
+        ctx.beginPath()
+        ctx.arc(119, -20, 3.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fillRect(112, -29, 12, 5)
+        ctx.restore()
 
         for (const wheel of [world.rearWheel, world.frontWheel]) {
           const r = wheel.circleRadius || 20
           drawTyre(
             wheel.position.x, wheel.position.y, r,
-            world.chassis.position.x / r + world.chassis.angle,
+            world.chassis.position.x / r, world.chassis.angle,
           )
         }
       }

@@ -62,6 +62,16 @@ export interface TruckWorld {
   truckSettledAt: number
   /** Height of the deck surface right now, in world coordinates. */
   bedTop: () => number
+  /**
+   * Where the chassis rectangle's centre sits relative to the body origin.
+   *
+   * Matter puts a compound body's origin at its centre of mass, which is
+   * nowhere near the middle of the chassis once the wheels are part of it.
+   * Anything drawn in chassis coordinates has to go through this.
+   */
+  hullOffset: { x: number; y: number }
+  /** The deck surface in the same frame, for working out what is on it. */
+  deckLocalY: number
   destroy: () => void
 }
 
@@ -233,20 +243,25 @@ export function createWorld(route: Route): TruckWorld {
    * distinction; a picture that does not vibrate is something they cannot
    * help but see. Wheel rotation is drawn from distance travelled instead.
    */
-  // Low, because these feet slide where a real wheel would roll, so contact
-  // friction here stands in for ROLLING RESISTANCE - which is a percent or
-  // two of the weight, not a quarter of it. Grip, the thing that actually
-  // limits how hard the rig can pull and stop, is modelled properly in
-  // drive() and brake() instead.
+  // Effectively frictionless, and deliberately so.
   //
-  // It was 0.25, and that quietly ate 28% of every newton of tractive
-  // effort: the rig topped out at 2.6px a frame and took 25s to cross a
-  // route it now crosses in half that. At 0.95, before that, it was a sled
-  // welded to the road.
+  // These feet slide where a real wheel would roll, so any contact friction
+  // here is a lie about rolling - and worse, it is a lie with a cliff in it.
+  // Measured on flat ground, contact friction gave the rig a break-away
+  // point: below it the throttle could not push past 2.6px a frame however
+  // hard it pushed, and just above it the rig tore loose and reached 27 while
+  // spinning through thousands of degrees. There is no usable range between
+  // those, which is what made the acceleration feel wrong - the pedal barely
+  // connected to the speed.
+  //
+  // Everything the tyres are supposed to do - pull, stop, resist rolling,
+  // hold on a slope - is now an explicit force in drive(), brake() and
+  // coast(), where it is a number that can be measured and tuned rather than
+  // an emergent property of a contact solver.
   const wheelOptions: Matter.IBodyDefinition = {
     density: 0.008,
-    friction: 0.08,
-    frictionStatic: 0.12,
+    friction: 0.002,
+    frictionStatic: 0,
     restitution: 0.02,
     label: 'wheel',
   }
@@ -259,7 +274,7 @@ export function createWorld(route: Route): TruckWorld {
 
   const truckBody = Matter.Body.create({
     parts: [chassis, bed, headboard, rearLip, rearWheel, frontWheel],
-    friction: 0.08,
+    friction: 0.002,
     label: 'truck',
   })
   // Stands in for rolling resistance and engine braking: lifting off has to
@@ -358,6 +373,8 @@ export function createWorld(route: Route): TruckWorld {
     // the chassis rectangle's centre once the wheels are parts of it, so
     // the offset has to be measured rather than assumed.
     bedTop: () => truckBody.position.y + bedTopOffset,
+    hullOffset: { x: TRUCK_START_X - truckBody.position.x, y: startY - truckBody.position.y },
+    deckLocalY: bedTopOffset,
     destroy: () => {
       Matter.Events.off(engine, 'collisionStart', onCollision)
       result.debris.length = 0
@@ -438,24 +455,42 @@ export function loadCrate(
 
 /** Throttle in [-1, 1]; negative reverses. */
 /**
- * How much grip the tyres have, as a fraction of the weight on them.
+ * The whole drive model, as fractions of the rig's own weight.
  *
- * This is the whole drive model now, and it replaces a flat force that was
- * quietly unphysical: it pushed with 0.3 against a rig whose entire weight
- * is 0.093, so the road was being asked to transmit three times more than
- * any tyre can. It only worked because Matter's contact friction bled most
- * of it away again - which is also why raising that friction turned the rig
- * into a sled welded to the road.
+ * Every one of these is a force divided by weight, which is the same thing
+ * as an acceleration in g. That makes them checkable against something real:
+ * GRIP 0.32 is a laden truck pulling away briskly, BRAKE 0.22 is firm but
+ * well short of a panic stop, and the steepest grade the road generator can
+ * produce is 10 degrees, which costs sin(10) = 0.17g - so the rig climbs
+ * anything it can meet, with room to spare.
  *
- * Tractive force is now capped at grip times the weight actually on the
- * wheels, the load included, so a full trailer pulls away harder than an
- * empty one and takes longer to stop. 0.9 is about right for a dry tyre on
- * asphalt.
+ * They are forces rather than contact friction because contact friction had
+ * a break-away cliff in it: below it the rig could not exceed 2.6px a frame
+ * however hard it was pushed, and above it there was nothing holding it at
+ * all. The pedal has to map to the speed for the driving to feel like
+ * anything, and that only works if the numbers are ours.
  */
-const GRIP = 0.9
-/** Brakes act on every wheel, so they get slightly more of the same grip. */
-const BRAKE_GRIP = 1.05
+const GRIP = 0.32
+const BRAKE = 0.22
+/** Rolling resistance. Small, constant, and the thing that finally stops it. */
+const ROLL = 0.01
+/** Standing in for static friction, so a parked rig does not creep downhill. */
+const HOLD = 0.3
+/** Below this the rig counts as stopped, for holding and for picking up. */
+const STOPPED = 0.35
+
 const MAX_SPEED = 4.5
+/** (1000/60)^2 - see coast(). Matter scales an applied force by this. */
+const STEP_SQUARED = (1000 / 60) ** 2
+/**
+ * The top of the speed range, where power tapers off.
+ *
+ * Full force up to 82% of the cap and a linear fade above it. A hard cutoff
+ * makes the rig hit its top speed like a wall; a gentle curve over the whole
+ * range (the first attempt) made it take fifteen seconds to get near the cap
+ * at all, which read as a truck with no engine.
+ */
+const TAPER_FROM = 0.82
 
 /**
  * How fast the throttle itself may move, per step.
@@ -468,59 +503,24 @@ const MAX_SPEED = 4.5
  */
 const THROTTLE_RATE = 0.05
 
-/** Everything the tyres are currently carrying: the rig plus what is on it. */
-function loadOnWheels(world: TruckWorld): number {
+/**
+ * A force of `g` times the weight the tyres are carrying - the rig plus
+ * whatever is riding on it.
+ *
+ * The load has to be in here. Matter applies the force to the chassis body
+ * alone, but the chassis then has to drag the cargo along through deck
+ * friction, so scaling by the rig's own mass gave a loaded truck a top speed
+ * of 2.1 against an empty one's 4.0. Scaling by everything it is moving
+ * keeps the acceleration roughly constant, which is what a driver does with
+ * a real one: more throttle for a heavier load.
+ */
+function weightForce(world: TruckWorld, g: number): number {
+  const gravity = world.engine.gravity
   let mass = world.chassis.mass
   for (const entry of world.cargo) {
     if (entry.state === 'deck') mass += entry.body.mass
   }
-  return mass
-}
-
-/** The most force the road can transmit before the tyres let go. */
-function traction(world: TruckWorld, grip: number): number {
-  const gravity = world.engine.gravity
-  return grip * loadOnWheels(world) * gravity.y * gravity.scale
-}
-
-/** Throttle in [-1, 1]; negative reverses. */
-export function drive(world: TruckWorld, throttle: number) {
-  const target = Math.max(-1, Math.min(1, throttle))
-  const delta = target - world.throttle
-  world.throttle += Math.max(-THROTTLE_RATE, Math.min(THROTTLE_RATE, delta))
-
-  world.slipping = false
-  if (Math.abs(world.throttle) < 0.01) return
-  if (Math.abs(world.chassis.velocity.x) >= MAX_SPEED
-      && Math.sign(world.chassis.velocity.x) === Math.sign(world.throttle)) {
-    return
-  }
-  // Asking for full power while barely moving is the tyres losing rather
-  // than the rig accelerating - worth showing, since it is the moment the
-  // driver should ease off.
-  world.slipping = Math.abs(world.throttle) > 0.9 && Math.abs(world.chassis.velocity.x) < 0.4
-  applyAtRoad(world, world.throttle * traction(world, GRIP))
-}
-
-/**
- * Slows the rig down, within what the tyres can hold.
- *
- * A force opposing travel rather than a multiplier on the velocity. The
- * multiplier version scaled the speed by 0.92 every step, which at sixty
- * steps a second is an emergency stop held down continuously - close to a
- * full g of deceleration, far more than friction can hold a crate against.
- * It made careful driving actively worse than flooring it, which is the
- * opposite of what this game is for. As a force it pitches the rig forward
- * the way braking should, so hauling up hard still threatens the load - it
- * just no longer guarantees losing it.
- */
-export function brake(world: TruckWorld) {
-  const vx = world.chassis.velocity.x
-  if (Math.abs(vx) < 0.05) return
-  // Let go of the throttle too - holding both would just fight itself.
-  world.throttle *= 0.7
-  world.braking = true
-  applyAtRoad(world, -Math.sign(vx) * traction(world, BRAKE_GRIP))
+  return g * mass * gravity.y * gravity.scale
 }
 
 /**
@@ -537,6 +537,88 @@ function applyAtRoad(world: TruckWorld, fx: number) {
     { x: body.position.x, y: body.position.y + world.contactDy },
     { x: fx, y: 0 },
   )
+}
+
+/** Throttle in [-1, 1]; negative reverses. */
+export function drive(world: TruckWorld, throttle: number) {
+  const target = Math.max(-1, Math.min(1, throttle))
+  const delta = target - world.throttle
+  world.throttle += Math.max(-THROTTLE_RATE, Math.min(THROTTLE_RATE, delta))
+
+  const vx = world.chassis.velocity.x
+  world.slipping = false
+
+  if (Math.abs(world.throttle) < 0.01) return
+
+  // Power fades over the last stretch of the range rather than being cut off.
+  const sameWay = Math.sign(vx) === Math.sign(world.throttle)
+  const fade = sameWay
+    ? Math.max(0, Math.min(1, (MAX_SPEED - Math.abs(vx)) / (MAX_SPEED * (1 - TAPER_FROM))))
+    : 1
+  if (fade <= 0) return
+
+  // Asking for everything while barely moving is the tyres losing rather
+  // than the rig accelerating - worth showing, since it is the moment the
+  // driver should ease off.
+  world.slipping = Math.abs(world.throttle) > 0.9 && Math.abs(vx) < 0.4
+  applyAtRoad(world, world.throttle * fade * weightForce(world, GRIP))
+}
+
+/**
+ * Slows the rig down, within what the tyres could hold.
+ *
+ * A force opposing travel rather than a multiplier on the velocity. The
+ * multiplier version scaled the speed by 0.92 every step, which at sixty
+ * steps a second is an emergency stop held down continuously - close to a
+ * full g of deceleration, far more than friction can hold a crate against.
+ * It made careful driving actively worse than flooring it, which is the
+ * opposite of what this game is for. As a force it pitches the rig forward
+ * the way braking should, so hauling up hard still threatens the load - it
+ * just no longer guarantees losing it.
+ */
+export function brake(world: TruckWorld) {
+  const vx = world.chassis.velocity.x
+  if (Math.abs(vx) < 0.05) return
+  // Let go of the throttle too - holding both would just fight itself.
+  world.throttle *= 0.7
+  world.braking = true
+  applyAtRoad(world, -Math.sign(vx) * weightForce(world, BRAKE))
+}
+
+/**
+ * Everything the road does to the rig when nobody is asking it for
+ * anything: rolling resistance, and enough of a hold that a parked truck
+ * stays parked instead of creeping off down the nearest slope.
+ *
+ * Called every step, whatever the player is doing - rolling resistance does
+ * not stop applying because the throttle is down.
+ */
+export function coast(world: TruckWorld) {
+  const vx = world.chassis.velocity.x
+  const speed = Math.abs(vx)
+  if (speed < 0.005) return
+
+  // The force that would cancel the current velocity exactly this step.
+  // Matter turns a force into a velocity change as (f / mass) * dt^2, with
+  // dt fixed at 1000/60 here, so dt^2 is 277.8.
+  const cancelling = (-vx * world.chassis.mass) / STEP_SQUARED
+
+  if (speed < STOPPED && Math.abs(world.throttle) < 0.05 && !world.braking) {
+    // Static friction: opposes motion up to a limit and never beyond what
+    // is needed. A flat force of the full limit overshoots zero, flips sign
+    // on the next step and does it again - which showed up as a parked
+    // empty truck vibrating 0.018px every frame once the wheels stopped
+    // providing friction of their own.
+    const limit = weightForce(world, HOLD)
+    const held = Math.max(-limit, Math.min(limit, cancelling))
+    // At the centre of mass, not the road: this is a distributed hold, and
+    // putting it at the contact line would pitch a stationary rig.
+    Matter.Body.applyForce(world.chassis, world.chassis.position, { x: held, y: 0 })
+    return
+  }
+
+  const roll = weightForce(world, ROLL)
+  applyAtRoad(world, Math.max(-roll, Math.min(roll, cancelling)))
 }
 
 /**
@@ -603,12 +685,28 @@ export function updateCargoState(world: TruckWorld) {
     }
     if (entry.state !== 'deck') continue
 
+    // Measured in the rig's own frame, not the world's.
+    //
+    // The world-frame version asked whether the item was 250px away
+    // horizontally or 70px down, which meant something that had slid off and
+    // was lying right beside the wheels still counted as loaded - so it could
+    // not be picked up until the truck had driven a quarter of a screen away
+    // from it, which is the opposite of what a driver would do. In the rig's
+    // frame the question is the real one: is it still above the deck, and
+    // still between the headboard and the rear lip.
     const dx = entry.body.position.x - world.chassis.position.x
     const dy = entry.body.position.y - world.chassis.position.y
-    // Behind or below the truck by this much means it is on the road rather
-    // than on the bed. It keeps whatever damage the fall did to it; what it
-    // loses is its place on the truck.
-    if (dy > 70 || Math.abs(dx) > CHASSIS_W) entry.state = 'road'
+    const cos = Math.cos(-world.chassis.angle)
+    const sin = Math.sin(-world.chassis.angle)
+    const alongDeck = dx * cos - dy * sin
+    const aboveDeck = dx * sin + dy * cos
+
+    // A little slack at both ends: a crate can overhang the lip slightly and
+    // still be riding, and the deck surface itself is solid, so nothing that
+    // is genuinely on it can ever be below this line.
+    const offTheSide = alongDeck < DECK_MIN_OFFSET - 26 || alongDeck > DECK_MAX_OFFSET + 26
+    const belowTheDeck = aboveDeck > world.deckLocalY + 10
+    if (offTheSide || belowTheDeck) entry.state = 'road'
   }
 }
 
@@ -621,7 +719,9 @@ export function updateCargoState(world: TruckWorld) {
  * twenty miles an hour would make dropping things free.
  */
 export const RECOVER_REACH = 260
-const RECOVER_MAX_SPEED = 0.35
+// Nearly stopped, not perfectly stopped. At 0.35 the rig had to be dead
+// still, which on any slope it never quite is.
+const RECOVER_MAX_SPEED = 0.7
 
 /** Items on the road that the truck is currently in a position to collect. */
 export function recoverableCargo(world: TruckWorld): CargoBody[] {

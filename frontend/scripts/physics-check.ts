@@ -38,7 +38,7 @@ import Matter from 'matter-js'
 import { generateRoute, type Crate } from '../src/game/route.ts'
 import {
   createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, drive, brake,
-  updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  coast, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
   type TruckWorld,
 } from '../src/game/engine.ts'
 
@@ -67,6 +67,7 @@ function stillness(label: string, load: boolean, throttle: number) {
   let max = 0
   for (let i = 0; i < 600; i++) {
     if (throttle) drive(world, throttle)
+    coast(world)
     Matter.Engine.update(world.engine, STEP)
     updateCargoState(world)
     const d = Math.abs(world.chassis.position.y - prev)
@@ -153,6 +154,7 @@ function run(seed: number, strategy: Strategy, cap: number) {
     }
     drive(world, braking ? 0 : 1)
     if (braking) brake(world)
+    coast(world)
     Matter.Engine.update(world.engine, STEP)
     updateCargoState(world)
     steps++
@@ -227,6 +229,7 @@ function impacts() {
     let steps = 0
     while (steps < 60 * 90 && world.chassis.position.x < world.finishX) {
       drive(world, 1)
+      coast(world)
       Matter.Engine.update(world.engine, STEP)
       updateCargoState(world)
       steps++
@@ -313,6 +316,7 @@ function recovery() {
         drive(world, beforeRecovery.size > 0 ? 0.4 : 1)
         if (beforeRecovery.size > 0 && world.chassis.velocity.x > 2) brake(world)
       }
+      coast(world)
 
       Matter.Engine.update(world.engine, STEP)
       updateCargoState(world)
