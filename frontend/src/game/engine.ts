@@ -132,6 +132,14 @@ const BED_H = 8
  */
 const RUNOFF = 900
 /**
+ * Where the loading dock's face is.
+ *
+ * Far enough behind the rig that reversing is a manoeuvre rather than an
+ * instant stop, close enough that the truck is plainly parked AT the dock
+ * rather than somewhere near it.
+ */
+export const DOCK_FACE_X = 60
+/**
  * Rolling resistance at the road surface.
  *
  * Effectively zero, because the rig slides on its wheels rather than rolling
@@ -156,6 +164,8 @@ const ROAD_DRAG = 0.08
  */
 export const DECK_MIN_OFFSET = -120
 export const DECK_MAX_OFFSET = 54
+/** Height of the bulkhead between the deck and the cab. */
+const HEADBOARD_H = 62
 
 /** Where the wheels sit, measured from the chassis rectangle's centre. */
 const REAR_AXLE = { x: -92, y: 30 }
@@ -286,6 +296,30 @@ export function createWorld(route: Route): TruckWorld {
     bodies.push(slab)
   }
 
+  // The two buildings, as solid things rather than scenery.
+  //
+  // Reversing off the dock used to run the rig out over open ground and then
+  // off the end of the world. There is a warehouse behind it - it has just
+  // been loaded there - so backing up should meet a wall, and arriving
+  // should meet the receiving building at the far end. Both are drawn to
+  // match these, so what stops the truck is what it looks like it hit.
+  const dockFace = Matter.Bodies.rectangle(
+    DOCK_FACE_X - 40, route.heights[0] - 90, 80, 180,
+    { isStatic: true, label: 'building' },
+  )
+  dockFace.friction = GROUND_FRICTION
+  dockFace.frictionStatic = 0
+  bodies.push(dockFace)
+
+  const finishX = (route.heights.length - 4) * SEGMENT_WIDTH
+  const dropWall = Matter.Bodies.rectangle(
+    finishX + 250, route.heights[route.heights.length - 1] - 95, 90, 190,
+    { isStatic: true, label: 'building' },
+  )
+  dropWall.friction = GROUND_FRICTION
+  dropWall.frictionStatic = 0
+  bodies.push(dropWall)
+
   // Apron at each end, so the yard and the dock stand on something. Without
   // these the world simply stops at the first and last sample, and reversing
   // away from the loading dock drops the rig into nothing.
@@ -329,8 +363,16 @@ export function createWorld(route: Route): TruckWorld {
   // and took the player's decisions out of it entirely. Real flatbeds have
   // exactly these. Cargo can still tip over them, shift, or be shaken off;
   // it just isn't guaranteed to.
+  // As tall as the back of the cab, not a 30px lip.
+  //
+  // At 30 a tall item could tip straight over it and end up lying across the
+  // roof of the cab, which is both impossible and the single most obviously
+  // wrong thing on screen. It is the bulkhead between the freight and the
+  // driver, and on a real flatbed it is exactly that: full height, and the
+  // one part of the deck you cannot load past.
   const headboard = Matter.Bodies.rectangle(
-    TRUCK_START_X + DECK_MAX_OFFSET + 4, startY - CHASSIS_H / 2 - 19, 8, 30,
+    TRUCK_START_X + DECK_MAX_OFFSET + 4, startY - CHASSIS_H / 2 - HEADBOARD_H / 2,
+    8, HEADBOARD_H,
     { density: 0.002, friction: 1, label: 'bed' },
   )
   const rearLip = Matter.Bodies.rectangle(
@@ -414,8 +456,6 @@ export function createWorld(route: Route): TruckWorld {
   bodies.push(truckBody)
 
   // ---- Finish line ---------------------------------------------------
-  const finishX = (route.heights.length - 4) * SEGMENT_WIDTH
-
   Matter.Composite.add(world, bodies)
 
   const cargo: CargoBody[] = []

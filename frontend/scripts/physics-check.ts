@@ -169,6 +169,18 @@ function run(seed: number, strategy: Strategy, cap: number) {
     if (world.cargo.every((c) => c.state === 'gone')) break
   }
 
+  // Anything that has ended up forward of the bulkhead is on the cab, which
+  // is impossible and was on screen: a tall item could tip over a 30px lip
+  // and come to rest across the roof.
+  let overTheBulkhead = 0
+  for (const entry of world.cargo) {
+    if (entry.state !== 'deck') continue
+    const dx = entry.body.position.x - world.chassis.position.x
+    const dy = entry.body.position.y - world.chassis.position.y
+    const along = dx * Math.cos(-world.chassis.angle) - dy * Math.sin(-world.chassis.angle)
+    if (along - entry.w / 2 > DECK_MAX_OFFSET + 6) overTheBulkhead++
+  }
+
   const reached = world.chassis.position.x >= world.finishX
   const result = {
     pct: route.maxPayout ? (reached ? currentPayout(world) : 0) / route.maxPayout : 0,
@@ -180,6 +192,7 @@ function run(seed: number, strategy: Strategy, cap: number) {
     seconds: steps / 60,
     reached,
     offDeck,
+    overTheBulkhead,
   }
   world.destroy()
   return result
@@ -197,7 +210,8 @@ function balance(label: string, strategy: Strategy, cap: number) {
     `  wrecked ${rs.filter((r) => r.truckDamage >= 1).length}` +
     `  fuel left ${(avg((r) => r.fuel) * 100).toFixed(0)}%` +
     ` (worst ${(Math.min(...rs.map((r) => r.fuel)) * 100).toFixed(0)}%)` +
-    `  ran dry ${rs.filter((r) => r.dry).length}`,
+    `  ran dry ${rs.filter((r) => r.dry).length}` +
+    `  on the cab ${rs.reduce((a, r) => a + r.overTheBulkhead, 0)}`,
   )
 }
 

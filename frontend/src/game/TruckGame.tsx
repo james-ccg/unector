@@ -553,18 +553,40 @@ export default function TruckGame({ seed, onFinish }: Props) {
           : `rgba(224,150,44,${0.22 + entry.damage * 0.9})`
         ctx.fillRect(-w / 2, -h / 2, w, h)
 
-        const cracks = Math.round(entry.damage * 6)
-        ctx.strokeStyle = 'rgba(0,0,0,0.62)'
-        ctx.lineWidth = 1.5
-        for (let i = 0; i < cracks; i++) {
-          // Deterministic from the index, so a crack does not crawl around
-          // the crate between frames.
-          const sx = -w / 2 + ((i * 37) % 100) / 100 * w
-          const sy = -h / 2 + ((i * 61) % 100) / 100 * h
+        // Chipped away at the corners, and split along the grain.
+        //
+        // The first version drew three-point zigzags, which at this size
+        // read as chevrons stamped on the box rather than as damage - the
+        // player saw a '<' printed on their freight. Timber does not crack
+        // like glass: it loses corners and splits along its boards, so that
+        // is what this does. The pattern is derived from the index, not from
+        // random, so nothing crawls around the crate between frames.
+        const bites = Math.round(entry.damage * 4)
+        ctx.fillStyle = COLORS.sky
+        for (let i = 0; i < bites; i++) {
+          const corner = i % 4
+          const cx = corner < 2 ? -w / 2 : w / 2
+          const cy = corner % 2 === 0 ? -h / 2 : h / 2
+          const bx = Math.min(w * 0.34, 5 + i * 3) * (corner < 2 ? 1 : -1)
+          const by = Math.min(h * 0.34, 4 + i * 3) * (corner % 2 === 0 ? 1 : -1)
           ctx.beginPath()
-          ctx.moveTo(sx, sy)
-          ctx.lineTo(sx + w * 0.22 * (i % 2 ? 1 : -1), sy + h * 0.3)
-          ctx.lineTo(sx + w * 0.05 * (i % 2 ? 1 : -1), sy + h * 0.48)
+          ctx.moveTo(cx, cy)
+          ctx.lineTo(cx + bx, cy)
+          ctx.lineTo(cx, cy + by)
+          ctx.closePath()
+          ctx.fill()
+        }
+        const splits = Math.round(entry.damage * 3)
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+        ctx.lineWidth = 1
+        for (let i = 0; i < splits; i++) {
+          const y = -h / 2 + (h * (i + 1)) / (splits + 1)
+          const from = -w / 2 + ((i * 29) % 40) / 100 * w
+          ctx.beginPath()
+          ctx.moveTo(from, y)
+          ctx.lineTo(from + w * 0.5, y)
+          ctx.moveTo(from + w * 0.2, y)
+          ctx.lineTo(from + w * 0.34, y - 2.5)
           ctx.stroke()
         }
       }
@@ -855,65 +877,153 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // delivered somewhere with no dock at all - a yard, a site, a
       // ground-level gate - and unloaded from the side. So: a dock at the
       // start, a fenced yard at the finish.
+      /**
+       * The warehouse the load came out of.
+       *
+       * Drawn to the same face the physics wall is at, so reversing off the
+       * dock stops against the building the player can see rather than
+       * against nothing. A dock platform sits at trailer-deck height - 48 to
+       * 52 inches, so a forklift runs straight out onto the bed - which is
+       * why the deck of the truck lines up with the floor of the shed.
+       */
       const drawDepot = () => {
-        const g = groundAt(60)
+        const g = groundAt(0)
+        const face = 60
+        const back = face - 460
+        const eaves = g - 168
         ctx.save()
-        // Shed.
-        ctx.fillStyle = 'rgba(0,0,0,0.55)'
-        ctx.fillRect(-260, g - 150, 300, 150)
-        ctx.fillStyle = 'rgba(255,255,255,0.05)'
-        ctx.fillRect(-260, g - 150, 300, 10)
-        // Roller doors.
-        ctx.fillStyle = 'rgba(255,255,255,0.09)'
-        for (let i = 0; i < 3; i++) ctx.fillRect(-240 + i * 92, g - 96, 62, 96)
-        ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+
+        // Shell, with a shallow pitch.
+        ctx.fillStyle = 'rgba(0,0,0,0.62)'
+        ctx.beginPath()
+        ctx.moveTo(back, g)
+        ctx.lineTo(back, eaves)
+        ctx.lineTo(back + 230, eaves - 34)
+        ctx.lineTo(face, eaves)
+        ctx.lineTo(face, g)
+        ctx.closePath()
+        ctx.fill()
+        // Roof edge catching the light.
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+        ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.moveTo(back - 6, eaves)
+        ctx.lineTo(back + 230, eaves - 34)
+        ctx.lineTo(face + 6, eaves)
+        ctx.stroke()
+
+        // Corrugated wall panels.
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)'
         ctx.lineWidth = 1
+        for (let x = back + 14; x < face; x += 16) {
+          ctx.beginPath()
+          ctx.moveTo(x, g)
+          ctx.lineTo(x, eaves + 12)
+          ctx.stroke()
+        }
+
+        // Dock doors, at deck height, with a lit one at the end.
+        const doorTop = g - 108
         for (let i = 0; i < 3; i++) {
-          for (let y = g - 90; y < g; y += 11) {
+          const x = back + 40 + i * 120
+          ctx.fillStyle = i === 2 ? 'rgba(224,184,84,0.16)' : 'rgba(255,255,255,0.08)'
+          ctx.fillRect(x, doorTop, 84, 108)
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+          ctx.lineWidth = 1
+          for (let y = doorTop + 8; y < g; y += 12) {
             ctx.beginPath()
-            ctx.moveTo(-240 + i * 92, y)
-            ctx.lineTo(-178 + i * 92, y)
+            ctx.moveTo(x, y)
+            ctx.lineTo(x + 84, y)
             ctx.stroke()
           }
+          ctx.strokeStyle = 'rgba(255,255,255,0.12)'
+          ctx.lineWidth = 2
+          ctx.strokeRect(x, doorTop, 84, 108)
         }
-        // Dock platform, at deck height, with a rubber bumper on the face.
-        const deck = g - 52
-        ctx.fillStyle = 'rgba(0,0,0,0.7)'
-        ctx.fillRect(40, deck, 34, g - deck)
+
+        // Canopy over the dock, and the rubber bumpers the trailer backs on
+        // to. This is the part the truck is actually parked against.
+        ctx.fillStyle = 'rgba(0,0,0,0.5)'
+        ctx.fillRect(face - 12, g - 132, 34, 8)
         ctx.fillStyle = COLORS.muted
-        ctx.fillRect(36, deck - 5, 42, 6)
+        ctx.fillRect(face - 6, g - 56, 8, 6)
         ctx.fillStyle = 'rgba(0,0,0,0.85)'
-        ctx.fillRect(70, deck + 6, 6, 22)
+        for (const dy of [0, 26]) ctx.fillRect(face - 2, g - 46 + dy, 7, 18)
+
+        // Sign band.
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'
+        ctx.fillRect(back + 30, eaves + 16, 130, 16)
         ctx.restore()
       }
 
+      /**
+       * The consignee at the far end.
+       *
+       * A different building on purpose, because in freight it is a
+       * different place: flatbed loads are very often delivered somewhere
+       * with no dock at all, and unloaded from the side by forklift or
+       * crane. So this is a ground-level receiving building in a fenced
+       * yard, square on to the road, rather than a second dock.
+       */
       const drawDropSite = () => {
         const x = world.finishX
         const g = groundAt(x)
         ctx.save()
-        // Chain-link fence running behind the yard.
-        ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+
+        // Fence across the yard, in front of the building.
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)'
         ctx.lineWidth = 1
-        for (let px = x - 40; px < x + 300; px += 14) {
+        for (let px = x - 30; px < x + 200; px += 15) {
           ctx.beginPath()
-          ctx.moveTo(px, groundAt(px) - 68)
+          ctx.moveTo(px, groundAt(px) - 62)
           ctx.lineTo(px, groundAt(px))
           ctx.stroke()
         }
-        ctx.strokeStyle = 'rgba(255,255,255,0.28)'
+        ctx.strokeStyle = 'rgba(255,255,255,0.26)'
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(x - 40, groundAt(x - 40) - 68)
-        for (let px = x - 40; px < x + 300; px += 20) ctx.lineTo(px, groundAt(px) - 68)
+        ctx.moveTo(x - 30, groundAt(x - 30) - 62)
+        for (let px = x - 30; px < x + 200; px += 20) ctx.lineTo(px, groundAt(px) - 62)
         ctx.stroke()
-        // A site hut and a stack of material waiting to be picked up. No
-        // dock: this is a ground-level yard.
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'
-        ctx.fillRect(x + 120, g - 54, 76, 54)
+
+        // The building itself, facing the road. Its face is where the wall
+        // in the physics is, so the rig arrives and stops at the door.
+        const face = x + 205
+        const backEdge = face + 240
+        const eaves = g - 190
+        ctx.fillStyle = 'rgba(0,0,0,0.66)'
+        ctx.fillRect(face, eaves, backEdge - face, g - eaves)
+        // Parapet.
+        ctx.fillStyle = 'rgba(255,255,255,0.09)'
+        ctx.fillRect(face - 8, eaves - 12, backEdge - face + 16, 14)
+
+        // A wide roller shutter, open, with the yard lit behind it.
+        const doorW = 118
+        ctx.fillStyle = 'rgba(224,184,84,0.14)'
+        ctx.fillRect(face + 26, g - 130, doorW, 130)
+        ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+        ctx.lineWidth = 2
+        ctx.strokeRect(face + 26, g - 130, doorW, 130)
         ctx.fillStyle = 'rgba(255,255,255,0.1)'
-        ctx.fillRect(x + 134, g - 42, 20, 16)
-        ctx.fillStyle = 'rgba(0,0,0,0.45)'
-        for (let i = 0; i < 3; i++) ctx.fillRect(x + 214, g - 12 - i * 11, 54, 9)
+        ctx.fillRect(face + 26, g - 130, doorW, 22)
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)'
+        ctx.lineWidth = 1
+        for (let y = g - 126; y < g - 108; y += 5) {
+          ctx.beginPath()
+          ctx.moveTo(face + 26, y)
+          ctx.lineTo(face + 26 + doorW, y)
+          ctx.stroke()
+        }
+
+        // Office windows alongside, and a sign over the door.
+        ctx.fillStyle = 'rgba(224,184,84,0.18)'
+        for (let i = 0; i < 3; i++) ctx.fillRect(face + 160 + i * 26, g - 116, 18, 24)
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'
+        ctx.fillRect(face + 30, g - 156, 110, 15)
+
+        // Material stacked in the yard, waiting to go out.
+        ctx.fillStyle = 'rgba(0,0,0,0.42)'
+        for (let i = 0; i < 3; i++) ctx.fillRect(x + 96, g - 12 - i * 11, 58, 9)
         ctx.restore()
       }
 
@@ -1045,80 +1155,110 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
         // Cab.
         //
-        // Sized off the real proportions rather than by eye, twice now. A
-        // flatbed deck sits about 5ft up and a tractor cab stands about 10ft,
-        // so the roof wants to be about twice the deck height above the road
-        // - which on this rig is y = -84, against the -64 it was.
-        //
-        // It cannot grow backwards to match: the deck starts at x = 54 and
-        // anything behind that line is where the freight goes. Tall and
-        // short-nosed is a cab-over, which is a real and very common shape
-        // for exactly this reason - the cab sits over the front axle to buy
-        // deck length - so that is what it is.
+        // Cab-over: tall, short-nosed, sat over the front axle. The deck
+        // starts at x = 54 and everything behind that line is freight, so
+        // there is only 71px of nose to work with - and a tractor cab stands
+        // about twice the height of a flatbed deck, which puts the roof at
+        // y = -84. Those two facts together only describe one shape, and it
+        // happens to be a real and common one, chosen by real manufacturers
+        // for the same reason: cab length is deck length you do not get.
         const CAB_BACK = 54
         const CAB_FRONT = 125
         const CAB_ROOF = -84
+
+        // Shell, with the roof drawn in slightly at the front so it is not a
+        // plain box.
         ctx.fillStyle = bodyColor
         ctx.beginPath()
         ctx.moveTo(CAB_BACK, -13)
-        ctx.lineTo(CAB_BACK, CAB_ROOF + 8)
-        ctx.quadraticCurveTo(CAB_BACK, CAB_ROOF, CAB_BACK + 10, CAB_ROOF)
-        ctx.lineTo(CAB_FRONT - 6, CAB_ROOF)
-        ctx.quadraticCurveTo(CAB_FRONT, CAB_ROOF, CAB_FRONT, CAB_ROOF + 8)
+        ctx.lineTo(CAB_BACK, CAB_ROOF + 6)
+        ctx.quadraticCurveTo(CAB_BACK, CAB_ROOF, CAB_BACK + 9, CAB_ROOF)
+        ctx.lineTo(CAB_FRONT - 12, CAB_ROOF + 2)
+        ctx.quadraticCurveTo(CAB_FRONT - 2, CAB_ROOF + 4, CAB_FRONT, CAB_ROOF + 14)
         ctx.lineTo(CAB_FRONT, -13)
         ctx.closePath()
         ctx.fill()
 
-        // Roof deflector - the wedge over the cab that stops the load
-        // catching the wind. On a real flatbed rig it is the most
-        // recognisable thing about the profile.
-        ctx.fillStyle = 'rgba(255,255,255,0.12)'
+        // Sun visor over the screen, and the roof deflector behind it - the
+        // two things that make a working truck look like one rather than
+        // like a van.
+        ctx.fillStyle = 'rgba(0,0,0,0.42)'
         ctx.beginPath()
-        ctx.moveTo(CAB_BACK, CAB_ROOF - 2)
-        ctx.lineTo(CAB_FRONT - 10, CAB_ROOF - 14)
-        ctx.lineTo(CAB_FRONT - 10, CAB_ROOF)
-        ctx.lineTo(CAB_BACK, CAB_ROOF)
+        ctx.moveTo(CAB_FRONT - 34, CAB_ROOF + 3)
+        ctx.lineTo(CAB_FRONT + 3, CAB_ROOF + 9)
+        ctx.lineTo(CAB_FRONT + 3, CAB_ROOF + 14)
+        ctx.lineTo(CAB_FRONT - 34, CAB_ROOF + 10)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = 'rgba(255,255,255,0.14)'
+        ctx.beginPath()
+        ctx.moveTo(CAB_BACK + 2, CAB_ROOF - 1)
+        ctx.lineTo(CAB_FRONT - 30, CAB_ROOF - 15)
+        ctx.lineTo(CAB_FRONT - 30, CAB_ROOF - 1)
         ctx.closePath()
         ctx.fill()
 
-        // Windscreen across the front, and the door glass behind it.
-        ctx.fillStyle = 'rgba(0,0,0,0.52)'
+        // Glass: a deep screen up front and a door window behind the pillar.
+        ctx.fillStyle = 'rgba(12,20,28,0.72)'
         ctx.beginPath()
-        ctx.moveTo(94, CAB_ROOF + 9)
-        ctx.lineTo(CAB_FRONT - 4, CAB_ROOF + 9)
-        ctx.lineTo(CAB_FRONT - 4, CAB_ROOF + 40)
-        ctx.lineTo(94, CAB_ROOF + 40)
+        ctx.moveTo(96, CAB_ROOF + 14)
+        ctx.lineTo(CAB_FRONT - 3, CAB_ROOF + 18)
+        ctx.lineTo(CAB_FRONT - 3, CAB_ROOF + 44)
+        ctx.lineTo(96, CAB_ROOF + 44)
         ctx.closePath()
         ctx.fill()
-        ctx.fillRect(66, CAB_ROOF + 12, 22, 28)
+        ctx.fillRect(66, CAB_ROOF + 16, 24, 26)
+        // A highlight across the glass, so it reads as glass.
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'
+        ctx.beginPath()
+        ctx.moveTo(98, CAB_ROOF + 40)
+        ctx.lineTo(CAB_FRONT - 5, CAB_ROOF + 22)
+        ctx.lineTo(CAB_FRONT - 5, CAB_ROOF + 28)
+        ctx.lineTo(98, CAB_ROOF + 44)
+        ctx.closePath()
+        ctx.fill()
 
-        // Door line, step and handle.
-        ctx.strokeStyle = 'rgba(0,0,0,0.4)'
+        // Body stripe along the doors, in the brand colour rather than the
+        // whole cab being it.
+        ctx.fillStyle = COLORS.accent
+        ctx.fillRect(CAB_BACK + 3, -34, 66, 5)
+
+        // Door, handle and the step under it.
+        ctx.strokeStyle = 'rgba(0,0,0,0.45)'
         ctx.lineWidth = 1.5
         ctx.beginPath()
-        ctx.moveTo(91, CAB_ROOF + 6)
-        ctx.lineTo(91, -14)
-        ctx.moveTo(63, CAB_ROOF + 6)
-        ctx.lineTo(63, -14)
+        ctx.moveTo(93, CAB_ROOF + 10)
+        ctx.lineTo(93, -14)
+        ctx.moveTo(62, CAB_ROOF + 12)
+        ctx.lineTo(62, -14)
         ctx.stroke()
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'
-        ctx.fillRect(68, -24, 18, 4)
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'
+        ctx.fillRect(70, -26, 16, 3)
+        ctx.fillStyle = COLORS.muted
+        ctx.fillRect(68, -8, 22, 3)
 
-        // Mirror arm, grille, lamp and the stack behind the cab.
+        // Grille, bumper and lamps.
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'
+        ctx.fillRect(CAB_FRONT - 15, -40, 15, 18)
+        ctx.fillStyle = COLORS.muted
+        for (let i = 0; i < 4; i++) ctx.fillRect(CAB_FRONT - 14, -38 + i * 4, 13, 1.5)
+        ctx.fillRect(CAB_FRONT - 18, -18, 20, 7)
+        ctx.fillStyle = COLORS.amber
+        ctx.beginPath()
+        ctx.arc(CAB_FRONT - 8, -22, 3.2, 0, Math.PI * 2)
+        ctx.fill()
+
+        // Mirror arm and the stack behind the cab.
         ctx.strokeStyle = COLORS.muted
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(CAB_FRONT - 6, CAB_ROOF + 16)
-        ctx.lineTo(CAB_FRONT + 6, CAB_ROOF + 11)
+        ctx.moveTo(CAB_FRONT - 8, CAB_ROOF + 20)
+        ctx.lineTo(CAB_FRONT + 7, CAB_ROOF + 15)
         ctx.stroke()
         ctx.fillStyle = COLORS.muted
-        ctx.fillRect(CAB_BACK - 5, CAB_ROOF - 16, 6, 66)
-        ctx.fillStyle = 'rgba(0,0,0,0.32)'
-        ctx.fillRect(CAB_FRONT - 14, -34, 14, 9)
-        ctx.fillStyle = COLORS.amber
-        ctx.beginPath()
-        ctx.arc(CAB_FRONT - 6, -21, 3.5, 0, Math.PI * 2)
-        ctx.fill()
+        ctx.fillRect(CAB_BACK - 6, CAB_ROOF - 18, 6, 70)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fillRect(CAB_BACK - 7, CAB_ROOF - 18, 8, 4)
         ctx.restore()
 
         for (const wheel of [world.rearWheel, world.frontWheel]) {
