@@ -564,41 +564,89 @@ export default function TruckGame({ seed, onFinish }: Props) {
           : `rgba(224,150,44,${0.22 + entry.damage * 0.9})`
         ctx.fillRect(-w / 2, -h / 2, w, h)
 
-        // Chipped away at the corners, and split along the grain.
+        // Damage looks like what the thing is made of.
         //
-        // The first version drew three-point zigzags, which at this size
-        // read as chevrons stamped on the box rather than as damage - the
-        // player saw a '<' printed on their freight. Timber does not crack
-        // like glass: it loses corners and splits along its boards, so that
-        // is what this does. The pattern is derived from the index, not from
-        // random, so nothing crawls around the crate between frames.
-        const bites = Math.round(entry.damage * 4)
-        ctx.fillStyle = COLORS.sky
-        for (let i = 0; i < bites; i++) {
-          const corner = i % 4
-          const cx = corner < 2 ? -w / 2 : w / 2
-          const cy = corner % 2 === 0 ? -h / 2 : h / 2
-          const bx = Math.min(w * 0.34, 5 + i * 3) * (corner < 2 ? 1 : -1)
-          const by = Math.min(h * 0.34, 4 + i * 3) * (corner % 2 === 0 ? 1 : -1)
-          ctx.beginPath()
-          ctx.moveTo(cx, cy)
-          ctx.lineTo(cx + bx, cy)
-          ctx.lineTo(cx, cy + by)
-          ctx.closePath()
-          ctx.fill()
-        }
-        const splits = Math.round(entry.damage * 3)
-        ctx.strokeStyle = 'rgba(0,0,0,0.55)'
-        ctx.lineWidth = 1
-        for (let i = 0; i < splits; i++) {
-          const y = -h / 2 + (h * (i + 1)) / (splits + 1)
-          const from = -w / 2 + ((i * 29) % 40) / 100 * w
-          ctx.beginPath()
-          ctx.moveTo(from, y)
-          ctx.lineTo(from + w * 0.5, y)
-          ctx.moveTo(from + w * 0.2, y)
-          ctx.lineTo(from + w * 0.34, y - 2.5)
-          ctx.stroke()
+        // The first version chipped corners off everything, which is right
+        // for a timber crate and plainly wrong for a steel drum - a drum
+        // does not lose its corners, it dents, buckles at the hoops and
+        // splits at a seam. Seeing square bites taken out of a barrel was
+        // the giveaway.
+        if (entry.crate.kind === 'drum') {
+          const dents = Math.round(entry.damage * 4)
+          for (let i = 0; i < dents; i++) {
+            // Pressed in from alternating sides, along the drum's long axis.
+            const along = (((i * 41) % 100) / 100 - 0.5) * (h >= w ? h : w) * 0.7
+            const side = i % 2 ? 1 : -1
+            const depth = Math.min(w, h) * (0.16 + entry.damage * 0.16)
+            ctx.fillStyle = skin.dark
+            ctx.beginPath()
+            if (h >= w) {
+              ctx.moveTo((side * w) / 2, along - depth)
+              ctx.quadraticCurveTo((side * w) / 2 - side * depth, along, (side * w) / 2, along + depth)
+            } else {
+              ctx.moveTo(along - depth, (side * h) / 2)
+              ctx.quadraticCurveTo(along, (side * h) / 2 - side * depth, along + depth, (side * h) / 2)
+            }
+            ctx.closePath()
+            ctx.fill()
+          }
+
+          // A split seam once it is properly beaten up, and a weep from it.
+          // Not a running stream: the drum has not burst yet, and drawing
+          // one would promise a spill that has not happened.
+          if (entry.damage > 0.55) {
+            ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            if (h >= w) {
+              ctx.moveTo(-w * 0.1, -h * 0.2)
+              ctx.lineTo(w * 0.16, h * 0.1)
+            } else {
+              ctx.moveTo(-w * 0.2, -h * 0.1)
+              ctx.lineTo(w * 0.1, h * 0.16)
+            }
+            ctx.stroke()
+            if (entry.crate.hazard !== 'none') {
+              ctx.fillStyle = entry.crate.hazard === 'flammable'
+                ? 'rgba(178,58,40,0.5)'
+                : 'rgba(58,110,158,0.55)'
+              ctx.beginPath()
+              ctx.ellipse(w * 0.1, h * 0.28, w * 0.16, h * 0.1, 0, 0, Math.PI * 2)
+              ctx.fill()
+            }
+          }
+        } else {
+          // Timber: it loses corners and splits along its boards. Derived
+          // from the index rather than random, so nothing crawls between
+          // frames.
+          const bites = Math.round(entry.damage * 4)
+          ctx.fillStyle = COLORS.sky
+          for (let i = 0; i < bites; i++) {
+            const corner = i % 4
+            const cx = corner < 2 ? -w / 2 : w / 2
+            const cy = corner % 2 === 0 ? -h / 2 : h / 2
+            const bx = Math.min(w * 0.34, 5 + i * 3) * (corner < 2 ? 1 : -1)
+            const by = Math.min(h * 0.34, 4 + i * 3) * (corner % 2 === 0 ? 1 : -1)
+            ctx.beginPath()
+            ctx.moveTo(cx, cy)
+            ctx.lineTo(cx + bx, cy)
+            ctx.lineTo(cx, cy + by)
+            ctx.closePath()
+            ctx.fill()
+          }
+          const splits = Math.round(entry.damage * 3)
+          ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+          ctx.lineWidth = 1
+          for (let i = 0; i < splits; i++) {
+            const y = -h / 2 + (h * (i + 1)) / (splits + 1)
+            const from = -w / 2 + ((i * 29) % 40) / 100 * w
+            ctx.beginPath()
+            ctx.moveTo(from, y)
+            ctx.lineTo(from + w * 0.5, y)
+            ctx.moveTo(from + w * 0.2, y)
+            ctx.lineTo(from + w * 0.34, y - 2.5)
+            ctx.stroke()
+          }
         }
       }
 
