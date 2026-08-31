@@ -3,8 +3,8 @@ import Matter from 'matter-js'
 import { generateRoute, SEGMENT_WIDTH, type Crate, type Route } from './route'
 import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
-  createWorld, loadCrate, planDrop, drive, brake, updateCargoState, currentPayout,
-  DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  createWorld, loadCrate, reloadCargo, recoverableCargo, planDrop, drive, brake,
+  updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
   type CargoBody, type TruckWorld,
 } from './engine'
 import './TruckGame.css'
@@ -12,19 +12,26 @@ import './TruckGame.css'
 /**
  * Haul a load from A to B without wrecking it.
  *
- * Two phases, and the first one is the game. You decide where every item
- * goes on the deck and which way up it sits - heavy low and central, the
- * tall drum laid down or braced by something beside it. Then you drive, and
- * the only thing holding the load on is how well you stacked it and how
- * gently you drive. Speed is not scored; what arrives intact is.
+ * Loading is the first half of the game. You decide where every item goes on
+ * the deck and which way up it sits - heavy low and central, the tall drum
+ * laid down or braced by something beside it. Then you drive, and the only
+ * thing holding the load on is how well you stacked it and how gently you
+ * drive. Speed is not scored; what arrives intact is.
+ *
+ * Dropping something is a setback rather than a verdict: stop, back up, and
+ * you can put it on again. The rig itself is what you cannot replace - it
+ * takes damage from real impacts, and enough of them end the run outright.
  */
 
-type Phase = 'loading' | 'driving' | 'arrived' | 'failed'
+type Phase = 'loading' | 'driving' | 'reloading' | 'arrived' | 'failed' | 'wrecked'
 
 const VIEW = { w: 900, h: 520 }
 
 /** Keyboard nudge per press while aiming - fine enough to thread a gap. */
 const AIM_STEP = 4
+
+/** How long the wreck plays before the result takes over the screen. */
+const WRECK_MS = 1100
 
 const KIND_LABEL: Record<Crate['kind'], string> = {
   pallet: 'Pallet',
@@ -51,6 +58,10 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const [placed, setPlaced] = useState(0)
   const [payout, setPayout] = useState(0)
   const [progress, setProgress] = useState(0)
+  const [condition, setCondition] = useState(1)
+  const [canRecover, setCanRecover] = useState(false)
+  // Only the wreck has anything to watch before the result panel covers it.
+  const [wreckPlayed, setWreckPlayed] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Aiming lives in a ref, not in state: it updates on every pointermove,
@@ -63,9 +74,18 @@ export default function TruckGame({ seed, onFinish }: Props) {
   // Same reason: the draw loop needs the current index, and its effect
   // deliberately does not re-run on every placement.
   const placedRef = useRef(0)
+  // The dropped item currently being put back on. The body lives in a ref
+  // because only the physics touches it; its crate is mirrored into state
+  // because the panel renders the item's weight and rate, and a ref read
+  // during render would not re-render when it changed.
+  const reloadRef = useRef<CargoBody | null>(null)
+  const [reloadCrate, setReloadCrate] = useState<Crate | null>(null)
   // Written by the draw loop so pointer coordinates can be converted back
   // into world space with the exact camera that produced the frame.
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
+  const wreckedAt = useRef(0)
+
+  const aiming = phase === 'loading' || phase === 'reloading'
 
   // ---- world lifecycle ------------------------------------------------
   useEffect(() => {
@@ -88,8 +108,13 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setPhase('loading')
     setPlaced(0)
     placedRef.current = 0
+    reloadRef.current = null
     setPayout(0)
     setProgress(0)
+    setCondition(1)
+    setCanRecover(false)
+    setWreckPlayed(false)
+    setReloadCrate(null)
     setRotated(false)
     aimRef.current = { offset: -30, rotated: false }
   }, [])
@@ -108,7 +133,16 @@ export default function TruckGame({ seed, onFinish }: Props) {
     return () => window.removeEventListener('online', sync)
   }, [])
 
-  // ---- loading: aim, turn, set down ------------------------------------
+  // ---- aiming: point, turn, set down ------------------------------------
+
+  /** The item the ghost is showing - the next off the dock while loading, or
+   *  the one being picked up off the road. */
+  const aimedCrate = useCallback((): Crate | null => {
+    if (phase === 'reloading') return reloadRef.current?.crate ?? null
+    if (phase === 'loading') return route.crates[placedRef.current] ?? null
+    return null
+  }, [phase, route])
+
 
   /** Keeps the item between the rear lip and the headboard. Aiming past the
    *  deck would place it somewhere the physics immediately rejects, which
@@ -121,7 +155,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const aimAt = (clientX: number) => {
     const canvas = canvasRef.current
     const world = worldRef.current
-    const crate = route.crates[placedRef.current]
+    const crate = aimedCrate()
     if (!canvas || !world || !crate) return
     const rect = canvas.getBoundingClientRect()
     const cam = cameraRef.current
@@ -132,7 +166,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
   }
 
   const turnAim = useCallback(() => {
-    const crate = route.crates[placedRef.current]
+    const crate = aimedCrate()
     if (!crate) return
     const laid = !aimRef.current.rotated
     aimRef.current.rotated = laid
@@ -140,12 +174,27 @@ export default function TruckGame({ seed, onFinish }: Props) {
     // drum up makes it wider, either of which can push it off the deck.
     aimRef.current.offset = clampOffset(aimRef.current.offset, crate, laid)
     setRotated(laid)
-  }, [route])
+  }, [aimedCrate])
 
   const placeHere = useCallback(() => {
     const world = worldRef.current
+    if (!world) return
+
+    // Recovering: the same body goes back on, keeping the damage it took.
+    if (phase === 'reloading') {
+      const target = reloadRef.current
+      if (!target) return
+      reloadCargo(world, target, aimRef.current.offset, aimRef.current.rotated)
+      reloadRef.current = null
+      setReloadCrate(null)
+      aimRef.current.rotated = false
+      setRotated(false)
+      setPhase('driving')
+      return
+    }
+
     const crate = route.crates[placedRef.current]
-    if (!world || !crate) return
+    if (!crate) return
     loadCrate(world, crate, aimRef.current.offset, aimRef.current.rotated)
     placedRef.current += 1
     setPlaced(placedRef.current)
@@ -156,13 +205,31 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setRotated(false)
     const next = route.crates[placedRef.current]
     if (next) aimRef.current.offset = clampOffset(aimRef.current.offset, next, false)
-  }, [route])
+  }, [route, phase])
 
   const depart = () => {
     if (placed === 0) return
     startedAt.current = performance.now()
     setPhase('driving')
   }
+
+  /** Switches to placing the nearest dropped item back on the deck. */
+  const startRecovery = useCallback(() => {
+    const world = worldRef.current
+    if (!world || phase !== 'driving') return
+    const [nearest] = recoverableCargo(world).sort(
+      (a, b) => Math.abs(a.body.position.x - world.chassis.position.x)
+        - Math.abs(b.body.position.x - world.chassis.position.x),
+    )
+    if (!nearest) return
+    inputRef.current.throttle = 0
+    inputRef.current.braking = false
+    reloadRef.current = nearest
+    setReloadCrate(nearest.crate)
+    aimRef.current = { offset: -30, rotated: false }
+    setRotated(false)
+    setPhase('reloading')
+  }, [phase])
 
   // ---- render + step loop ---------------------------------------------
   useEffect(() => {
@@ -252,6 +319,39 @@ export default function TruckGame({ seed, onFinish }: Props) {
       ctx.restore()
     }
 
+    /** A short burst where the rig was. Deliberately spare - a ring, some
+     *  shards and nothing else. A cartoon fireball would be at odds with
+     *  every other thing on this site. */
+    const drawWreck = (world: TruckWorld, t: number) => {
+      const { x, y } = world.chassis.position
+      const fade = 1 - t
+      ctx.save()
+      ctx.globalAlpha = fade
+      ctx.strokeStyle = COLORS.amber
+      ctx.lineWidth = 3 * fade + 1
+      ctx.beginPath()
+      ctx.arc(x, y, 30 + t * 190, 0, Math.PI * 2)
+      ctx.stroke()
+
+      ctx.strokeStyle = COLORS.danger
+      ctx.lineWidth = 3
+      for (let i = 0; i < 14; i++) {
+        const angle = (i / 14) * Math.PI * 2 + 0.4
+        // Spread the shards over different speeds, or it reads as a single
+        // expanding wheel of spokes rather than debris.
+        const speed = 90 + ((i * 37) % 110)
+        const near = 14 + t * speed
+        const far = near + 16 + (1 - t) * 12
+        ctx.beginPath()
+        ctx.moveTo(x + Math.cos(angle) * near, y + Math.sin(angle) * near - t * 24)
+        ctx.lineTo(x + Math.cos(angle) * far, y + Math.sin(angle) * far - t * 24)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
+    let lastCanRecover = false
+
     const frame = (now: number) => {
       const world = worldRef.current
       if (!world) {
@@ -264,7 +364,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // scored on outcome would mean the monitor decides the score.
       const elapsed = Math.min(now - last, 60)
       last = now
-      if (phase === 'driving' || phase === 'loading') {
+      if (phase === 'driving' || phase === 'loading' || phase === 'reloading') {
         const steps = Math.max(1, Math.round(elapsed / (1000 / 60)))
         for (let i = 0; i < steps; i++) {
           if (phase === 'driving') {
@@ -285,14 +385,15 @@ export default function TruckGame({ seed, onFinish }: Props) {
       ctx.fillRect(0, 0, VIEW.w, VIEW.h)
 
       // Camera trails the truck, keeping it left-of-centre so the road ahead
-      // is what the player is actually looking at. Loading pulls in close
+      // is what the player is actually looking at. Aiming pulls in close
       // instead: the deck is what is being looked at, and placing an item to
-      // the pixel is impossible when the whole deck is 130px wide on screen.
-      const zoom = phase === 'loading' ? 2 : 1
-      const camX = phase === 'loading'
+      // the pixel is impossible when the whole deck is 174px wide on screen.
+      const closeUp = phase === 'loading' || phase === 'reloading'
+      const zoom = closeUp ? 2 : 1
+      const camX = closeUp
         ? world.chassis.position.x - VIEW.w / (2 * zoom)
         : Math.max(0, world.chassis.position.x - VIEW.w * 0.35)
-      const camY = phase === 'loading'
+      const camY = closeUp
         ? world.chassis.position.y - (VIEW.h * 0.62) / zoom
         : Math.max(0, world.chassis.position.y - VIEW.h * 0.55)
       cameraRef.current = { x: camX, y: camY, zoom }
@@ -322,7 +423,12 @@ export default function TruckGame({ seed, onFinish }: Props) {
       ctx.stroke()
       ctx.setLineDash([])
 
-      // Truck
+      // Truck, coloured by how much of a beating it has taken - the number in
+      // the HUD is the precise version, this is the one you see without
+      // looking away from the road.
+      const bodyColor = phase === 'wrecked' || world.truckDamage > 0.75
+        ? COLORS.danger
+        : world.truckDamage > 0.4 ? COLORS.amber : COLORS.accent
       const drawBody = (body: Matter.Body, fill: string) => {
         ctx.fillStyle = fill
         ctx.beginPath()
@@ -336,7 +442,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
         // The wheels are parts of the same rigid body now, so they would
         // otherwise be drawn twice - once as a 25-sided polygon in the body
         // colour, once as the circle below.
-        if (part.label !== 'wheel') drawBody(part, COLORS.accent)
+        if (part.label !== 'wheel') drawBody(part, bodyColor)
       }
       for (const wheel of [world.rearWheel, world.frontWheel]) {
         const r = wheel.circleRadius || 20
@@ -361,12 +467,34 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.restore()
       }
 
-      for (const entry of world.cargo) drawCargo(entry)
+      const withinReach = phase === 'driving' ? recoverableCargo(world) : []
+      for (const entry of world.cargo) {
+        if (entry.state === 'gone') continue
+        drawCargo(entry)
+        // Ring anything lying on the road, brightly if it is close enough to
+        // collect - so going back for it is an offer rather than a guess.
+        if (entry.state === 'road' && phase === 'driving') {
+          const reachable = withinReach.includes(entry)
+          ctx.save()
+          ctx.strokeStyle = reachable ? COLORS.accent : COLORS.muted
+          ctx.globalAlpha = reachable ? 0.9 : 0.35
+          ctx.lineWidth = 2
+          ctx.setLineDash([4, 4])
+          ctx.strokeRect(
+            entry.body.position.x - entry.w / 2 - 6,
+            entry.body.position.y - entry.h / 2 - 6,
+            entry.w + 12, entry.h + 12,
+          )
+          ctx.restore()
+        }
+      }
 
       // The ghost: exactly the rectangle placeHere would create, in exactly
       // the spot, worked out by the same function the physics uses.
-      const pending = route.crates[placedRef.current]
-      if (phase === 'loading' && pending) {
+      const pending = phase === 'reloading'
+        ? reloadRef.current?.crate ?? null
+        : route.crates[placedRef.current] ?? null
+      if (closeUp && pending) {
         const spot = planDrop(world, pending, aimRef.current.offset, aimRef.current.rotated)
         ctx.save()
         ctx.strokeStyle = COLORS.accent
@@ -383,27 +511,56 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.restore()
       }
 
+      if (phase === 'wrecked') {
+        drawWreck(world, Math.min(1, (now - wreckedAt.current) / WRECK_MS))
+      }
+
       ctx.restore()
 
       if (phase === 'driving') {
-        const reached = world.chassis.position.x >= world.finishX
-        const allGone = world.cargo.every((c) => c.lost)
+        setCondition(1 - world.truckDamage)
+        const offer = withinReach.length > 0
+        if (offer !== lastCanRecover) {
+          lastCanRecover = offer
+          setCanRecover(offer)
+        }
+
         setProgress(Math.min(1, world.chassis.position.x / world.finishX))
         setPayout(currentPayout(world))
-        if (reached || allGone) {
-          const delivered = world.cargo.filter((c) => !c.lost && c.damage < 0.999).length
-          const lost = world.cargo.filter((c) => c.lost).length
-          const final = reached ? currentPayout(world) : 0
-          setPhase(reached ? 'arrived' : 'failed')
-          setPayout(final)
-          onFinish?.({ payout: final, delivered, lost })
+
+        const submit = (result: { payout: number; delivered: number; lost: number }) => {
+          onFinish?.(result)
           if (ticket) {
             void submitRun({
               token: ticket.token,
-              payout: final,
-              delivered,
-              lost,
+              ...result,
               duration_ms: Math.round(performance.now() - startedAt.current),
+            })
+          }
+        }
+
+        if (world.truckDamage >= 1) {
+          wreckedAt.current = now
+          setPhase('wrecked')
+          setPayout(0)
+          // Still submitted. A wreck is a real result, and a board that only
+          // ever heard about the good runs would quietly reward quitting out
+          // of the bad ones.
+          submit({ payout: 0, delivered: 0, lost: world.cargo.length })
+        } else {
+          const reached = world.chassis.position.x >= world.finishX
+          // Only a load that is beyond recovery ends the run early. Items
+          // lying on the road do not, because going back for them is now a
+          // legitimate move.
+          const nothingLeft = world.cargo.every((c) => c.state === 'gone')
+          if (reached || nothingLeft) {
+            const final = reached ? currentPayout(world) : 0
+            setPhase(reached ? 'arrived' : 'failed')
+            setPayout(final)
+            submit({
+              payout: final,
+              delivered: world.cargo.filter((c) => c.state === 'deck' && c.damage < 0.999).length,
+              lost: world.cargo.filter((c) => c.state !== 'deck').length,
             })
           }
         }
@@ -419,17 +576,27 @@ export default function TruckGame({ seed, onFinish }: Props) {
     }
   }, [route, phase, onFinish, ticket])
 
+  // The wreck plays out before the result panel covers it up. Every other
+  // ending has nothing to watch, so its panel is derived rather than timed.
+  useEffect(() => {
+    if (phase !== 'wrecked') return
+    const timer = setTimeout(() => setWreckPlayed(true), WRECK_MS)
+    return () => clearTimeout(timer)
+  }, [phase])
+
   // ---- keyboard --------------------------------------------------------
-  // The same keys mean different things in the two phases, which is why this
+  // The same keys mean different things in the two modes, which is why this
   // branches on phase rather than mapping keys straight to the throttle:
-  // left/right aim while loading and drive while driving.
+  // left and right aim while placing and drive while driving.
   useEffect(() => {
     const LEFT = ['ArrowLeft', 'KeyA']
     const RIGHT = ['ArrowRight', 'KeyD']
 
     const down = (e: KeyboardEvent) => {
-      if (phase === 'loading') {
-        const crate = route.crates[placedRef.current]
+      if (phase === 'loading' || phase === 'reloading') {
+        const crate = phase === 'reloading'
+          ? reloadRef.current?.crate
+          : route.crates[placedRef.current]
         if (!crate) return
         if (LEFT.includes(e.code) || RIGHT.includes(e.code)) {
           e.preventDefault()
@@ -445,8 +612,10 @@ export default function TruckGame({ seed, onFinish }: Props) {
         }
         return
       }
+      if (phase !== 'driving') return
       if (RIGHT.includes(e.code)) inputRef.current.throttle = 1
       if (LEFT.includes(e.code)) inputRef.current.throttle = -1
+      if (e.code === 'KeyE') startRecovery()
       if (e.code === 'Space') {
         e.preventDefault()
         inputRef.current.braking = true
@@ -462,7 +631,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
     }
-  }, [phase, route, turnAim, placeHere])
+  }, [phase, route, turnAim, placeHere, startRecovery])
 
   // ---- fullscreen ------------------------------------------------------
   const toggleFullscreen = async () => {
@@ -495,7 +664,8 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
   const remaining = route.crates.length - placed
   const nextCrate = route.crates[placed]
-  const loading = phase === 'loading'
+  const shownCrate = phase === 'reloading' ? reloadCrate : nextCrate
+  const conditionPct = Math.max(0, Math.round(condition * 100))
 
   return (
     <div className="tg" ref={shellRef}>
@@ -503,6 +673,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
         <span className="tg-stat">Loaded <b>{placed}/{route.crates.length}</b></span>
         <span className="tg-stat">On board <b>${payout.toLocaleString('en-US')}</b></span>
         <span className="tg-stat is-muted">Full load <b>${route.maxPayout.toLocaleString('en-US')}</b></span>
+        <span className={`tg-stat${conditionPct <= 35 ? ' is-critical' : conditionPct <= 70 ? ' is-warn' : ''}`}>
+          Rig <b>{conditionPct}%</b>
+        </span>
         <button type="button" className="tg-icon-btn" onClick={toggleFullscreen}>
           {isFullscreen ? 'Exit full screen' : 'Full screen'}
         </button>
@@ -511,16 +684,16 @@ export default function TruckGame({ seed, onFinish }: Props) {
       <div className="tg-stage">
         <canvas
           ref={canvasRef}
-          className={`tg-canvas${loading ? ' is-aiming' : ''}`}
+          className={`tg-canvas${aiming ? ' is-aiming' : ''}`}
           // Pointer events rather than mouse and touch pairs: one code path
           // covers a mouse, a finger and a stylus, and a tap on a phone
           // arrives as a down/up at the same spot, which places there.
-          onPointerMove={loading ? (e) => aimAt(e.clientX) : undefined}
-          onPointerDown={loading ? (e) => {
+          onPointerMove={aiming ? (e) => aimAt(e.clientX) : undefined}
+          onPointerDown={aiming ? (e) => {
             e.currentTarget.setPointerCapture(e.pointerId)
             aimAt(e.clientX)
           } : undefined}
-          onPointerUp={loading ? (e) => {
+          onPointerUp={aiming ? (e) => {
             aimAt(e.clientX)
             placeHere()
           } : undefined}
@@ -532,21 +705,34 @@ export default function TruckGame({ seed, onFinish }: Props) {
           </div>
         )}
 
-        {loading && (
+        {phase === 'driving' && canRecover && (
+          <div className="tg-recover">
+            <button type="button" className="btn btn-primary btn-sm" onClick={startRecovery}>
+              Load it back on
+            </button>
+            <span className="tg-recover-key">or press E</span>
+          </div>
+        )}
+
+        {aiming && (
           // Pointer events are off on the overlay itself so the deck stays
-          // clickable underneath it; only the panel takes input back.
+          // clickable underneath it; only the panel takes them back.
           <div className="tg-overlay tg-overlay-loading">
             <div className="tg-panel">
-              {nextCrate ? (
+              {shownCrate ? (
                 <>
                   <p className="tg-panel-line">
-                    <b>{KIND_LABEL[nextCrate.kind]}</b> · {nextCrate.weight}kg
-                    {nextCrate.fragile ? ' · fragile' : ''} · pays $
-                    {nextCrate.rate.toLocaleString('en-US')}
-                    <span className="tg-panel-rest"> · {remaining} still on the dock</span>
+                    <b>{KIND_LABEL[shownCrate.kind]}</b> · {shownCrate.weight}kg
+                    {shownCrate.fragile ? ' · fragile' : ''} · pays $
+                    {shownCrate.rate.toLocaleString('en-US')}
+                    {phase === 'loading' && (
+                      <span className="tg-panel-rest"> · {remaining} still on the dock</span>
+                    )}
                   </p>
                   <p className="tg-panel-hint">
-                    Point at the deck and click to set it down. Heavy and low rides best.
+                    {phase === 'reloading'
+                      ? 'Find it a spot on the deck. It keeps whatever the fall did to it.'
+                      : 'Point at the deck and click to set it down. Heavy and low rides best.'}
                   </p>
                 </>
               ) : (
@@ -560,7 +746,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={turnAim}
-                  disabled={!nextCrate}
+                  disabled={!shownCrate}
                 >
                   {rotated ? 'Stand it upright' : 'Lay it on its side'}
                 </button>
@@ -568,32 +754,36 @@ export default function TruckGame({ seed, onFinish }: Props) {
                   type="button"
                   className="btn btn-ghost btn-sm"
                   onClick={placeHere}
-                  disabled={!nextCrate}
+                  disabled={!shownCrate}
                 >
                   Set down
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={depart}
-                  disabled={placed === 0}
-                >
-                  {remaining > 0 ? `Depart with ${placed}` : 'Depart'}
-                </button>
+                {phase === 'loading' && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={depart}
+                    disabled={placed === 0}
+                  >
+                    {remaining > 0 ? `Depart with ${placed}` : 'Depart'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {(phase === 'arrived' || phase === 'failed') && (
+        {(phase === 'arrived' || phase === 'failed' || (phase === 'wrecked' && wreckPlayed)) && (
           <div className="tg-overlay">
             <p className="tg-overlay-title">
-              {phase === 'arrived' ? 'Delivered' : 'Load lost'}
+              {phase === 'arrived' ? 'Delivered' : phase === 'wrecked' ? 'Rig totalled' : 'Load lost'}
             </p>
             <p className="tg-overlay-text">
               {phase === 'arrived'
                 ? `$${payout.toLocaleString('en-US')} of $${route.maxPayout.toLocaleString('en-US')} arrived intact.`
-                : 'Everything came off the trailer before the drop.'}
+                : phase === 'wrecked'
+                  ? 'One impact too many. The load never got there, and neither did the truck.'
+                  : 'Everything came off the trailer before the drop.'}
             </p>
             <button type="button" className="btn btn-primary" onClick={startOver}>
               New route
@@ -604,9 +794,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
       {/* Held buttons, so touch devices get the same continuous throttle a
           held key gives - a tap-per-press control would make the hills
-          unplayable on a phone. Hidden while loading, where they mean
+          unplayable on a phone. Hidden while placing, where they mean
           nothing and only crowd the panel. */}
-      {!loading && (
+      {!aiming && (
         <div className="tg-controls">
           <button
             type="button"
@@ -641,9 +831,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
         </div>
       )}
       <p className="tg-hint">
-        {loading
+        {aiming
           ? 'Click the deck to set the item down · arrows to nudge · R to turn it · Enter to place'
-          : 'Arrow keys or A/D to drive · Space to brake'}
+          : 'Arrows or A/D to drive · Space to brake · back up to anything you drop and press E'}
       </p>
     </div>
   )

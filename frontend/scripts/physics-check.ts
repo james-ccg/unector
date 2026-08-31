@@ -27,12 +27,19 @@
  * be about. Taking a full stack and taking only what fits in one layer
  * should pay about the same - that is the decision the Depart button offers,
  * and it stops being a decision if one side dominates.
+ *
+ * RIG DAMAGE: a run that is driven sensibly should finish with the truck
+ * barely marked, and should never wreck. The threshold exists for genuine
+ * slams - landing flat after clearing a crest, driving hard into a rise -
+ * so if ordinary driving is registering damage here, it is set too low and
+ * the player will be written off for nothing they did wrong.
  */
 import Matter from 'matter-js'
 import { generateRoute, type Crate } from '../src/game/route.ts'
 import {
-  createWorld, loadCrate, drive, brake, updateCargoState, currentPayout,
-  DECK_MIN_OFFSET, DECK_MAX_OFFSET, type TruckWorld,
+  createWorld, loadCrate, reloadCargo, recoverableCargo, drive, brake,
+  updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  type TruckWorld,
 } from '../src/game/engine.ts'
 
 const SEEDS = Array.from({ length: 24 }, (_, i) => 1000 + i * 37)
@@ -149,13 +156,14 @@ function run(seed: number, strategy: Strategy, cap: number) {
     Matter.Engine.update(world.engine, STEP)
     updateCargoState(world)
     steps++
-    if (world.cargo.every((c) => c.lost)) break
+    if (world.cargo.every((c) => c.state === 'gone')) break
   }
 
   const reached = world.chassis.position.x >= world.finishX
   const result = {
     pct: route.maxPayout ? (reached ? currentPayout(world) : 0) / route.maxPayout : 0,
-    lost: world.cargo.filter((c) => c.lost).length,
+    lost: world.cargo.filter((c) => c.state !== 'deck').length,
+    truckDamage: world.truckDamage,
     carried: world.cargo.length,
     seconds: steps / 60,
     reached,
@@ -173,8 +181,160 @@ function balance(label: string, strategy: Strategy, cap: number) {
     `  carried ${avg((r) => r.carried).toFixed(1)}  lost ${avg((r) => r.lost).toFixed(1)}` +
     `  arrived ${String(rs.filter((r) => r.reached).length).padStart(2)}/${rs.length}` +
     `  ${avg((r) => r.seconds).toFixed(0)}s` +
+    `  rig damage avg ${(avg((r) => r.truckDamage) * 100).toFixed(0)}%` +
+    ` worst ${(Math.max(...rs.map((r) => r.truckDamage)) * 100).toFixed(0)}%` +
+    `  wrecked ${rs.filter((r) => r.truckDamage >= 1).length}` +
     `  off-deck ${rs.reduce((a, r) => a + r.offDeck, 0)}`,
   )
+}
+
+// ---- impacts ---------------------------------------------------------
+
+/**
+ * The distribution of ground impacts the rig actually takes.
+ *
+ * The damage threshold has to sit above what ordinary driving produces and
+ * below what a genuine slam produces, and the only way to know where that is
+ * is to look. Guessing put it at 6.5, where nothing in twenty-four routes
+ * ever came close and the truck could not be wrecked at all.
+ */
+function impacts() {
+  const speeds: number[] = []
+
+  for (const seed of SEEDS) {
+    const route = generateRoute(seed)
+    const world = createWorld(route)
+    for (const p of planLoad(route.crates, 'fullStack')) {
+      loadCrate(world, p.crate, p.offset, p.laid)
+    }
+
+    Matter.Events.on(world.engine, 'collisionStart', (event) => {
+      if (world.engine.timing.timestamp < 600) return
+      for (const pair of event.pairs) {
+        const aTruck = pair.bodyA.parent === world.chassis
+        const bTruck = pair.bodyB.parent === world.chassis
+        if (aTruck === bTruck) continue
+        const other = aTruck ? pair.bodyB : pair.bodyA
+        if (other.label !== 'ground') continue
+        const n = pair.collision.normal
+        speeds.push(Math.abs(
+          world.chassis.velocity.x * n.x + world.chassis.velocity.y * n.y,
+        ))
+      }
+    })
+
+    for (let i = 0; i < 150; i++) Matter.Engine.update(world.engine, STEP)
+    let steps = 0
+    while (steps < 60 * 90 && world.chassis.position.x < world.finishX) {
+      drive(world, 1)
+      Matter.Engine.update(world.engine, STEP)
+      updateCargoState(world)
+      steps++
+    }
+    world.destroy()
+  }
+
+  speeds.sort((a, b) => a - b)
+  const at = (q: number) => speeds[Math.min(speeds.length - 1, Math.floor(speeds.length * q))]
+  console.log(`${speeds.length} ground impacts, flat out, over ${SEEDS.length} routes`)
+  console.log(
+    `  median ${at(0.5).toFixed(2)}   p90 ${at(0.9).toFixed(2)}` +
+    `   p99 ${at(0.99).toFixed(2)}   worst ${(speeds.at(-1) ?? 0).toFixed(2)}`,
+  )
+}
+
+// ---- recovery --------------------------------------------------------
+
+/**
+ * Drives a route badly on purpose, then goes back for what fell off.
+ *
+ * End to end, because the interesting failures are all at the seams: an item
+ * that is unreachable however you park, one that goes back on and instantly
+ * falls off again, or one that reloads but never counts toward the payout
+ * because its state was not updated. None of those show up as a type error.
+ */
+function recovery() {
+  let attempted = 0
+  let collected = 0
+  let stillOnAtTheEnd = 0
+  let paidExtra = 0
+
+  for (const seed of SEEDS) {
+    const route = generateRoute(seed)
+    const world = createWorld(route)
+    // Deliberately bad: everything piled on one spot, so plenty comes off.
+    for (const crate of route.crates) loadCrate(world, crate, clamp(-30, crate, false), false)
+    for (let i = 0; i < 150; i++) {
+      Matter.Engine.update(world.engine, STEP)
+      updateCargoState(world)
+    }
+
+    let steps = 0
+    let recovering = false
+    const beforeRecovery = new Set<number>()
+
+    while (steps < 60 * 150 && world.chassis.position.x < world.finishX) {
+      const dropped = world.cargo.filter((c) => c.state === 'road')
+
+      if (!recovering && dropped.length > 0) {
+        recovering = true
+        for (const d of dropped) beforeRecovery.add(world.cargo.indexOf(d))
+      }
+
+      if (recovering) {
+        const reachable = recoverableCargo(world)
+        if (reachable.length > 0) {
+          attempted++
+          // Rear of the deck, laid flat if that lowers it - the same advice
+          // the game gives the player.
+          const item = reachable[0]
+          const laid = item.crate.h > item.crate.w
+          const halfW = (laid ? item.crate.h : item.crate.w) / 2
+          reloadCargo(world, item, DECK_MIN_OFFSET + halfW, laid)
+          collected++
+          recovering = world.cargo.some((c) => c.state === 'road')
+        } else {
+          // Back up toward it, then stop dead so the pickup can happen.
+          const target = world.cargo.find((c) => c.state === 'road')
+          if (!target) recovering = false
+          else {
+            const behind = target.body.position.x < world.chassis.position.x
+            if (Math.abs(target.body.position.x - world.chassis.position.x) > 120) {
+              drive(world, behind ? -1 : 1)
+            } else {
+              brake(world)
+            }
+          }
+        }
+      } else {
+        // Gently, once something has already been dropped - flooring it
+        // again would just put the same crate back on the road and measure
+        // nothing except how fast that happens.
+        drive(world, beforeRecovery.size > 0 ? 0.4 : 1)
+        if (beforeRecovery.size > 0 && world.chassis.velocity.x > 2) brake(world)
+      }
+
+      Matter.Engine.update(world.engine, STEP)
+      updateCargoState(world)
+      steps++
+    }
+
+    for (const idx of beforeRecovery) {
+      const entry = world.cargo[idx]
+      if (entry.state === 'deck') {
+        stillOnAtTheEnd++
+        paidExtra += Math.round(entry.crate.rate * (1 - entry.damage))
+      }
+    }
+    world.destroy()
+  }
+
+  console.log(`${attempted} pickups attempted, ${collected} succeeded`)
+  console.log(
+    `${stillOnAtTheEnd} of them were still on the deck at the drop, ` +
+    `worth $${paidExtra.toLocaleString('en-US')} that would otherwise have been left on the road`,
+  )
+  if (collected === 0) console.log('  NOTHING COULD BE PICKED UP - the mechanic is dead')
 }
 
 console.log('STILLNESS - a parked truck must not move at all\n')
@@ -189,3 +349,9 @@ balance('one layer, quick', 'oneLayer', 3)
 balance('full stack, quick', 'fullStack', 3)
 balance('thoughtless', 'naive', 99)
 balance('all in one pile', 'tower', 99)
+
+console.log('\nIMPACTS - where the rig damage threshold has to sit\n')
+impacts()
+
+console.log('\nRECOVERY - going back for what you dropped\n')
+recovery()

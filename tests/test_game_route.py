@@ -36,14 +36,15 @@ JS_PRNG_VECTORS = {
 
 JS_ROUTE_123456 = {
     "heights_head": [420, 420, 420],
-    "heights_tail": [421.1446689494, 423.4379437141, 426.5895009756],
+    "heights_tail": [553.2039456099, 552.6095774129, 550.7839744799],
     # (weight, kind, w, h, rate, fragile)
     "crates": [
-        (500, "drum", 20, 40, 850, True),
-        (300, "crate", 24, 24, 250, False),
-        (500, "crate", 30, 30, 450, False),
+        (600, "pallet", 55, 22, 950, True),
+        (400, "drum", 18, 36, 350, False),
+        (400, "pallet", 45, 18, 350, False),
+        (600, "crate", 33, 33, 550, False),
     ],
-    "max_payout": 1550,
+    "max_payout": 2200,
     "distance": 3600,
 }
 
@@ -112,17 +113,34 @@ class TestRouteIsPlayable:
     def test_terrain_stays_within_bounds(self):
         for seed in range(200):
             for h in generate_route(seed).heights:
-                assert BASE_GROUND_Y - 90 <= h <= BASE_GROUND_Y + 81
+                assert BASE_GROUND_Y - 90 <= h <= BASE_GROUND_Y + 320
 
-    def test_no_step_taller_than_the_wheel(self):
-        """The wheel is 22px in radius, so a step approaching that is a wall
-        the rig simply stops dead against - which is what an earlier version
-        did, with no way for the player to tell why. Slope is clamped to 7px
-        per segment and a pothole adds at most 11 on top."""
-        for seed in range(200):
+    def test_the_road_never_steps_up_taller_than_the_wheel(self):
+        """Direction matters, and only one of the two is dangerous.
+
+        The road dropping away is a feature - the rig flies off it, and that
+        is the only thing on these routes that can damage the truck. The road
+        rising by more than the 22px wheel radius is not a bump but a wall
+        the rig stops dead against, with no way for the player to tell why.
+        Bigger y is lower ground, so a rise is a DECREASE.
+
+        Slope is clamped to 7px per segment and every feature only ever adds,
+        so nothing should rise at all beyond the slope."""
+        for seed in range(300):
             heights = generate_route(seed).heights
             for a, b in zip(heights, heights[1:]):
-                assert abs(b - a) <= 18, f"seed {seed}: {a} -> {b} is taller than the wheel"
+                assert a - b <= 18, f"seed {seed}: {a} -> {b} is a wall, not a bump"
+
+    def test_the_road_does_drop_away_sometimes(self):
+        """The counterpart to the test above: if every feature were tuned out
+        the road would be safe and also pointless, and the truck could never
+        take enough of a landing to be wrecked."""
+        biggest = max(
+            b - a
+            for seed in range(100)
+            for a, b in zip(generate_route(seed).heights, generate_route(seed).heights[1:])
+        )
+        assert biggest >= 40, "no route drops away sharply enough to launch the rig"
 
     def test_dimensions_are_whole_numbers(self):
         """Sizes are built from integer units on purpose - see the note in

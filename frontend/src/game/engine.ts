@@ -13,6 +13,18 @@ import { BASE_GROUND_Y, SEGMENT_WIDTH, type Crate, type Route } from './route'
  * claims to be about.
  */
 
+/**
+ * Where an item is.
+ *
+ * Coming off the deck used to be the end of it - the item was written off on
+ * the spot and paid nothing. It is now a setback rather than a verdict: it
+ * is lying on the road, it keeps whatever damage the fall did to it, and a
+ * driver who stops and goes back can put it on again. Only what is actually
+ * on the deck at the drop gets paid, so leaving it there still costs the
+ * whole item; the player just gets to decide whether it is worth the detour.
+ */
+export type CargoState = 'deck' | 'road' | 'gone'
+
 export interface CargoBody {
   body: Matter.Body
   crate: Crate
@@ -21,8 +33,7 @@ export interface CargoBody {
   h: number
   /** 0 = pristine, 1 = destroyed. Accumulated from impact impulses. */
   damage: number
-  /** Left the trailer entirely - unrecoverable, pays nothing. */
-  lost: boolean
+  state: CargoState
   /** Engine timestamp until which impacts are ignored - see loadCrate. */
   settledAt: number
 }
@@ -39,6 +50,10 @@ export interface TruckWorld {
   contactDy: number
   /** Current throttle, eased toward what the player is asking for. */
   throttle: number
+  /** 0 = straight off the lot, 1 = wrecked. Accumulated from real impacts. */
+  truckDamage: number
+  /** Engine timestamp until which impacts on the rig are ignored. */
+  truckSettledAt: number
   /** Height of the deck surface right now, in world coordinates. */
   bedTop: () => number
   destroy: () => void
@@ -86,10 +101,41 @@ const CONTACT_DY = REAR_AXLE.y + WHEEL_R
 // one part of the game they got right.
 const DAMAGE_SPEED = 3.6
 const FRAGILE_SPEED = 2.4
+/**
+ * The rig is far tougher than what it carries, but not indestructible.
+ *
+ * Both numbers come from measurement rather than taste. Over 5000 ground
+ * impacts, driven flat out across two dozen routes, the median contact is
+ * 0.99 and the 99th percentile is 2.82 - so a threshold of 3.2 means
+ * ordinary driving, however brisk, never marks the truck at all. Only
+ * landing off a washout reaches past it, at 4.5-5, and at this scale three
+ * or four of those finish the rig.
+ *
+ * The first guess here was 6.5, which nothing in any route ever reached:
+ * the damage existed but could not happen. Worth remembering that the top
+ * of the range is set by the speed cap, so lowering that lowers this too.
+ */
+const TRUCK_DAMAGE_SPEED = 3.2
+const TRUCK_DAMAGE_SCALE = 0.2
+
 /** How much of the excess speed turns into damage. */
 // Steep, so the difference between a careful cruise and flooring it over a
 // crest is visible in the payout rather than a rounding error.
 const DAMAGE_SCALE = 0.14
+
+/**
+ * The most a single impact can take off an item.
+ *
+ * Without this, one bad landing wrote a crate off outright, and going back
+ * for something you dropped was pointless - measured over two dozen routes,
+ * every item recovered off the road was already worth exactly nothing by the
+ * time it was picked up. Capped, a fall costs about a third of the item, so
+ * the first one is well worth going back for, the second is a judgement
+ * call, and by the third there is nothing left to save. That is a curve
+ * rather than a cliff, and the player can see where they are on it from the
+ * colour of the crate.
+ */
+const MAX_DAMAGE_PER_IMPACT = 0.35
 
 export function createWorld(route: Route): TruckWorld {
   const engine = Matter.Engine.create()
@@ -223,6 +269,28 @@ export function createWorld(route: Route): TruckWorld {
   // punished by the same rule as driving badly.
   const onCollision = (event: Matter.IEventCollision<Matter.Engine>) => {
     for (const pair of event.pairs) {
+      // ---- the rig itself ----
+      // Ground impacts only. A truck is wrecked by landing on the road, not
+      // by what is on its back, and counting cargo here would have the rig
+      // taking damage while it was being loaded.
+      const aTruck = pair.bodyA.parent === truckBody
+      const bTruck = pair.bodyB.parent === truckBody
+      if (aTruck !== bTruck) {
+        const ground = aTruck ? pair.bodyB : pair.bodyA
+        if (ground.label === 'ground' && engine.timing.timestamp >= result.truckSettledAt) {
+          const normal = pair.collision.normal
+          const closing = Math.abs(
+            truckBody.velocity.x * normal.x + truckBody.velocity.y * normal.y,
+          )
+          if (closing > TRUCK_DAMAGE_SPEED) {
+            result.truckDamage = Math.min(
+              1, result.truckDamage + (closing - TRUCK_DAMAGE_SPEED) * TRUCK_DAMAGE_SCALE,
+            )
+          }
+        }
+      }
+
+      // ---- the load ----
       for (const entry of cargo) {
         if (pair.bodyA !== entry.body && pair.bodyB !== entry.body) continue
         const other = pair.bodyA === entry.body ? pair.bodyB : pair.bodyA
@@ -236,10 +304,14 @@ export function createWorld(route: Route): TruckWorld {
         const closingSpeed = Math.abs(relX * normal.x + relY * normal.y)
 
         if (engine.timing.timestamp < entry.settledAt) continue
+        if (entry.state === 'gone') continue
 
         const threshold = entry.crate.fragile ? FRAGILE_SPEED : DAMAGE_SPEED
         if (closingSpeed > threshold) {
-          entry.damage = Math.min(1, entry.damage + (closingSpeed - threshold) * DAMAGE_SCALE)
+          const hit = Math.min(
+            MAX_DAMAGE_PER_IMPACT, (closingSpeed - threshold) * DAMAGE_SCALE,
+          )
+          entry.damage = Math.min(1, entry.damage + hit)
         }
       }
     }
@@ -251,7 +323,7 @@ export function createWorld(route: Route): TruckWorld {
 
   const bedTopOffset = startY - CHASSIS_H / 2 - BED_H - truckBody.position.y
 
-  return {
+  const result: TruckWorld = {
     engine,
     chassis: truckBody,
     rearWheel,
@@ -260,6 +332,11 @@ export function createWorld(route: Route): TruckWorld {
     finishX,
     contactDy: startY + CONTACT_DY - truckBody.position.y,
     throttle: 0,
+    truckDamage: 0,
+    // The rig is built above the road and drops onto it. Without a grace
+    // period that first landing is an impact like any other, and the truck
+    // would start the run already dented.
+    truckSettledAt: 600,
     // Held as an offset from the body's own origin and evaluated live, so
     // the deck follows the rig as it pitches over the terrain instead of
     // being frozen at the height it happened to be built at. Matter puts a
@@ -273,6 +350,7 @@ export function createWorld(route: Route): TruckWorld {
       Matter.Engine.clear(engine)
     },
   }
+  return result
 }
 
 /**
@@ -292,7 +370,7 @@ export function planDrop(
   let y = world.bedTop() - h / 2 - 4
 
   for (const existing of world.cargo) {
-    if (existing.lost) continue
+    if (existing.state !== 'deck') continue
     // Read the real bounds rather than the nominal footprint: an item that
     // settled at an angle occupies a taller box than it was dropped as, and
     // stacking onto its nominal height buries the new one inside it.
@@ -336,7 +414,7 @@ export function loadCrate(
   // grace period the drop onto the bed registered as an impact and charged
   // a fragile crate 12% damage before the truck had even moved.
   const entry: CargoBody = {
-    body, crate, w, h, damage: 0, lost: false,
+    body, crate, w, h, damage: 0, state: 'deck',
     settledAt: world.engine.timing.timestamp + 400,
   }
   world.cargo.push(entry)
@@ -424,22 +502,75 @@ function applyAtRoad(world: TruckWorld, fx: number) {
 /** Marks cargo that has fallen off the truck or off the world. */
 export function updateCargoState(world: TruckWorld) {
   for (const entry of world.cargo) {
-    if (entry.lost) continue
+    if (entry.state === 'gone') continue
+
+    // Off the bottom of the world - through a seam, or thrown clear off the
+    // end of the road. Nothing to go back for.
+    if (entry.body.position.y > BASE_GROUND_Y + 500) {
+      entry.state = 'gone'
+      entry.damage = 1
+      continue
+    }
+    if (entry.state !== 'deck') continue
+
     const dx = entry.body.position.x - world.chassis.position.x
     const dy = entry.body.position.y - world.chassis.position.y
-    // Behind or below the truck by this much means it is on the road, not
-    // on the bed, and there is no picking it back up.
-    if (dy > 70 || Math.abs(dx) > CHASSIS_W) {
-      entry.lost = true
-      entry.damage = 1
-    }
+    // Behind or below the truck by this much means it is on the road rather
+    // than on the bed. It keeps whatever damage the fall did to it; what it
+    // loses is its place on the truck.
+    if (dy > 70 || Math.abs(dx) > CHASSIS_W) entry.state = 'road'
   }
+}
+
+/**
+ * How far back the driver can reach for something they dropped, and how
+ * close to stopped they have to be to try.
+ *
+ * Generous on distance and strict on speed: hunting for a pixel-perfect
+ * parking spot is not the interesting part, but scooping a crate up at
+ * twenty miles an hour would make dropping things free.
+ */
+export const RECOVER_REACH = 260
+const RECOVER_MAX_SPEED = 0.35
+
+/** Items on the road that the truck is currently in a position to collect. */
+export function recoverableCargo(world: TruckWorld): CargoBody[] {
+  if (Math.abs(world.chassis.velocity.x) > RECOVER_MAX_SPEED) return []
+  return world.cargo.filter(
+    (entry) => entry.state === 'road'
+      && Math.abs(entry.body.position.x - world.chassis.position.x) < RECOVER_REACH,
+  )
+}
+
+/**
+ * Puts a dropped item back on the deck.
+ *
+ * The same body, moved - not a fresh one - so the damage it took on the way
+ * down stays with it. It gets the same settling grace a newly loaded item
+ * gets, because being set down by hand is not an impact.
+ */
+export function reloadCargo(
+  world: TruckWorld, entry: CargoBody, offsetX: number, rotated: boolean,
+) {
+  const spot = planDrop(world, entry.crate, offsetX, rotated)
+  Matter.Body.setAngle(entry.body, 0)
+  Matter.Body.setAngularVelocity(entry.body, 0)
+  Matter.Body.setVelocity(entry.body, { x: 0, y: 0 })
+  Matter.Body.setPosition(entry.body, { x: spot.x, y: spot.y })
+  entry.w = spot.w
+  entry.h = spot.h
+  entry.state = 'deck'
+  entry.settledAt = world.engine.timing.timestamp + 400
 }
 
 /** What the run is worth right now - damaged cargo pays proportionally. */
 export function currentPayout(world: TruckWorld): number {
+  // Only what is actually on the deck. An item lying on the road behind you
+  // is worth nothing at the drop, however good a condition it is in.
   return world.cargo.reduce(
-    (sum, entry) => sum + Math.round(entry.crate.rate * (1 - entry.damage)),
+    (sum, entry) => (entry.state === 'deck'
+      ? sum + Math.round(entry.crate.rate * (1 - entry.damage))
+      : sum),
     0,
   )
 }

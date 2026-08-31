@@ -96,17 +96,42 @@ export function generateRoute(seed: number): Route {
     slope += (rand() - 0.5) * 3.2
     slope = Math.max(-7, Math.min(7, slope))
     height += slope
-    // Keep it on screen and away from a wall the truck can't crest.
-    height = Math.max(BASE_GROUND_Y - 90, Math.min(BASE_GROUND_Y + 70, height))
 
-    // Occasional pothole - a single sharp dip, the classic way to lose a
-    // badly balanced load. Kept well under the 22px wheel radius: a step
-    // taller than the wheel is not a bump, it is a wall, and the rig simply
-    // stops dead against it with no way for the player to tell why.
+    // Road features. Both only ever drop the road away, never raise it: a
+    // step DOWN is something the rig flies off, which is the whole point,
+    // while a step up taller than the 22px wheel is not a bump but a wall,
+    // and the rig stops dead against it with no way for the player to tell
+    // why.
     if (i > 12 && rand() < 0.06) {
+      // Pothole. A single sharp dip, the classic way to shake a badly
+      // balanced load loose.
       height += randInt(rand, 5, 11)
       slope = 0
+    } else if (i > 16 && rand() < 0.035) {
+      // Washout - the shoulder has gone and the road drops away.
+      //
+      // Deep on purpose. The rig is 250px long on a 188px wheelbase, so it
+      // simply bridges a small step: dropping the road 18-30px moved the
+      // hardest landing anywhere on a route from 3.75 to 4.23, which is
+      // nothing. At 40-60 the front axle genuinely falls before the rear one
+      // has left the lip, and the landing is worth 4.5-5. Measured across
+      // every depth up to 70, none of them ever grounds the rig out or
+      // stalls it - the road only ever drops here, and a drop is something
+      // you fall off rather than something you stop against.
+      height += randInt(rand, 40, 60)
+      slope = 0
     }
+
+    // Clamped AFTER the features, not before. Clamping first and then adding
+    // to the result let a feature push the ground below the limit, which the
+    // next sample then yanked back up - and that yank was a step up, the one
+    // thing the road must never contain.
+    //
+    // The lower bound is generous because washouts only ever descend, and a
+    // route with two or three of them ends a long way below where it
+    // started. At a tighter bound the road simply hit the floor partway
+    // along and every washout after that did nothing at all.
+    height = Math.max(BASE_GROUND_Y - 90, Math.min(BASE_GROUND_Y + 320, height))
     heights.push(height)
   }
 

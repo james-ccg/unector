@@ -92,12 +92,18 @@ def generate_route(seed: int) -> Route:
         slope += (rand() - 0.5) * 3.2
         slope = max(-7.0, min(7.0, slope))
         height += slope
-        height = max(BASE_GROUND_Y - 90, min(BASE_GROUND_Y + 70, height))
 
-        # Kept under the wheel radius - see the note in route.ts.
+        # Features only ever drop the road away, never raise it - see the
+        # note in route.ts about why a step up is a wall.
         if i > 12 and rand() < 0.06:
             height += _rand_int(rand, 5, 11)
             slope = 0.0
+        elif i > 16 and rand() < 0.035:
+            height += _rand_int(rand, 40, 60)
+            slope = 0.0
+
+        # Clamped after the features, not before - see route.ts.
+        height = max(BASE_GROUND_Y - 90, min(BASE_GROUND_Y + 320, height))
         heights.append(height)
 
     crate_count = _rand_int(rand, 3, 6)
