@@ -35,7 +35,12 @@ export interface TruckWorld {
   cargo: CargoBody[]
   /** World x the truck has to reach with its load. */
   finishX: number
-  bedTop: number
+  /** Distance from the body's origin down to the road, for applying drive force. */
+  contactDy: number
+  /** Current throttle, eased toward what the player is asking for. */
+  throttle: number
+  /** Height of the deck surface right now, in world coordinates. */
+  bedTop: () => number
   destroy: () => void
 }
 
@@ -61,6 +66,12 @@ const BED_H = 8
  */
 export const DECK_MIN_OFFSET = -120
 export const DECK_MAX_OFFSET = 54
+
+/** Where the wheels sit, measured from the chassis rectangle's centre. */
+const REAR_AXLE = { x: -92, y: 30 }
+const FRONT_AXLE = { x: 96, y: 30 }
+/** Vertical distance from the chassis centre down to the contact line. */
+const CONTACT_DY = REAR_AXLE.y + WHEEL_R
 
 /**
  * Impact speed (px/step) below which a knock is just the road, not damage.
@@ -145,46 +156,65 @@ export function createWorld(route: Route): TruckWorld {
     { density: 0.002, friction: 1, label: 'bed' },
   )
 
-  const truckBody = Matter.Body.create({
-    parts: [chassis, bed, headboard, rearLip],
-    friction: 0.8,
-    label: 'truck',
-  })
-
+  /**
+   * One rigid body, wheels included, rather than a chassis with wheels held
+   * on by constraints.
+   *
+   * The constraint version never came to rest. Measured headlessly, a parked
+   * empty truck moved 1.3px vertically every frame - up to 3.4px - forever,
+   * and the camera turned that into the entire world shaking. Isolating it
+   * ruled out everything else: a plain box on this terrain settles to
+   * 0.00000px, a lone wheel settles to 0.00000px, chassis-plus-axles never
+   * settles at all and after a few thousand frames diverges outright.
+   *
+   * Zero-length constraints are singular - Matter normalises the vector
+   * between the two anchors to get the constraint direction, and at zero
+   * separation that direction is numerical noise - but lengthening them did
+   * not save it either: triangulating each wheel with two properly-lengthed
+   * constraints still left 0.65-0.91px of jitter per frame at every
+   * stiffness tried. The solver simply cannot hold this mass ratio steady.
+   *
+   * As one body it is exactly still. The cost is that the wheels no longer
+   * spin as independent bodies, so the rig slides on round feet instead of
+   * rolling, and it is driven by force at the contact line rather than by
+   * torque on the wheels. Nothing the player can see depends on that
+   * distinction; a picture that does not vibrate is something they cannot
+   * help but see. Wheel rotation is drawn from distance travelled instead.
+   */
+  // Moderate friction, not the grip a rolling tyre would have: these feet
+  // slide rather than roll, and at 0.95 the rig was a sled welded to the
+  // road - it needed so much force to break away that once it did it shot
+  // off at seventy pixels a frame. A speed cap in drive() governs the top
+  // speed instead, which is both steadier and something a truck actually has.
   const wheelOptions: Matter.IBodyDefinition = {
     density: 0.008,
-    friction: 0.95,
-    // Wheels need to shed energy or the truck pogos over every bump.
-    frictionStatic: 2,
-    restitution: 0.06,
+    friction: 0.25,
+    frictionStatic: 0.4,
+    restitution: 0.02,
     label: 'wheel',
   }
-  const rearWheel = Matter.Bodies.circle(TRUCK_START_X - 92, startY + 30, WHEEL_R, wheelOptions)
-  const frontWheel = Matter.Bodies.circle(TRUCK_START_X + 96, startY + 30, WHEEL_R, wheelOptions)
+  const rearWheel = Matter.Bodies.circle(
+    TRUCK_START_X + REAR_AXLE.x, startY + REAR_AXLE.y, WHEEL_R, wheelOptions,
+  )
+  const frontWheel = Matter.Bodies.circle(
+    TRUCK_START_X + FRONT_AXLE.x, startY + FRONT_AXLE.y, WHEEL_R, wheelOptions,
+  )
 
-  // Stiff constraints rather than a spring: a flatbed rig has almost no give,
-  // and suspension travel would soak up exactly the jolts the player is
-  // supposed to be avoiding.
-  const axleOptions = { stiffness: 0.9, damping: 0.2, length: 0 }
-  const rearAxle = Matter.Constraint.create({
-    bodyA: truckBody,
-    pointA: { x: -92, y: 30 },
-    bodyB: rearWheel,
-    ...axleOptions,
+  const truckBody = Matter.Body.create({
+    parts: [chassis, bed, headboard, rearLip, rearWheel, frontWheel],
+    friction: 0.25,
+    label: 'truck',
   })
-  const frontAxle = Matter.Constraint.create({
-    bodyA: truckBody,
-    pointA: { x: 96, y: 30 },
-    bodyB: frontWheel,
-    ...axleOptions,
-  })
+  // Stands in for rolling resistance and engine braking: lifting off has to
+  // slow the rig down, or every descent ends at terminal velocity.
+  truckBody.frictionAir = 0.02
 
-  bodies.push(truckBody, rearWheel, frontWheel)
+  bodies.push(truckBody)
 
   // ---- Finish line ---------------------------------------------------
   const finishX = (route.heights.length - 4) * SEGMENT_WIDTH
 
-  Matter.Composite.add(world, [...bodies, rearAxle, frontAxle])
+  Matter.Composite.add(world, bodies)
 
   const cargo: CargoBody[] = []
 
@@ -219,6 +249,8 @@ export function createWorld(route: Route): TruckWorld {
   // second and destroyed every load before the truck had moved.
   Matter.Events.on(engine, 'collisionStart', onCollision)
 
+  const bedTopOffset = startY - CHASSIS_H / 2 - BED_H - truckBody.position.y
+
   return {
     engine,
     chassis: truckBody,
@@ -226,7 +258,15 @@ export function createWorld(route: Route): TruckWorld {
     frontWheel,
     cargo,
     finishX,
-    bedTop: startY - CHASSIS_H / 2 - BED_H,
+    contactDy: startY + CONTACT_DY - truckBody.position.y,
+    throttle: 0,
+    // Held as an offset from the body's own origin and evaluated live, so
+    // the deck follows the rig as it pitches over the terrain instead of
+    // being frozen at the height it happened to be built at. Matter puts a
+    // compound body's origin at its centre of mass, which is nowhere near
+    // the chassis rectangle's centre once the wheels are parts of it, so
+    // the offset has to be measured rather than assumed.
+    bedTop: () => truckBody.position.y + bedTopOffset,
     destroy: () => {
       Matter.Events.off(engine, 'collisionStart', onCollision)
       Matter.Composite.clear(world, false)
@@ -249,7 +289,7 @@ export function planDrop(
   const w = rotated ? crate.h : crate.w
   const h = rotated ? crate.w : crate.h
   const x = world.chassis.position.x + offsetX
-  let y = world.bedTop - h / 2 - 4
+  let y = world.bedTop() - h / 2 - 4
 
   for (const existing of world.cargo) {
     if (existing.lost) continue
@@ -304,27 +344,81 @@ export function loadCrate(
 }
 
 /** Throttle in [-1, 1]; negative reverses. */
+/**
+ * Drive force, brake force, and the speed the throttle stops pushing at.
+ *
+ * The cap and the force go together. Without a cap the rig sits wherever
+ * friction happens to leave it, and that is a cliff rather than a curve:
+ * measured across the real route, just under the break-away force it crawled
+ * at 2.6px a frame, and just over it accelerated to 77px a frame. With the
+ * cap the force only has to be enough to reach it, and the top speed is a
+ * number rather than an accident. Gravity still carries it past the cap
+ * downhill - which is where a load is most at risk, and so is exactly where
+ * it should happen.
+ */
+const DRIVE_FORCE = 0.3
+const BRAKE_FORCE = 0.34
+const MAX_SPEED = 4.5
+
+/**
+ * How fast the throttle itself may move, per step.
+ *
+ * Applying the full force the instant a key goes down is dumping the clutch:
+ * the deck accelerates out from under the load, and a crate was measured
+ * sliding straight off the back within seconds of pulling away. Easing the
+ * force in over about a third of a second is what a driver with a load on
+ * actually does, and it makes the pedal something you can be gentle with.
+ */
+const THROTTLE_RATE = 0.05
+
+/** Throttle in [-1, 1]; negative reverses. */
 export function drive(world: TruckWorld, throttle: number) {
-  // Torque on the wheels rather than force on the chassis: it lets the
-  // wheels lose traction on a climb, which is what makes terrain matter.
-  //
-  // Tuned against the actual body masses (wheel 12, truck 31.7): 0.32 moved
-  // the rig 73px in three seconds on a 6400px route, which read as a broken
-  // engine rather than a heavy load. Past about 8 it just spins the wheels
-  // and covers LESS ground, so this sits below that.
-  const torque = throttle * 3.4
-  world.rearWheel.torque = torque
-  world.frontWheel.torque = torque * 0.5
+  const target = Math.max(-1, Math.min(1, throttle))
+  const delta = target - world.throttle
+  world.throttle += Math.max(-THROTTLE_RATE, Math.min(THROTTLE_RATE, delta))
+
+  if (Math.abs(world.throttle) < 0.01) return
+  if (Math.abs(world.chassis.velocity.x) >= MAX_SPEED
+      && Math.sign(world.chassis.velocity.x) === Math.sign(world.throttle)) {
+    return
+  }
+  applyAtRoad(world, world.throttle * DRIVE_FORCE)
 }
 
+/**
+ * Slows the rig down.
+ *
+ * A force opposing travel rather than a multiplier on the velocity. The
+ * multiplier version scaled the speed by 0.92 every step, which at sixty
+ * steps a second is an emergency stop held down continuously - close to a
+ * full g of deceleration, far more than friction can hold a crate against.
+ * It made careful driving actively worse than flooring it, which is the
+ * opposite of what this game is for. As a force it pitches the rig forward
+ * the way braking should, so hauling up hard still threatens the load - it
+ * just no longer guarantees losing it.
+ */
 export function brake(world: TruckWorld) {
-  for (const wheel of [world.rearWheel, world.frontWheel]) {
-    Matter.Body.setAngularVelocity(wheel, wheel.angularVelocity * 0.82)
-  }
-  Matter.Body.setVelocity(world.chassis, {
-    x: world.chassis.velocity.x * 0.94,
-    y: world.chassis.velocity.y,
-  })
+  const vx = world.chassis.velocity.x
+  if (Math.abs(vx) < 0.05) return
+  // Let go of the throttle too - holding both would just fight itself.
+  world.throttle *= 0.7
+  applyAtRoad(world, -Math.sign(vx) * BRAKE_FORCE)
+}
+
+/**
+ * Applies a horizontal force at the contact line rather than at the centre
+ * of mass. A push down at road level is what makes a rig squat under power
+ * and dive under braking, and that pitch is half of what shifts a badly
+ * stacked load. Pushing through the centre of mass would move the truck
+ * without ever disturbing what is on it.
+ */
+function applyAtRoad(world: TruckWorld, fx: number) {
+  const body = world.chassis
+  Matter.Body.applyForce(
+    body,
+    { x: body.position.x, y: body.position.y + world.contactDy },
+    { x: fx, y: 0 },
+  )
 }
 
 /** Marks cargo that has fallen off the truck or off the world. */
@@ -335,7 +429,7 @@ export function updateCargoState(world: TruckWorld) {
     const dy = entry.body.position.y - world.chassis.position.y
     // Behind or below the truck by this much means it is on the road, not
     // on the bed, and there is no picking it back up.
-    if (dy > 60 || Math.abs(dx) > CHASSIS_W) {
+    if (dy > 70 || Math.abs(dx) > CHASSIS_W) {
       entry.lost = true
       entry.damage = 1
     }

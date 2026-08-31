@@ -332,12 +332,33 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.closePath()
         ctx.fill()
       }
-      for (const part of world.chassis.parts.slice(1)) drawBody(part, COLORS.accent)
+      for (const part of world.chassis.parts.slice(1)) {
+        // The wheels are parts of the same rigid body now, so they would
+        // otherwise be drawn twice - once as a 25-sided polygon in the body
+        // colour, once as the circle below.
+        if (part.label !== 'wheel') drawBody(part, COLORS.accent)
+      }
       for (const wheel of [world.rearWheel, world.frontWheel]) {
+        const r = wheel.circleRadius || 20
         ctx.fillStyle = COLORS.ink
         ctx.beginPath()
-        ctx.arc(wheel.position.x, wheel.position.y, wheel.circleRadius || 20, 0, Math.PI * 2)
+        ctx.arc(wheel.position.x, wheel.position.y, r, 0, Math.PI * 2)
         ctx.fill()
+        // A spoke, turned by how far the rig has travelled. The wheels no
+        // longer rotate as bodies of their own, and a wheel that visibly
+        // does not turn makes the whole truck read as sliding rather than
+        // driving - which is exactly what it is doing, and the one part of
+        // that the player should not have to notice.
+        ctx.strokeStyle = COLORS.muted
+        ctx.lineWidth = 3
+        ctx.save()
+        ctx.translate(wheel.position.x, wheel.position.y)
+        ctx.rotate(world.chassis.position.x / r + world.chassis.angle)
+        ctx.beginPath()
+        ctx.moveTo(-r * 0.6, 0)
+        ctx.lineTo(r * 0.6, 0)
+        ctx.stroke()
+        ctx.restore()
       }
 
       for (const entry of world.cargo) drawCargo(entry)
@@ -357,7 +378,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.globalAlpha = 0.45
         ctx.beginPath()
         ctx.moveTo(spot.x, spot.y + spot.h / 2)
-        ctx.lineTo(spot.x, world.bedTop)
+        ctx.lineTo(spot.x, world.bedTop())
         ctx.stroke()
         ctx.restore()
       }

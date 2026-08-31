@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "physics": "node --import ./scripts/register.mjs scripts/physics-check.ts"
   },
   "dependencies": {
     "@types/matter-js": "^0.20.2",
