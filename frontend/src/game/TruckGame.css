@@ -116,14 +116,16 @@
   left: 50%;
   bottom: 16px;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  padding: 7px 14px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--card) 92%, transparent);
   border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
   white-space: nowrap;
+  /* The instruction is to tap the load itself, which is underneath this -
+     so it must not be the thing that catches the tap. */
+  pointer-events: none;
 }
 
 .tg-recover-key {

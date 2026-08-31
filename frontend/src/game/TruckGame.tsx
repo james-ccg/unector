@@ -3,8 +3,8 @@ import Matter from 'matter-js'
 import { generateRoute, SEGMENT_WIDTH, type Crate, type Route } from './route'
 import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
-  createWorld, loadCrate, reloadCargo, recoverableCargo, planDrop, drive, brake,
-  updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, planDrop,
+  drive, brake, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
   type CargoBody, type TruckWorld,
 } from './engine'
 import './TruckGame.css'
@@ -30,8 +30,9 @@ const VIEW = { w: 900, h: 520 }
 /** Keyboard nudge per press while aiming - fine enough to thread a gap. */
 const AIM_STEP = 4
 
-/** How long the wreck plays before the result takes over the screen. */
-const WRECK_MS = 1100
+/** How long the wreck plays before the result takes over the screen. The
+ *  debris is real physics, so this is long enough for it to land. */
+const WRECK_MS = 2400
 
 const KIND_LABEL: Record<Crate['kind'], string> = {
   pallet: 'Pallet',
@@ -213,14 +214,31 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setPhase('driving')
   }
 
-  /** Switches to placing the nearest dropped item back on the deck. */
-  const startRecovery = useCallback(() => {
+  /** Turns a pointer position into world coordinates, using the exact
+   *  camera the last frame was drawn with. */
+  const pointerToWorld = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const rect = canvas.getBoundingClientRect()
+    const cam = cameraRef.current
+    return {
+      x: ((clientX - rect.left) * VIEW.w) / (rect.width * cam.zoom) + cam.x,
+      y: ((clientY - rect.top) * VIEW.h) / (rect.height * cam.zoom) + cam.y,
+    }
+  }
+
+  /** Switches to placing a dropped item back on the deck. With no item
+   *  given, takes the nearest one within reach. */
+  const startRecovery = useCallback((pick?: CargoBody) => {
     const world = worldRef.current
     if (!world || phase !== 'driving') return
-    const [nearest] = recoverableCargo(world).sort(
-      (a, b) => Math.abs(a.body.position.x - world.chassis.position.x)
-        - Math.abs(b.body.position.x - world.chassis.position.x),
-    )
+    const reachable = recoverableCargo(world)
+    const nearest = pick && reachable.includes(pick)
+      ? pick
+      : reachable.sort(
+        (a, b) => Math.abs(a.body.position.x - world.chassis.position.x)
+          - Math.abs(b.body.position.x - world.chassis.position.x),
+      )[0]
     if (!nearest) return
     inputRef.current.throttle = 0
     inputRef.current.braking = false
@@ -230,6 +248,23 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setRotated(false)
     setPhase('reloading')
   }, [phase])
+
+  /** Picking a dropped item up by pointing at it - a click on a desktop, a
+   *  tap on a phone. The keyboard shortcut stays for people already driving
+   *  with their hands on the keys. */
+  const pickUpAt = (clientX: number, clientY: number) => {
+    const world = worldRef.current
+    if (!world) return
+    const at = pointerToWorld(clientX, clientY)
+    if (!at) return
+    // Generous hit box: these are small objects, a finger is not, and the
+    // only thing a miss can do is nothing.
+    const hit = recoverableCargo(world).find((entry) => (
+      Math.abs(entry.body.position.x - at.x) < entry.w / 2 + 18
+      && Math.abs(entry.body.position.y - at.y) < entry.h / 2 + 18
+    ))
+    if (hit) startRecovery(hit)
+  }
 
   // ---- render + step loop ---------------------------------------------
   useEffect(() => {
@@ -249,6 +284,34 @@ export default function TruckGame({ seed, onFinish }: Props) {
       amber: token('--amber', '#e0b854'),
       danger: token('--red', '#ff5c52'),
     }
+
+    // Ground texture, built once. A flat fill reads as a silhouette rather
+    // than as earth, and at this scale a scatter of specks does more than
+    // any amount of shading. It is painted inside the world transform, so
+    // it scrolls with the ground instead of sitting still behind it.
+    const grain = (() => {
+      const tile = document.createElement('canvas')
+      tile.width = 18
+      tile.height = 18
+      const tc = tile.getContext('2d')
+      if (!tc) return COLORS.ground
+      tc.fillStyle = COLORS.ground
+      tc.fillRect(0, 0, 18, 18)
+      tc.fillStyle = 'rgba(255,255,255,0.05)'
+      for (const [x, y, r] of [[3, 5, 1.1], [12, 2, 1.5], [8, 10, 1], [15, 14, 1.2], [2, 15, 0.9]]) {
+        tc.beginPath()
+        tc.arc(x, y, r, 0, Math.PI * 2)
+        tc.fill()
+      }
+      tc.fillStyle = 'rgba(0,0,0,0.10)'
+      tc.fillRect(0, 8, 18, 1)
+      tc.fillRect(9, 0, 1, 18)
+      return ctx.createPattern(tile, 'repeat') ?? COLORS.ground
+    })()
+
+    // Where the tyres have scrubbed. Kept in world coordinates and capped,
+    // so a long run cannot grow the list without bound.
+    const skids: { x: number; y: number }[] = []
 
     let raf = 0
     let last = performance.now()
@@ -297,6 +360,18 @@ export default function TruckGame({ seed, onFinish }: Props) {
         }
       } else {
         ctx.fillRect(-w / 2, -h / 2, w, h)
+        // Boards. Timber crates are built from planks and read as timber
+        // the moment you can see them; a plain rectangle reads as a brick.
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)'
+        ctx.lineWidth = 1
+        const boards = Math.max(2, Math.round(h / 9))
+        for (let i = 1; i < boards; i++) {
+          const y = -h / 2 + (h * i) / boards
+          ctx.beginPath()
+          ctx.moveTo(-w / 2, y)
+          ctx.lineTo(w / 2, y)
+          ctx.stroke()
+        }
         ctx.strokeStyle = COLORS.sky
         ctx.lineWidth = 2
         ctx.beginPath()
@@ -310,6 +385,10 @@ export default function TruckGame({ seed, onFinish }: Props) {
         }
         ctx.stroke()
       }
+      // A lit top edge, so the stack has some depth to it rather than
+      // reading as a row of flat cut-outs.
+      ctx.fillStyle = 'rgba(255,255,255,0.10)'
+      ctx.fillRect(-w / 2, -h / 2, w, 2)
 
       if (entry.crate.fragile) {
         ctx.strokeStyle = COLORS.amber
@@ -319,33 +398,47 @@ export default function TruckGame({ seed, onFinish }: Props) {
       ctx.restore()
     }
 
-    /** A short burst where the rig was. Deliberately spare - a ring, some
-     *  shards and nothing else. A cartoon fireball would be at odds with
-     *  every other thing on this site. */
-    const drawWreck = (world: TruckWorld, t: number) => {
+    /** The blast itself. The wreckage is real bodies thrown by the physics -
+     *  this is only the light and the smoke over the top of it, and it is
+     *  over in half a second. */
+    const drawBlast = (world: TruckWorld, t: number) => {
+      if (t >= 1) return
       const { x, y } = world.chassis.position
       const fade = 1 - t
       ctx.save()
-      ctx.globalAlpha = fade
+
+      // Shock ring.
+      ctx.globalAlpha = fade * 0.9
       ctx.strokeStyle = COLORS.amber
-      ctx.lineWidth = 3 * fade + 1
+      ctx.lineWidth = 5 * fade + 1
       ctx.beginPath()
-      ctx.arc(x, y, 30 + t * 190, 0, Math.PI * 2)
+      ctx.arc(x, y, 24 + t * 260, 0, Math.PI * 2)
       ctx.stroke()
 
-      ctx.strokeStyle = COLORS.danger
-      ctx.lineWidth = 3
-      for (let i = 0; i < 14; i++) {
-        const angle = (i / 14) * Math.PI * 2 + 0.4
-        // Spread the shards over different speeds, or it reads as a single
-        // expanding wheel of spokes rather than debris.
-        const speed = 90 + ((i * 37) % 110)
-        const near = 14 + t * speed
-        const far = near + 16 + (1 - t) * 12
+      // Fireball, collapsing into smoke as it rises.
+      const ballR = 34 + t * 90
+      ctx.globalAlpha = fade * fade
+      ctx.fillStyle = COLORS.amber
+      ctx.beginPath()
+      ctx.arc(x, y - t * 70, ballR, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = fade * 0.55
+      ctx.fillStyle = COLORS.danger
+      ctx.beginPath()
+      ctx.arc(x, y - t * 70, ballR * 0.62, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.globalAlpha = fade * 0.35
+      ctx.fillStyle = COLORS.muted
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2
         ctx.beginPath()
-        ctx.moveTo(x + Math.cos(angle) * near, y + Math.sin(angle) * near - t * 24)
-        ctx.lineTo(x + Math.cos(angle) * far, y + Math.sin(angle) * far - t * 24)
-        ctx.stroke()
+        ctx.arc(
+          x + Math.cos(a) * (30 + t * 120),
+          y + Math.sin(a) * (22 + t * 60) - t * 110,
+          16 + t * 34, 0, Math.PI * 2,
+        )
+        ctx.fill()
       }
       ctx.restore()
     }
@@ -364,7 +457,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // scored on outcome would mean the monitor decides the score.
       const elapsed = Math.min(now - last, 60)
       last = now
-      if (phase === 'driving' || phase === 'loading' || phase === 'reloading') {
+      // 'wrecked' steps too, without input: the debris is real physics and
+      // has to fall somewhere.
+      if (phase !== 'arrived' && phase !== 'failed') {
         const steps = Math.max(1, Math.round(elapsed / (1000 / 60)))
         for (let i = 0; i < steps; i++) {
           if (phase === 'driving') {
@@ -401,17 +496,54 @@ export default function TruckGame({ seed, onFinish }: Props) {
       if (zoom !== 1) ctx.scale(zoom, zoom)
       ctx.translate(-camX, -camY)
 
-      // Terrain
+      // Terrain, then the road laid on top of it. Two passes rather than one
+      // fill: the earth and the surface you drive on are different things,
+      // and the road edge is the line the player is actually reading when
+      // they judge a washout.
       const floor = camY + VIEW.h / zoom + 400
-      ctx.fillStyle = COLORS.ground
-      ctx.beginPath()
-      ctx.moveTo(0, floor)
-      for (let i = 0; i < route.heights.length; i++) {
-        ctx.lineTo(i * SEGMENT_WIDTH, route.heights[i])
+      const surface = new Path2D()
+      surface.moveTo(0, route.heights[0])
+      for (let i = 1; i < route.heights.length; i++) {
+        surface.lineTo(i * SEGMENT_WIDTH, route.heights[i])
       }
-      ctx.lineTo((route.heights.length - 1) * SEGMENT_WIDTH, floor)
-      ctx.closePath()
-      ctx.fill()
+
+      const earth = new Path2D()
+      earth.moveTo(0, floor)
+      for (let i = 0; i < route.heights.length; i++) {
+        earth.lineTo(i * SEGMENT_WIDTH, route.heights[i])
+      }
+      earth.lineTo((route.heights.length - 1) * SEGMENT_WIDTH, floor)
+      earth.closePath()
+      ctx.fillStyle = grain
+      ctx.fill(earth)
+
+      // Asphalt.
+      ctx.save()
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = 'rgba(0,0,0,0.42)'
+      ctx.lineWidth = 11
+      ctx.stroke(surface)
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+      ctx.lineWidth = 1.5
+      ctx.stroke(surface)
+      ctx.restore()
+
+      // Rubber left behind by hard braking - the friction the rig is using
+      // made visible, and the clearest signal that a stop was not gentle.
+      if (skids.length > 0) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+        ctx.lineWidth = 4
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        for (const mark of skids) {
+          ctx.moveTo(mark.x - 5, mark.y)
+          ctx.lineTo(mark.x + 5, mark.y)
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
 
       // Finish marker
       ctx.strokeStyle = COLORS.accent
@@ -438,33 +570,82 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.closePath()
         ctx.fill()
       }
-      for (const part of world.chassis.parts.slice(1)) {
-        // The wheels are parts of the same rigid body now, so they would
-        // otherwise be drawn twice - once as a 25-sided polygon in the body
-        // colour, once as the circle below.
-        if (part.label !== 'wheel') drawBody(part, bodyColor)
-      }
-      for (const wheel of [world.rearWheel, world.frontWheel]) {
-        const r = wheel.circleRadius || 20
+      const drawTyre = (x: number, y: number, r: number, spin: number) => {
+        ctx.save()
+        ctx.translate(x, y)
         ctx.fillStyle = COLORS.ink
         ctx.beginPath()
-        ctx.arc(wheel.position.x, wheel.position.y, r, 0, Math.PI * 2)
+        ctx.arc(0, 0, r, 0, Math.PI * 2)
         ctx.fill()
-        // A spoke, turned by how far the rig has travelled. The wheels no
-        // longer rotate as bodies of their own, and a wheel that visibly
-        // does not turn makes the whole truck read as sliding rather than
-        // driving - which is exactly what it is doing, and the one part of
+        ctx.rotate(spin)
+        // Hub and one spoke. The wheels are no longer bodies of their own
+        // and cannot rotate, so this is turned by distance travelled - a
+        // wheel that visibly does not turn makes the whole rig read as
+        // sliding, which is exactly what it is doing and the one part of
         // that the player should not have to notice.
         ctx.strokeStyle = COLORS.muted
         ctx.lineWidth = 3
-        ctx.save()
-        ctx.translate(wheel.position.x, wheel.position.y)
-        ctx.rotate(world.chassis.position.x / r + world.chassis.angle)
         ctx.beginPath()
-        ctx.moveTo(-r * 0.6, 0)
-        ctx.lineTo(r * 0.6, 0)
+        ctx.moveTo(-r * 0.62, 0)
+        ctx.lineTo(r * 0.62, 0)
         ctx.stroke()
+        ctx.fillStyle = COLORS.muted
+        ctx.beginPath()
+        ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2)
+        ctx.fill()
         ctx.restore()
+      }
+
+      if (world.debris.length > 0) {
+        // What is left of it. Pieces are ordinary bodies, so they are drawn
+        // like anything else.
+        for (const piece of world.debris) {
+          if (piece.circleRadius) {
+            drawTyre(piece.position.x, piece.position.y, piece.circleRadius, piece.angle)
+          } else {
+            drawBody(piece, COLORS.danger)
+          }
+        }
+      } else {
+        for (const part of world.chassis.parts.slice(1)) {
+          // The wheels are parts of the same rigid body now, so they would
+          // otherwise be drawn twice - once as a 25-sided polygon in the
+          // body colour, once as the tyre below.
+          if (part.label !== 'wheel') drawBody(part, bodyColor)
+        }
+
+        // Cab, glass and lamp, drawn in the chassis rectangle's own frame so
+        // they pitch with it. The flatbed reads as a flatbed once there is
+        // something at the front of it that is obviously where the driver
+        // sits; without that it is a plank on two wheels.
+        const hull = world.chassis.parts.find((part) => part.label === 'chassis')
+        if (hull) {
+          ctx.save()
+          ctx.translate(hull.position.x, hull.position.y)
+          ctx.rotate(hull.angle)
+          ctx.fillStyle = bodyColor
+          ctx.fillRect(54, -52, 70, 39)
+          ctx.fillStyle = 'rgba(0,0,0,0.45)'
+          ctx.fillRect(62, -46, 42, 21)
+          ctx.fillStyle = COLORS.amber
+          ctx.beginPath()
+          ctx.arc(119, -18, 3.5, 0, Math.PI * 2)
+          ctx.fill()
+          // Frame rail under the deck, and a fuel tank slung off it.
+          ctx.fillStyle = 'rgba(0,0,0,0.3)'
+          ctx.fillRect(-125, 8, 250, 5)
+          ctx.fillStyle = COLORS.muted
+          ctx.fillRect(-30, 13, 46, 13)
+          ctx.restore()
+        }
+
+        for (const wheel of [world.rearWheel, world.frontWheel]) {
+          const r = wheel.circleRadius || 20
+          drawTyre(
+            wheel.position.x, wheel.position.y, r,
+            world.chassis.position.x / r + world.chassis.angle,
+          )
+        }
       }
 
       const withinReach = phase === 'driving' ? recoverableCargo(world) : []
@@ -485,6 +666,21 @@ export default function TruckGame({ seed, onFinish }: Props) {
             entry.body.position.y - entry.h / 2 - 6,
             entry.w + 12, entry.h + 12,
           )
+          if (reachable) {
+            // The instruction goes on the thing it applies to. A button
+            // somewhere else on screen makes the player look away from the
+            // item they are trying to pick up.
+            ctx.setLineDash([])
+            ctx.globalAlpha = 1
+            ctx.fillStyle = COLORS.accent
+            ctx.font = '600 12px system-ui, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.fillText(
+              'pick up',
+              entry.body.position.x,
+              entry.body.position.y - entry.h / 2 - 14,
+            )
+          }
           ctx.restore()
         }
       }
@@ -512,10 +708,23 @@ export default function TruckGame({ seed, onFinish }: Props) {
       }
 
       if (phase === 'wrecked') {
-        drawWreck(world, Math.min(1, (now - wreckedAt.current) / WRECK_MS))
+        // The blast is brief; the debris then falls for the rest of WRECK_MS.
+        drawBlast(world, Math.min(1, (now - wreckedAt.current) / 620))
       }
 
       ctx.restore()
+
+      // A white-out over everything, for the first few frames only.
+      if (phase === 'wrecked') {
+        const flash = 1 - Math.min(1, (now - wreckedAt.current) / 180)
+        if (flash > 0) {
+          ctx.save()
+          ctx.globalAlpha = flash * 0.75
+          ctx.fillStyle = COLORS.amber
+          ctx.fillRect(0, 0, VIEW.w, VIEW.h)
+          ctx.restore()
+        }
+      }
 
       if (phase === 'driving') {
         setCondition(1 - world.truckDamage)
@@ -539,8 +748,17 @@ export default function TruckGame({ seed, onFinish }: Props) {
           }
         }
 
+        if (world.braking && Math.abs(world.chassis.velocity.x) > 1.2) {
+          for (const wheel of [world.rearWheel, world.frontWheel]) {
+            skids.push({ x: wheel.position.x, y: wheel.position.y + (wheel.circleRadius || 20) })
+          }
+          if (skids.length > 500) skids.splice(0, skids.length - 500)
+        }
+        world.braking = false
+
         if (world.truckDamage >= 1) {
           wreckedAt.current = now
+          explodeTruck(world)
           setPhase('wrecked')
           setPayout(0)
           // Still submitted. A wreck is a real result, and a board that only
@@ -693,10 +911,15 @@ export default function TruckGame({ seed, onFinish }: Props) {
             e.currentTarget.setPointerCapture(e.pointerId)
             aimAt(e.clientX)
           } : undefined}
-          onPointerUp={aiming ? (e) => {
-            aimAt(e.clientX)
-            placeHere()
-          } : undefined}
+          onPointerUp={(e) => {
+            if (aiming) {
+              aimAt(e.clientX)
+              placeHere()
+            } else if (phase === 'driving') {
+              // Point at what you dropped to pick it up - a click, or a tap.
+              pickUpAt(e.clientX, e.clientY)
+            }
+          }}
         />
 
         {phase === 'driving' && (
@@ -707,10 +930,8 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
         {phase === 'driving' && canRecover && (
           <div className="tg-recover">
-            <button type="button" className="btn btn-primary btn-sm" onClick={startRecovery}>
-              Load it back on
-            </button>
-            <span className="tg-recover-key">or press E</span>
+            Stopped beside it &mdash; tap the load to put it back on
+            <span className="tg-recover-key">, or press E</span>
           </div>
         )}
 
@@ -833,7 +1054,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       <p className="tg-hint">
         {aiming
           ? 'Click the deck to set the item down · arrows to nudge · R to turn it · Enter to place'
-          : 'Arrows or A/D to drive · Space to brake · back up to anything you drop and press E'}
+          : 'Arrows or A/D to drive · Space to brake · stop beside anything you drop and click it'}
       </p>
     </div>
   )

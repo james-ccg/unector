@@ -37,7 +37,7 @@
 import Matter from 'matter-js'
 import { generateRoute, type Crate } from '../src/game/route.ts'
 import {
-  createWorld, loadCrate, reloadCargo, recoverableCargo, drive, brake,
+  createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, drive, brake,
   updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
   type TruckWorld,
 } from '../src/game/engine.ts'
@@ -337,6 +337,64 @@ function recovery() {
   if (collected === 0) console.log('  NOTHING COULD BE PICKED UP - the mechanic is dead')
 }
 
+// ---- wreck -----------------------------------------------------------
+
+/**
+ * The wreck is real bodies, not a drawing, so it can fail in ways a drawing
+ * cannot: pieces that never come to rest, pieces flung to infinity, or a
+ * NaN that quietly takes the whole engine down after the run is notionally
+ * over. None of that is visible in a screenshot of the first frame.
+ */
+function wreck() {
+  const route = generateRoute(1037)
+  const world = createWorld(route)
+  for (const p of planLoad(route.crates, 'fullStack')) loadCrate(world, p.crate, p.offset, p.laid)
+  for (let i = 0; i < 150; i++) {
+    Matter.Engine.update(world.engine, STEP)
+    updateCargoState(world)
+  }
+
+  const carried = world.cargo.length
+  explodeTruck(world)
+  const pieces = world.debris.length
+
+  // Twice over, to prove it is idempotent - the draw loop calls it from a
+  // branch that runs every frame while the phase is 'wrecked'.
+  explodeTruck(world)
+
+  let peakSpeed = 0
+  for (let i = 0; i < 60 * 4; i++) {
+    Matter.Engine.update(world.engine, STEP)
+    updateCargoState(world)
+    for (const piece of world.debris) {
+      peakSpeed = Math.max(peakSpeed, Math.hypot(piece.velocity.x, piece.velocity.y))
+    }
+  }
+
+  const finite = world.debris.every(
+    (b) => Number.isFinite(b.position.x) && Number.isFinite(b.position.y),
+  )
+  const settled = world.debris.filter(
+    (b) => Math.hypot(b.velocity.x, b.velocity.y) < 0.6,
+  ).length
+  const nearby = world.debris.filter(
+    (b) => Math.abs(b.position.x - world.chassis.position.x) < 900,
+  ).length
+  const thrown = world.cargo.filter((c) => c.state !== 'deck').length
+
+  console.log(
+    `${pieces} pieces (idempotent: ${world.debris.length === pieces ? 'yes' : 'NO'})` +
+    `  peak ${peakSpeed.toFixed(1)}px/frame` +
+    `  all finite: ${finite ? 'yes' : 'NO'}`,
+  )
+  console.log(
+    `  after 4s: ${settled}/${pieces} come to rest, ${nearby}/${pieces} still on screen` +
+    `, ${thrown}/${carried} of the load thrown clear`,
+  )
+  if (!finite || pieces === 0) console.log('  THE WRECK IS BROKEN')
+  world.destroy()
+}
+
 console.log('STILLNESS - a parked truck must not move at all\n')
 stillness('parked, empty', false, 0)
 stillness('parked, loaded', true, 0)
@@ -355,3 +413,6 @@ impacts()
 
 console.log('\nRECOVERY - going back for what you dropped\n')
 recovery()
+
+console.log('\nWRECK - the rig comes apart into real bodies\n')
+wreck()

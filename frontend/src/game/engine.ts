@@ -52,6 +52,12 @@ export interface TruckWorld {
   throttle: number
   /** 0 = straight off the lot, 1 = wrecked. Accumulated from real impacts. */
   truckDamage: number
+  /** True while the throttle is asking for more than the tyres can give. */
+  slipping: boolean
+  /** Set by brake(); the caller clears it once it has drawn the skid. */
+  braking: boolean
+  /** What is left of the rig once it has been written off. */
+  debris: Matter.Body[]
   /** Engine timestamp until which impacts on the rig are ignored. */
   truckSettledAt: number
   /** Height of the deck surface right now, in world coordinates. */
@@ -227,15 +233,20 @@ export function createWorld(route: Route): TruckWorld {
    * distinction; a picture that does not vibrate is something they cannot
    * help but see. Wheel rotation is drawn from distance travelled instead.
    */
-  // Moderate friction, not the grip a rolling tyre would have: these feet
-  // slide rather than roll, and at 0.95 the rig was a sled welded to the
-  // road - it needed so much force to break away that once it did it shot
-  // off at seventy pixels a frame. A speed cap in drive() governs the top
-  // speed instead, which is both steadier and something a truck actually has.
+  // Low, because these feet slide where a real wheel would roll, so contact
+  // friction here stands in for ROLLING RESISTANCE - which is a percent or
+  // two of the weight, not a quarter of it. Grip, the thing that actually
+  // limits how hard the rig can pull and stop, is modelled properly in
+  // drive() and brake() instead.
+  //
+  // It was 0.25, and that quietly ate 28% of every newton of tractive
+  // effort: the rig topped out at 2.6px a frame and took 25s to cross a
+  // route it now crosses in half that. At 0.95, before that, it was a sled
+  // welded to the road.
   const wheelOptions: Matter.IBodyDefinition = {
     density: 0.008,
-    friction: 0.25,
-    frictionStatic: 0.4,
+    friction: 0.08,
+    frictionStatic: 0.12,
     restitution: 0.02,
     label: 'wheel',
   }
@@ -248,7 +259,7 @@ export function createWorld(route: Route): TruckWorld {
 
   const truckBody = Matter.Body.create({
     parts: [chassis, bed, headboard, rearLip, rearWheel, frontWheel],
-    friction: 0.25,
+    friction: 0.08,
     label: 'truck',
   })
   // Stands in for rolling resistance and engine braking: lifting off has to
@@ -333,6 +344,9 @@ export function createWorld(route: Route): TruckWorld {
     contactDy: startY + CONTACT_DY - truckBody.position.y,
     throttle: 0,
     truckDamage: 0,
+    slipping: false,
+    braking: false,
+    debris: [],
     // The rig is built above the road and drops onto it. Without a grace
     // period that first landing is an impact like any other, and the truck
     // would start the run already dented.
@@ -346,6 +360,7 @@ export function createWorld(route: Route): TruckWorld {
     bedTop: () => truckBody.position.y + bedTopOffset,
     destroy: () => {
       Matter.Events.off(engine, 'collisionStart', onCollision)
+      result.debris.length = 0
       Matter.Composite.clear(world, false)
       Matter.Engine.clear(engine)
     },
@@ -423,25 +438,29 @@ export function loadCrate(
 
 /** Throttle in [-1, 1]; negative reverses. */
 /**
- * Drive force, brake force, and the speed the throttle stops pushing at.
+ * How much grip the tyres have, as a fraction of the weight on them.
  *
- * The cap and the force go together. Without a cap the rig sits wherever
- * friction happens to leave it, and that is a cliff rather than a curve:
- * measured across the real route, just under the break-away force it crawled
- * at 2.6px a frame, and just over it accelerated to 77px a frame. With the
- * cap the force only has to be enough to reach it, and the top speed is a
- * number rather than an accident. Gravity still carries it past the cap
- * downhill - which is where a load is most at risk, and so is exactly where
- * it should happen.
+ * This is the whole drive model now, and it replaces a flat force that was
+ * quietly unphysical: it pushed with 0.3 against a rig whose entire weight
+ * is 0.093, so the road was being asked to transmit three times more than
+ * any tyre can. It only worked because Matter's contact friction bled most
+ * of it away again - which is also why raising that friction turned the rig
+ * into a sled welded to the road.
+ *
+ * Tractive force is now capped at grip times the weight actually on the
+ * wheels, the load included, so a full trailer pulls away harder than an
+ * empty one and takes longer to stop. 0.9 is about right for a dry tyre on
+ * asphalt.
  */
-const DRIVE_FORCE = 0.3
-const BRAKE_FORCE = 0.34
+const GRIP = 0.9
+/** Brakes act on every wheel, so they get slightly more of the same grip. */
+const BRAKE_GRIP = 1.05
 const MAX_SPEED = 4.5
 
 /**
  * How fast the throttle itself may move, per step.
  *
- * Applying the full force the instant a key goes down is dumping the clutch:
+ * Applying full force the instant a key goes down is dumping the clutch:
  * the deck accelerates out from under the load, and a crate was measured
  * sliding straight off the back within seconds of pulling away. Easing the
  * force in over about a third of a second is what a driver with a load on
@@ -449,22 +468,42 @@ const MAX_SPEED = 4.5
  */
 const THROTTLE_RATE = 0.05
 
+/** Everything the tyres are currently carrying: the rig plus what is on it. */
+function loadOnWheels(world: TruckWorld): number {
+  let mass = world.chassis.mass
+  for (const entry of world.cargo) {
+    if (entry.state === 'deck') mass += entry.body.mass
+  }
+  return mass
+}
+
+/** The most force the road can transmit before the tyres let go. */
+function traction(world: TruckWorld, grip: number): number {
+  const gravity = world.engine.gravity
+  return grip * loadOnWheels(world) * gravity.y * gravity.scale
+}
+
 /** Throttle in [-1, 1]; negative reverses. */
 export function drive(world: TruckWorld, throttle: number) {
   const target = Math.max(-1, Math.min(1, throttle))
   const delta = target - world.throttle
   world.throttle += Math.max(-THROTTLE_RATE, Math.min(THROTTLE_RATE, delta))
 
+  world.slipping = false
   if (Math.abs(world.throttle) < 0.01) return
   if (Math.abs(world.chassis.velocity.x) >= MAX_SPEED
       && Math.sign(world.chassis.velocity.x) === Math.sign(world.throttle)) {
     return
   }
-  applyAtRoad(world, world.throttle * DRIVE_FORCE)
+  // Asking for full power while barely moving is the tyres losing rather
+  // than the rig accelerating - worth showing, since it is the moment the
+  // driver should ease off.
+  world.slipping = Math.abs(world.throttle) > 0.9 && Math.abs(world.chassis.velocity.x) < 0.4
+  applyAtRoad(world, world.throttle * traction(world, GRIP))
 }
 
 /**
- * Slows the rig down.
+ * Slows the rig down, within what the tyres can hold.
  *
  * A force opposing travel rather than a multiplier on the velocity. The
  * multiplier version scaled the speed by 0.92 every step, which at sixty
@@ -480,7 +519,8 @@ export function brake(world: TruckWorld) {
   if (Math.abs(vx) < 0.05) return
   // Let go of the throttle too - holding both would just fight itself.
   world.throttle *= 0.7
-  applyAtRoad(world, -Math.sign(vx) * BRAKE_FORCE)
+  world.braking = true
+  applyAtRoad(world, -Math.sign(vx) * traction(world, BRAKE_GRIP))
 }
 
 /**
@@ -497,6 +537,56 @@ function applyAtRoad(world: TruckWorld, fx: number) {
     { x: body.position.x, y: body.position.y + world.contactDy },
     { x: fx, y: 0 },
   )
+}
+
+/**
+ * Blows the rig apart.
+ *
+ * The compound body leaves the world and a dozen loose pieces take its
+ * place, thrown outward and left to the physics like anything else. Drawing
+ * a burst over an intact truck was the cheap version and it read as one:
+ * the truck was plainly still sitting there afterwards. The load goes with
+ * it, since none of it is arriving now either.
+ */
+export function explodeTruck(world: TruckWorld) {
+  if (world.debris.length > 0) return
+  const { x, y } = world.chassis.position
+  Matter.Composite.remove(world.engine.world, world.chassis)
+
+  // Math.random is fine here and nowhere else in this file: the wreck is
+  // cosmetic, happens after the run is over, and is never scored.
+  const spread = (n: number) => (Math.random() - 0.5) * n
+  for (let i = 0; i < 14; i++) {
+    const w = 9 + Math.random() * 20
+    const h = 6 + Math.random() * 14
+    const piece = Matter.Bodies.rectangle(x + spread(200), y + spread(46), w, h, {
+      friction: 0.5,
+      restitution: 0.25,
+      angle: Math.random() * Math.PI,
+      label: 'debris',
+    })
+    Matter.Body.setVelocity(piece, { x: spread(13), y: -3.5 - Math.random() * 8 })
+    Matter.Body.setAngularVelocity(piece, spread(0.7))
+    world.debris.push(piece)
+  }
+  // The wheels come off as wheels - they are the one part of a truck that
+  // stays recognisable in a wreck.
+  for (const wheel of [world.rearWheel, world.frontWheel]) {
+    const tyre = Matter.Bodies.circle(wheel.position.x, wheel.position.y, WHEEL_R, {
+      friction: 0.6, restitution: 0.4, label: 'tyre',
+    })
+    Matter.Body.setVelocity(tyre, { x: spread(11), y: -4 - Math.random() * 5 })
+    Matter.Body.setAngularVelocity(tyre, spread(0.9))
+    world.debris.push(tyre)
+  }
+  Matter.Composite.add(world.engine.world, world.debris)
+
+  for (const entry of world.cargo) {
+    if (entry.state !== 'deck') continue
+    entry.state = 'road'
+    Matter.Body.setVelocity(entry.body, { x: spread(9), y: -2 - Math.random() * 6 })
+    Matter.Body.setAngularVelocity(entry.body, spread(0.5))
+  }
 }
 
 /** Marks cargo that has fallen off the truck or off the world. */
