@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Matter from 'matter-js'
-import { generateRoute, SEGMENT_WIDTH, BASE_GROUND_Y as BASE, type Crate, type Route } from './route'
+import {
+  generateRoute, mulberry32, SEGMENT_WIDTH, BASE_GROUND_Y as BASE,
+  type Crate, type Route,
+} from './route'
 import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
   createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, planDrop,
@@ -322,6 +325,57 @@ export default function TruckGame({ seed, onFinish }: Props) {
     // so a long run cannot grow the list without bound.
     const skids: { x: number; y: number }[] = []
 
+    // Effects the physics has asked for, stamped with the time they arrived
+    // so they can fade. The engine has no clock worth trusting for
+    // animation, so it reports what happened and this decides how long it
+    // is on screen for.
+    const effects: { kind: string; x: number; y: number; at: number }[] = []
+
+    /** Ground height at a world x, interpolated between samples. */
+    const groundAt = (x: number) => {
+      const t = x / SEGMENT_WIDTH
+      const i = Math.max(0, Math.min(route.heights.length - 2, Math.floor(t)))
+      const f = Math.max(0, Math.min(1, t - i))
+      return route.heights[i] * (1 - f) + route.heights[i + 1] * f
+    }
+
+    // Trees, from the route's own seed so they are in the same place every
+    // time it is played and never shimmer between frames. Two bands at
+    // different parallax depths - one behind the ridges, one just off the
+    // verge - which is most of what sells the distance.
+    const treeRand = mulberry32((route.seed ^ 0x5eed) >>> 0)
+    const trees: { x: number; scale: number; depth: number; lean: number }[] = []
+    for (let i = 0; i < 150; i++) {
+      trees.push({
+        x: treeRand() * route.heights.length * SEGMENT_WIDTH,
+        scale: 0.55 + treeRand() * 0.85,
+        depth: treeRand() < 0.55 ? 0.55 : 0.8,
+        lean: (treeRand() - 0.5) * 0.24,
+      })
+    }
+
+    const drawTree = (x: number, groundY: number, scale: number, tint: string) => {
+      const h = 58 * scale
+      ctx.save()
+      ctx.translate(x, groundY)
+      ctx.fillStyle = tint
+      // Trunk.
+      ctx.fillRect(-2 * scale, -h * 0.42, 4 * scale, h * 0.42)
+      // Three stacked tiers - a conifer silhouette, which stays readable at
+      // any size and needs no detail to be recognisable.
+      for (let tier = 0; tier < 3; tier++) {
+        const top = -h + (h * 0.28) * tier
+        const spread = (10 + tier * 6) * scale
+        ctx.beginPath()
+        ctx.moveTo(0, top)
+        ctx.lineTo(spread, top + h * 0.36)
+        ctx.lineTo(-spread, top + h * 0.36)
+        ctx.closePath()
+        ctx.fill()
+      }
+      ctx.restore()
+    }
+
     let raf = 0
     let last = performance.now()
 
@@ -432,13 +486,35 @@ export default function TruckGame({ seed, onFinish }: Props) {
       ctx.fillStyle = skin.light
       ctx.fillRect(-w / 2, -h / 2, w, 2.5)
 
-      // Damage as a wash over the material rather than a replacement colour,
-      // so a battered crate is still recognisably a crate.
+      // Damage.
+      //
+      // A tint alone was not enough - at a third gone the amber wash was
+      // sitting at 18% opacity over a brown crate, which is invisible.
+      // Stronger now, and paired with something that is not a colour at all:
+      // cracks that spread across the face as it goes. Colour is the fastest
+      // read when you are watching the road, but it is also the thing that
+      // disappears against the wrong material, and the two together survive
+      // both.
       if (entry.damage > 0.02) {
-        ctx.fillStyle = entry.damage > 0.55
-          ? `rgba(214,64,52,${0.25 + entry.damage * 0.5})`
-          : `rgba(214,150,52,${entry.damage * 0.6})`
+        ctx.fillStyle = entry.damage > 0.5
+          ? `rgba(210,58,46,${0.3 + entry.damage * 0.55})`
+          : `rgba(224,150,44,${0.22 + entry.damage * 0.9})`
         ctx.fillRect(-w / 2, -h / 2, w, h)
+
+        const cracks = Math.round(entry.damage * 6)
+        ctx.strokeStyle = 'rgba(0,0,0,0.62)'
+        ctx.lineWidth = 1.5
+        for (let i = 0; i < cracks; i++) {
+          // Deterministic from the index, so a crack does not crawl around
+          // the crate between frames.
+          const sx = -w / 2 + ((i * 37) % 100) / 100 * w
+          const sy = -h / 2 + ((i * 61) % 100) / 100 * h
+          ctx.beginPath()
+          ctx.moveTo(sx, sy)
+          ctx.lineTo(sx + w * 0.22 * (i % 2 ? 1 : -1), sy + h * 0.3)
+          ctx.lineTo(sx + w * 0.05 * (i % 2 ? 1 : -1), sy + h * 0.48)
+          ctx.stroke()
+        }
       }
 
       if (entry.crate.fragile) {
@@ -447,6 +523,46 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.setLineDash([5, 4])
         ctx.strokeRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3)
         ctx.setLineDash([])
+      }
+
+      // Placard.
+      //
+      // The flammable one follows the real thing: DOT Class 3 is a red
+      // diamond with a white flame and a 3 at the bottom, and it is on the
+      // drum for the same reason it would be on a real one - so you know
+      // before you load it what it will do if you break it. The liquid mark
+      // is deliberately NOT placard-shaped, because there is no real class
+      // it corresponds to and dressing it up as one would be a lie about
+      // something people actually have to know.
+      if (entry.crate.hazard === 'flammable') {
+        const r = Math.min(w, h) * 0.3
+        ctx.save()
+        ctx.rotate(Math.PI / 4)
+        ctx.fillStyle = '#c8261d'
+        ctx.fillRect(-r, -r, r * 2, r * 2)
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+        ctx.lineWidth = 1
+        ctx.strokeRect(-r + 2, -r + 2, r * 2 - 4, r * 2 - 4)
+        ctx.restore()
+        // Flame, upright rather than on the diamond's axis.
+        ctx.fillStyle = '#fff'
+        ctx.beginPath()
+        ctx.moveTo(0, -r * 0.62)
+        ctx.quadraticCurveTo(r * 0.42, -r * 0.05, 0, r * 0.5)
+        ctx.quadraticCurveTo(-r * 0.42, -r * 0.05, 0, -r * 0.62)
+        ctx.fill()
+      } else if (entry.crate.hazard === 'liquid') {
+        const r = Math.min(w, h) * 0.26
+        ctx.fillStyle = '#2f5f8f'
+        ctx.beginPath()
+        ctx.arc(0, 0, r, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'
+        ctx.beginPath()
+        ctx.moveTo(0, -r * 0.62)
+        ctx.quadraticCurveTo(r * 0.55, r * 0.18, 0, r * 0.6)
+        ctx.quadraticCurveTo(-r * 0.55, r * 0.18, 0, -r * 0.62)
+        ctx.fill()
       }
       ctx.restore()
     }
@@ -594,6 +710,26 @@ export default function TruckGame({ seed, onFinish }: Props) {
       drawRidge(0.35, 96, 0.5, 'rgba(255,255,255,0.045)')
       drawRidge(0.6, 44, 0.7, 'rgba(0,0,0,0.22)')
 
+      // Treeline. Placed against the road's own profile so it follows the
+      // land, and drawn before the ground so the trunks are planted in it
+      // rather than standing on top of it.
+      const view = VIEW.w / zoom
+      for (const tree of trees) {
+        const drawX = tree.x * tree.depth + camX * (1 - tree.depth)
+        if (drawX < camX - 90 || drawX > camX + view + 90) continue
+        ctx.save()
+        ctx.translate(drawX, 0)
+        ctx.rotate(tree.lean * 0.12)
+        ctx.translate(-drawX, 0)
+        drawTree(
+          drawX,
+          groundAt(tree.x) - (tree.depth < 0.7 ? 34 : 6),
+          tree.scale * (tree.depth < 0.7 ? 0.8 : 1),
+          tree.depth < 0.7 ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.45)',
+        )
+        ctx.restore()
+      }
+
       const surface = new Path2D()
       surface.moveTo(0, route.heights[0])
       for (let i = 1; i < route.heights.length; i++) {
@@ -649,6 +785,80 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.stroke()
         ctx.restore()
       }
+
+      // The two ends of the job.
+      //
+      // They are deliberately different buildings, because in freight they
+      // are different places. Loading is at a warehouse dock: a raised
+      // platform at trailer-deck height, roughly 48-52 inches, so a forklift
+      // can run straight out onto the bed. Flatbed freight is very often
+      // delivered somewhere with no dock at all - a yard, a site, a
+      // ground-level gate - and unloaded from the side. So: a dock at the
+      // start, a fenced yard at the finish.
+      const drawDepot = () => {
+        const g = groundAt(60)
+        ctx.save()
+        // Shed.
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'
+        ctx.fillRect(-260, g - 150, 300, 150)
+        ctx.fillStyle = 'rgba(255,255,255,0.05)'
+        ctx.fillRect(-260, g - 150, 300, 10)
+        // Roller doors.
+        ctx.fillStyle = 'rgba(255,255,255,0.09)'
+        for (let i = 0; i < 3; i++) ctx.fillRect(-240 + i * 92, g - 96, 62, 96)
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+        ctx.lineWidth = 1
+        for (let i = 0; i < 3; i++) {
+          for (let y = g - 90; y < g; y += 11) {
+            ctx.beginPath()
+            ctx.moveTo(-240 + i * 92, y)
+            ctx.lineTo(-178 + i * 92, y)
+            ctx.stroke()
+          }
+        }
+        // Dock platform, at deck height, with a rubber bumper on the face.
+        const deck = g - 52
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        ctx.fillRect(40, deck, 34, g - deck)
+        ctx.fillStyle = COLORS.muted
+        ctx.fillRect(36, deck - 5, 42, 6)
+        ctx.fillStyle = 'rgba(0,0,0,0.85)'
+        ctx.fillRect(70, deck + 6, 6, 22)
+        ctx.restore()
+      }
+
+      const drawDropSite = () => {
+        const x = world.finishX
+        const g = groundAt(x)
+        ctx.save()
+        // Chain-link fence running behind the yard.
+        ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+        ctx.lineWidth = 1
+        for (let px = x - 40; px < x + 300; px += 14) {
+          ctx.beginPath()
+          ctx.moveTo(px, groundAt(px) - 68)
+          ctx.lineTo(px, groundAt(px))
+          ctx.stroke()
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.28)'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(x - 40, groundAt(x - 40) - 68)
+        for (let px = x - 40; px < x + 300; px += 20) ctx.lineTo(px, groundAt(px) - 68)
+        ctx.stroke()
+        // A site hut and a stack of material waiting to be picked up. No
+        // dock: this is a ground-level yard.
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'
+        ctx.fillRect(x + 120, g - 54, 76, 54)
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'
+        ctx.fillRect(x + 134, g - 42, 20, 16)
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'
+        for (let i = 0; i < 3; i++) ctx.fillRect(x + 214, g - 12 - i * 11, 54, 9)
+        ctx.restore()
+      }
+
+      drawDepot()
+      drawDropSite()
 
       // Finish marker
       ctx.strokeStyle = COLORS.accent
@@ -775,55 +985,79 @@ export default function TruckGame({ seed, onFinish }: Props) {
 
         // Cab.
         //
-        // Sized against the real thing rather than by eye. A day-cab tractor
-        // is about 20ft of a 70ft combination and stands roughly twice the
-        // height of a flatbed deck, so on a 250px chassis the cab wants
-        // about 73px of length and should reach about twice the deck height
-        // above the road. The first version was 70x41 and sat noticeably
-        // squat on the frame; this one runs flush to the front of the
-        // chassis and up to where the mirrors would be.
+        // Sized off the real proportions rather than by eye, twice now. A
+        // flatbed deck sits about 5ft up and a tractor cab stands about 10ft,
+        // so the roof wants to be about twice the deck height above the road
+        // - which on this rig is y = -84, against the -64 it was.
+        //
+        // It cannot grow backwards to match: the deck starts at x = 54 and
+        // anything behind that line is where the freight goes. Tall and
+        // short-nosed is a cab-over, which is a real and very common shape
+        // for exactly this reason - the cab sits over the front axle to buy
+        // deck length - so that is what it is.
+        const CAB_BACK = 54
+        const CAB_FRONT = 125
+        const CAB_ROOF = -84
         ctx.fillStyle = bodyColor
         ctx.beginPath()
-        ctx.moveTo(52, -13)
-        ctx.lineTo(52, -64)
-        ctx.lineTo(105, -64)
-        ctx.lineTo(125, -35)
-        ctx.lineTo(125, -13)
+        ctx.moveTo(CAB_BACK, -13)
+        ctx.lineTo(CAB_BACK, CAB_ROOF + 8)
+        ctx.quadraticCurveTo(CAB_BACK, CAB_ROOF, CAB_BACK + 10, CAB_ROOF)
+        ctx.lineTo(CAB_FRONT - 6, CAB_ROOF)
+        ctx.quadraticCurveTo(CAB_FRONT, CAB_ROOF, CAB_FRONT, CAB_ROOF + 8)
+        ctx.lineTo(CAB_FRONT, -13)
         ctx.closePath()
         ctx.fill()
-        // Windscreen, raked back over the nose, and the door glass beside it.
-        ctx.fillStyle = 'rgba(0,0,0,0.5)'
+
+        // Roof deflector - the wedge over the cab that stops the load
+        // catching the wind. On a real flatbed rig it is the most
+        // recognisable thing about the profile.
+        ctx.fillStyle = 'rgba(255,255,255,0.12)'
         ctx.beginPath()
-        ctx.moveTo(81, -58)
-        ctx.lineTo(102, -58)
-        ctx.lineTo(119, -37)
-        ctx.lineTo(81, -37)
+        ctx.moveTo(CAB_BACK, CAB_ROOF - 2)
+        ctx.lineTo(CAB_FRONT - 10, CAB_ROOF - 14)
+        ctx.lineTo(CAB_FRONT - 10, CAB_ROOF)
+        ctx.lineTo(CAB_BACK, CAB_ROOF)
         ctx.closePath()
         ctx.fill()
-        ctx.fillRect(59, -58, 17, 21)
-        // Door line and the sleeper seam behind it.
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+
+        // Windscreen across the front, and the door glass behind it.
+        ctx.fillStyle = 'rgba(0,0,0,0.52)'
+        ctx.beginPath()
+        ctx.moveTo(94, CAB_ROOF + 9)
+        ctx.lineTo(CAB_FRONT - 4, CAB_ROOF + 9)
+        ctx.lineTo(CAB_FRONT - 4, CAB_ROOF + 40)
+        ctx.lineTo(94, CAB_ROOF + 40)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillRect(66, CAB_ROOF + 12, 22, 28)
+
+        // Door line, step and handle.
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'
         ctx.lineWidth = 1.5
         ctx.beginPath()
-        ctx.moveTo(78, -60)
-        ctx.lineTo(78, -14)
-        ctx.moveTo(57, -60)
-        ctx.lineTo(57, -14)
+        ctx.moveTo(91, CAB_ROOF + 6)
+        ctx.lineTo(91, -14)
+        ctx.moveTo(63, CAB_ROOF + 6)
+        ctx.lineTo(63, -14)
         ctx.stroke()
-        // Mirror arm, exhaust stack, grille and lamp.
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fillRect(68, -24, 18, 4)
+
+        // Mirror arm, grille, lamp and the stack behind the cab.
         ctx.strokeStyle = COLORS.muted
         ctx.lineWidth = 2
         ctx.beginPath()
-        ctx.moveTo(105, -56)
-        ctx.lineTo(114, -60)
+        ctx.moveTo(CAB_FRONT - 6, CAB_ROOF + 16)
+        ctx.lineTo(CAB_FRONT + 6, CAB_ROOF + 11)
         ctx.stroke()
         ctx.fillStyle = COLORS.muted
-        ctx.fillRect(45, -76, 6, 56)
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'
-        ctx.fillRect(112, -33, 13, 7)
+        ctx.fillRect(CAB_BACK - 5, CAB_ROOF - 16, 6, 66)
+        ctx.fillStyle = 'rgba(0,0,0,0.32)'
+        ctx.fillRect(CAB_FRONT - 14, -34, 14, 9)
         ctx.fillStyle = COLORS.amber
         ctx.beginPath()
-        ctx.arc(120, -21, 3.5, 0, Math.PI * 2)
+        ctx.arc(CAB_FRONT - 6, -21, 3.5, 0, Math.PI * 2)
         ctx.fill()
         ctx.restore()
 
@@ -834,6 +1068,73 @@ export default function TruckGame({ seed, onFinish }: Props) {
             world.chassis.position.x / r, world.chassis.angle,
           )
         }
+      }
+
+      // Freight that has come apart. Drawn under the intact load, so a
+      // stack still reads clearly over its own wreckage.
+      for (const shard of world.shards) {
+        const skin = MATERIAL[shard.kind]
+        ctx.save()
+        ctx.translate(shard.body.position.x, shard.body.position.y)
+        ctx.rotate(shard.body.angle)
+        ctx.fillStyle = skin.base
+        const v = shard.body.vertices
+        ctx.beginPath()
+        ctx.moveTo(v[0].x - shard.body.position.x, v[0].y - shard.body.position.y)
+        for (let i = 1; i < v.length; i++) {
+          ctx.lineTo(v[i].x - shard.body.position.x, v[i].y - shard.body.position.y)
+        }
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+      }
+
+      // Anything the physics wants shown once. Drained rather than read, so
+      // an effect cannot fire twice.
+      while (world.events.length > 0) {
+        const event = world.events.shift()
+        if (event) effects.push({ ...event, at: now })
+      }
+      for (let i = effects.length - 1; i >= 0; i--) {
+        const fx = effects[i]
+        const life = fx.kind === 'blast' ? 700 : fx.kind === 'spill' ? 1400 : 450
+        const t = (now - fx.at) / life
+        if (t >= 1) {
+          effects.splice(i, 1)
+          continue
+        }
+        ctx.save()
+        if (fx.kind === 'blast') {
+          ctx.globalAlpha = (1 - t) ** 1.5
+          ctx.fillStyle = COLORS.amber
+          ctx.beginPath()
+          ctx.arc(fx.x, fx.y - t * 40, 22 + t * 120, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.globalAlpha = (1 - t) * 0.6
+          ctx.fillStyle = COLORS.danger
+          ctx.beginPath()
+          ctx.arc(fx.x, fx.y - t * 40, (22 + t * 120) * 0.6, 0, Math.PI * 2)
+          ctx.fill()
+        } else if (fx.kind === 'spill') {
+          // A pool spreading out from where it burst.
+          ctx.globalAlpha = 0.5 * (1 - t * 0.4)
+          ctx.fillStyle = '#3f6f9c'
+          ctx.beginPath()
+          ctx.ellipse(fx.x, fx.y + 6, 20 + t * 70, 5 + t * 5, 0, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          ctx.globalAlpha = (1 - t) * 0.55
+          ctx.strokeStyle = COLORS.muted
+          ctx.lineWidth = 2
+          for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * Math.PI * 2
+            ctx.beginPath()
+            ctx.arc(fx.x + Math.cos(a) * (12 + t * 46), fx.y + Math.sin(a) * (8 + t * 30) - t * 18,
+              5 + t * 9, 0, Math.PI * 2)
+            ctx.stroke()
+          }
+        }
+        ctx.restore()
       }
 
       const withinReach = phase === 'driving' ? recoverableCargo(world) : []
@@ -1148,7 +1449,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
                 <>
                   <p className="tg-panel-line">
                     <b>{KIND_LABEL[shownCrate.kind]}</b> · {shownCrate.weight}kg
-                    {shownCrate.fragile ? ' · fragile' : ''} · pays $
+                    {shownCrate.fragile ? ' · fragile' : ''}
+                    {shownCrate.hazard === 'flammable' ? ' · flammable' : ''}
+                    {shownCrate.hazard === 'liquid' ? ' · liquid' : ''} · pays $
                     {shownCrate.rate.toLocaleString('en-US')}
                     {phase === 'loading' && (
                       <span className="tg-panel-rest"> · {remaining} still on the dock</span>
@@ -1157,7 +1460,11 @@ export default function TruckGame({ seed, onFinish }: Props) {
                   <p className="tg-panel-hint">
                     {phase === 'reloading'
                       ? 'Find it a spot on the deck. It keeps whatever the fall did to it.'
-                      : 'Point at the deck and click to set it down. Heavy and low rides best.'}
+                      : shownCrate.hazard === 'flammable'
+                        ? 'Pays well, and takes the truck with it if you break it. Low and braced.'
+                        : shownCrate.hazard === 'liquid'
+                          ? 'Burst this and it goes over the deck - nothing grips on a wet bed.'
+                          : 'Point at the deck and click to set it down. Heavy and low rides best.'}
                   </p>
                 </>
               ) : (

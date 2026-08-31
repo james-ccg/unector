@@ -36,17 +36,15 @@ JS_PRNG_VECTORS = {
 
 JS_ROUTE_123456 = {
     "heights_head": [420, 420, 420],
-    "heights_tail": [606.2066412255, 609.4597806849, 613.9702732518],
-    # (weight, kind, w, h, rate, fragile)
+    "heights_tail": [551.4783227473, 552.1591156982, 552.2834609717],
+    # (weight, kind, hazard, w, h, rate, fragile)
     "crates": [
-        (300, "pallet", 40, 16, 650, True),
-        (800, "crate", 39, 39, 700, False),
-        (700, "crate", 36, 36, 1050, True),
-        (800, "drum", 26, 52, 700, False),
-        (200, "pallet", 35, 14, 600, True),
+        (200, "crate", "none", 21, 21, 200, False),
+        (400, "drum", "none", 18, 36, 350, False),
+        (600, "crate", "none", 33, 33, 950, True),
     ],
-    "max_payout": 3700,
-    "distance": 3600,
+    "max_payout": 1500,
+    "distance": 6000,
 }
 
 
@@ -75,7 +73,7 @@ class TestRouteMatchesJavaScript:
         assert [round(h, 10) for h in route.heights[:3]] == JS_ROUTE_123456["heights_head"]
         assert [round(h, 10) for h in route.heights[-3:]] == JS_ROUTE_123456["heights_tail"]
         assert [
-            (c.weight, c.kind, c.w, c.h, c.rate, c.fragile) for c in route.crates
+            (c.weight, c.kind, c.hazard, c.w, c.h, c.rate, c.fragile) for c in route.crates
         ] == JS_ROUTE_123456["crates"]
         assert route.max_payout == JS_ROUTE_123456["max_payout"]
         assert route.distance == JS_ROUTE_123456["distance"]

@@ -1,5 +1,5 @@
 import Matter from 'matter-js'
-import { BASE_GROUND_Y, SEGMENT_WIDTH, type Crate, type Route } from './route'
+import { BASE_GROUND_Y, SEGMENT_WIDTH, type Crate, type CrateKind, type Route } from './route'
 
 /**
  * The physics world: terrain, a truck that behaves like a truck, and cargo
@@ -24,6 +24,18 @@ import { BASE_GROUND_Y, SEGMENT_WIDTH, type Crate, type Route } from './route'
  * whole item; the player just gets to decide whether it is worth the detour.
  */
 export type CargoState = 'deck' | 'road' | 'gone'
+
+/** A fragment of freight that has come apart. */
+export interface Shard {
+  body: Matter.Body
+  kind: CrateKind
+}
+
+export interface WorldEvent {
+  kind: 'shatter' | 'blast' | 'spill'
+  x: number
+  y: number
+}
 
 export interface CargoBody {
   body: Matter.Body
@@ -58,6 +70,16 @@ export interface TruckWorld {
   braking: boolean
   /** What is left of the rig once it has been written off. */
   debris: Matter.Body[]
+  /** Wreckage of freight that has been destroyed outright. */
+  shards: Shard[]
+  /**
+   * Things that just happened and want drawing once. The renderer drains
+   * this every frame - the engine has no clock of its own worth trusting for
+   * animation, and the alternative is the physics knowing about timing.
+   */
+  events: WorldEvent[]
+  /** A liquid load has burst over the deck, and nothing grips on it now. */
+  deckSoaked: boolean
   /** What is left in the tank, 1 to 0. Only burns while under way. */
   fuel: number
   /** Engine timestamp until which impacts on the rig are ignored. */
@@ -117,8 +139,8 @@ const CONTACT_DY = REAR_AXLE.y + WHEEL_R
 // Above the speed a crate reaches just settling onto the bed - placing a
 // load correctly has to cost nothing, or the player is punished for the
 // one part of the game they got right.
-const DAMAGE_SPEED = 3.6
-const FRAGILE_SPEED = 2.4
+const DAMAGE_SPEED = 5.6
+const FRAGILE_SPEED = 3.7
 /**
  * The rig is far tougher than what it carries, but not indestructible.
  *
@@ -133,8 +155,8 @@ const FRAGILE_SPEED = 2.4
  * the damage existed but could not happen. Worth remembering that the top
  * of the range is set by the speed cap, so lowering that lowers this too.
  */
-const TRUCK_DAMAGE_SPEED = 3.2
-const TRUCK_DAMAGE_SCALE = 0.2
+const TRUCK_DAMAGE_SPEED = 4.4
+const TRUCK_DAMAGE_SCALE = 0.15
 
 /** How much of the excess speed turns into damage. */
 // Steep, so the difference between a careful cruise and flooring it over a
@@ -364,6 +386,9 @@ export function createWorld(route: Route): TruckWorld {
     slipping: false,
     braking: false,
     debris: [],
+    shards: [],
+    events: [],
+    deckSoaked: false,
     fuel: 1,
     // The rig is built above the road and drops onto it. Without a grace
     // period that first landing is an impact like any other, and the truck
@@ -381,6 +406,8 @@ export function createWorld(route: Route): TruckWorld {
     destroy: () => {
       Matter.Events.off(engine, 'collisionStart', onCollision)
       result.debris.length = 0
+      result.shards.length = 0
+      result.events.length = 0
       Matter.Composite.clear(world, false)
       Matter.Engine.clear(engine)
     },
@@ -472,9 +499,14 @@ export function loadCrate(
  * however hard it was pushed, and above it there was nothing holding it at
  * all. The pedal has to map to the speed for the driving to feel like
  * anything, and that only works if the numbers are ours.
+ *
+ * Raised once already: at GRIP 0.32 and a cap of 4.5 the rig read as slow,
+ * and a longer road made that worse rather than better. The relationship
+ * between them is what matters - the cap decides the top speed and the grip
+ * decides how long it takes to get there - so both moved together.
  */
-const GRIP = 0.32
-const BRAKE = 0.22
+const GRIP = 0.5
+const BRAKE = 0.34
 /** Rolling resistance. Small, constant, and the thing that finally stops it. */
 const ROLL = 0.01
 /** Standing in for static friction, so a parked rig does not creep downhill. */
@@ -482,7 +514,10 @@ const HOLD = 0.3
 /** Below this the rig counts as stopped, for holding and for picking up. */
 const STOPPED = 0.35
 
-const MAX_SPEED = 4.5
+/** Top speed the throttle will push to. Exported so the checks can express
+ *  a driving style as a fraction of it rather than a bare number that goes
+ *  stale the moment the rig is retuned. */
+export const MAX_SPEED = 7
 
 /**
  * Fuel burn per second: a fixed amount for having the engine running, and
@@ -505,8 +540,8 @@ const MAX_SPEED = 4.5
  * finishes with very little left, and a detour to pick up a dropped crate
  * costs about a fifth of it. So every one of those is now a choice.
  */
-const FUEL_IDLE_PER_SECOND = 0.016
-const FUEL_DRIVE_PER_SECOND = 0.016
+const FUEL_IDLE_PER_SECOND = 0.0165
+const FUEL_DRIVE_PER_SECOND = 0.0165
 
 /** (1000/60)^2 - see coast(). Matter scales an applied force by this. */
 const STEP_SQUARED = (1000 / 60) ** 2
@@ -721,6 +756,13 @@ export function updateCargoState(world: TruckWorld) {
   for (const entry of world.cargo) {
     if (entry.state === 'gone') continue
 
+    // Finished off. Worth nothing either way, but what it does on the way
+    // out depends on what was in it.
+    if (entry.damage >= 0.999) {
+      destroyCargo(world, entry)
+      continue
+    }
+
     // Off the bottom of the world - through a seam, or thrown clear off the
     // end of the road. Nothing to go back for.
     if (entry.body.position.y > BASE_GROUND_Y + 500) {
@@ -752,6 +794,92 @@ export function updateCargoState(world: TruckWorld) {
     const offTheSide = alongDeck < DECK_MIN_OFFSET - 26 || alongDeck > DECK_MAX_OFFSET + 26
     const belowTheDeck = aboveDeck > world.deckLocalY + 10
     if (offTheSide || belowTheDeck) entry.state = 'road'
+  }
+}
+
+/**
+ * What happens when a piece of freight is finished off.
+ *
+ * Everything comes apart - the body is replaced by a handful of loose
+ * fragments, because a destroyed crate that carries on looking like a crate
+ * gives the player no way to tell the difference between a total loss and a
+ * badly dented one.
+ *
+ * What was inside it then decides whether that is the end of the matter. A
+ * placarded drum is worth more to haul for the same reason it is worse to
+ * break, which is the trade the loading screen is really offering:
+ *
+ *   flammable - it goes up, and takes a large bite out of the rig with it.
+ *               Anything nearby is thrown clear.
+ *   liquid    - it bursts over the deck. The rig takes a little damage, and
+ *               for the rest of the run the deck is wet, so nothing left on
+ *               it grips the way it did.
+ */
+const SHATTER_PIECES = 6
+/** Rig damage from a drum of something flammable letting go on the deck. */
+const BLAST_DAMAGE = 0.45
+const BLAST_RADIUS = 210
+const SPILL_DAMAGE = 0.12
+/** What is left of the deck's grip once a liquid load has burst over it. */
+const SOAKED_FRICTION = 0.3
+
+function destroyCargo(world: TruckWorld, entry: CargoBody) {
+  const { x, y } = entry.body.position
+  entry.state = 'gone'
+  entry.damage = 1
+  Matter.Composite.remove(world.engine.world, entry.body)
+
+  // Math.random is fine for wreckage: it is cosmetic, and nothing about a
+  // destroyed item is scored beyond the fact that it is destroyed.
+  const spread = (n: number) => (Math.random() - 0.5) * n
+  const size = Math.max(5, Math.min(entry.w, entry.h) / 3)
+  for (let i = 0; i < SHATTER_PIECES; i++) {
+    const piece = Matter.Bodies.rectangle(
+      x + spread(entry.w * 0.7), y + spread(entry.h * 0.7),
+      size * (0.6 + Math.random() * 0.8), size * (0.6 + Math.random() * 0.8),
+      { friction: 0.6, restitution: 0.2, angle: Math.random() * Math.PI, label: 'shard' },
+    )
+    Matter.Body.setVelocity(piece, { x: spread(6), y: -1.5 - Math.random() * 4 })
+    Matter.Body.setAngularVelocity(piece, spread(0.5))
+    world.shards.push({ body: piece, kind: entry.crate.kind })
+    Matter.Composite.add(world.engine.world, piece)
+  }
+  world.events.push({ kind: 'shatter', x, y })
+
+  if (entry.crate.hazard === 'flammable') {
+    world.events.push({ kind: 'blast', x, y })
+    const reach = Math.hypot(x - world.chassis.position.x, y - world.chassis.position.y)
+    if (reach < BLAST_RADIUS) {
+      world.truckDamage = Math.min(1, world.truckDamage + BLAST_DAMAGE * (1 - reach / BLAST_RADIUS))
+    }
+    // Everything loose near it gets thrown.
+    const nearby: Matter.Body[] = [
+      ...world.cargo.filter((c) => c.state !== 'gone').map((c) => c.body),
+      ...world.shards.map((sh) => sh.body),
+    ]
+    for (const body of nearby) {
+      const dx = body.position.x - x
+      const dy = body.position.y - y
+      const dist = Math.hypot(dx, dy)
+      if (dist > BLAST_RADIUS || dist < 0.001) continue
+      const push = (1 - dist / BLAST_RADIUS) * 7
+      Matter.Body.setVelocity(body, {
+        x: body.velocity.x + (dx / dist) * push,
+        y: body.velocity.y + (dy / dist) * push - 2,
+      })
+    }
+  } else if (entry.crate.hazard === 'liquid') {
+    world.events.push({ kind: 'spill', x, y })
+    world.truckDamage = Math.min(1, world.truckDamage + SPILL_DAMAGE)
+    if (!world.deckSoaked) {
+      world.deckSoaked = true
+      for (const part of world.chassis.parts) {
+        if (part.label === 'bed') {
+          part.friction *= SOAKED_FRICTION
+          part.frictionStatic *= SOAKED_FRICTION
+        }
+      }
+    }
   }
 }
 

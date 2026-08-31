@@ -16,9 +16,10 @@
 
 /** Terrain is a series of ground heights sampled every SEGMENT_WIDTH px. */
 export const SEGMENT_WIDTH = 40
-// ~3.6km of road. 160 made a careful run take three to four minutes,
-// which is a commute, not a coffee break.
-export const ROUTE_SEGMENTS = 90
+// The road. Long enough that the tank and the state of the load are both
+// real questions by the end, short enough to stay a coffee break: at the
+// rig's cruising speed this is a little over a minute driven briskly.
+export const ROUTE_SEGMENTS = 150
 export const BASE_GROUND_Y = 420
 
 /**
@@ -29,10 +30,20 @@ export const BASE_GROUND_Y = 420
  */
 export type CrateKind = 'pallet' | 'crate' | 'drum'
 
+/**
+ * What happens when a piece of freight is destroyed outright.
+ *
+ * Only drums carry anything worse than themselves, which is roughly true of
+ * real freight - a drum is what regulated liquids and gases travel in, and
+ * it is the shape that gets a placard on it.
+ */
+export type Hazard = 'none' | 'flammable' | 'liquid'
+
 export interface Crate {
   /** Kilograms - drives both the physics mass and the payout. */
   weight: number
   kind: CrateKind
+  hazard: Hazard
   /** Footprint in pixels, upright. The player can rotate when loading. */
   w: number
   h: number
@@ -154,6 +165,16 @@ export function generateRoute(seed: number): Route {
     const roll = rand()
     const kind: CrateKind = roll < 0.38 ? 'pallet' : roll < 0.76 ? 'crate' : 'drum'
 
+    // Drawn unconditionally even though only drums can be hazardous, so the
+    // number of values taken from the PRNG never depends on what came out of
+    // it. The server reproduces this sequence exactly to work out what a
+    // route could pay, and a conditional draw is the easiest way to make the
+    // two implementations quietly disagree.
+    const hazardRoll = rand()
+    const hazard: Hazard = kind !== 'drum'
+      ? 'none'
+      : hazardRoll < 0.34 ? 'flammable' : hazardRoll < 0.62 ? 'liquid' : 'none'
+
     // Dimensions are whole multiples of a per-weight unit, never a rounded
     // float. Math.round and Python's round() disagree on exact halves, and
     // the server has to reproduce these numbers - so there are no halves to
@@ -169,10 +190,16 @@ export function generateRoute(seed: number): Route {
     crates.push({
       weight,
       kind,
+      hazard,
       w: unit * wu,
       h: unit * hu,
-      // Round hundreds, scaled off weight, with a premium for fragile.
-      rate: Math.round((weight * 0.9 + (fragile ? 400 : 0)) / 50) * 50,
+      // Round hundreds, scaled off weight, with a premium for fragile and a
+      // larger one for anything placarded - hazmat pays more to haul in real
+      // life for the same reason it does here, which is that it can take the
+      // truck with it.
+      rate: Math.round(
+        (weight * 0.9 + (fragile ? 400 : 0) + (hazard === 'none' ? 0 : 600)) / 50,
+      ) * 50,
       fragile,
     })
   }

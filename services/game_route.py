@@ -14,7 +14,7 @@ agreeing. tests/test_game_route.py pins both sides to shared vectors.
 from dataclasses import dataclass
 
 SEGMENT_WIDTH = 40
-ROUTE_SEGMENTS = 90
+ROUTE_SEGMENTS = 150
 BASE_GROUND_Y = 420
 
 _UINT32 = 0xFFFFFFFF
@@ -34,6 +34,7 @@ CRATE_SPANS = {
 class Crate:
     weight: int
     kind: str
+    hazard: str
     w: int
     h: int
     rate: int
@@ -114,6 +115,18 @@ def generate_route(seed: int) -> Route:
         roll = rand()
         kind = "pallet" if roll < 0.38 else "crate" if roll < 0.76 else "drum"
 
+        # Drawn unconditionally - see the note in route.ts about why the
+        # number of draws must not depend on their values.
+        hazard_roll = rand()
+        if kind != "drum":
+            hazard = "none"
+        elif hazard_roll < 0.34:
+            hazard = "flammable"
+        elif hazard_roll < 0.62:
+            hazard = "liquid"
+        else:
+            hazard = "none"
+
         # Whole multiples of a per-weight unit, never a rounded float:
         # round() here is banker's rounding and Math.round() in the browser
         # is not, so an exact half would silently split the two sides apart.
@@ -125,9 +138,18 @@ def generate_route(seed: int) -> Route:
             Crate(
                 weight=weight,
                 kind=kind,
+                hazard=hazard,
                 w=unit * wu,
                 h=unit * hu,
-                rate=round((weight * 0.9 + (400 if fragile else 0)) / 50) * 50,
+                rate=round(
+                    (
+                        weight * 0.9
+                        + (400 if fragile else 0)
+                        + (0 if hazard == "none" else 600)
+                    )
+                    / 50
+                )
+                * 50,
                 fragile=fragile,
             )
         )

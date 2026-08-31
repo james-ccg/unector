@@ -45,7 +45,7 @@ import Matter from 'matter-js'
 import { generateRoute, type Crate } from '../src/game/route.ts'
 import {
   createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, drive, brake,
-  coast, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET,
+  coast, updateCargoState, currentPayout, DECK_MIN_OFFSET, DECK_MAX_OFFSET, MAX_SPEED,
   type TruckWorld,
 } from '../src/game/engine.ts'
 
@@ -424,16 +424,82 @@ function wreck() {
   world.destroy()
 }
 
+// ---- hazards ---------------------------------------------------------
+
+/**
+ * Placarded freight, and what it does on the way out.
+ *
+ * None of this is visible from a screenshot: a drum that explodes and one
+ * that does not look identical right up until the frame it matters, and the
+ * deck going slippery has no appearance at all. So it is checked by doing
+ * it - destroy one of each and look at what changed.
+ */
+function hazards() {
+  let flammableTested = 0
+  let liquidTested = 0
+  let blastDamage = 0
+  let gripLost = 0
+  let shardsMade = 0
+
+  for (const seed of SEEDS) {
+    const route = generateRoute(seed)
+    for (const kind of ['flammable', 'liquid'] as const) {
+      const index = route.crates.findIndex((c) => c.hazard === kind)
+      if (index < 0) continue
+
+      const world = createWorld(route)
+      const crate = route.crates[index]
+      loadCrate(world, crate, -40, crate.h > crate.w)
+      for (let i = 0; i < 120; i++) {
+        Matter.Engine.update(world.engine, STEP)
+        updateCargoState(world)
+      }
+
+      const deck = world.chassis.parts.find((part) => part.label === 'bed')
+      const gripBefore = deck ? deck.friction : 0
+      const damageBefore = world.truckDamage
+
+      // Write it off outright and let updateCargoState notice.
+      world.cargo[0].damage = 1
+      updateCargoState(world)
+
+      shardsMade += world.shards.length
+      if (kind === 'flammable') {
+        flammableTested++
+        blastDamage += world.truckDamage - damageBefore
+      } else {
+        liquidTested++
+        if (deck && deck.friction < gripBefore) gripLost++
+      }
+      world.destroy()
+    }
+  }
+
+  console.log(
+    `flammable: ${flammableTested} tested, average ${(blastDamage / Math.max(1, flammableTested) * 100).toFixed(0)}% of the rig taken off by the blast`,
+  )
+  console.log(
+    `liquid: ${liquidTested} tested, the deck lost its grip in ${gripLost} of them`,
+  )
+  console.log(`every write-off left wreckage - ${shardsMade} pieces across ${flammableTested + liquidTested} of them`)
+  if (flammableTested === 0 || liquidTested === 0) {
+    console.log('  NO PLACARDED FREIGHT WAS GENERATED - the hazard code never runs')
+  }
+}
+
 console.log('STILLNESS - a parked truck must not move at all\n')
 stillness('parked, empty', false, 0)
 stillness('parked, loaded', true, 0)
 stillness('driving, loaded', true, 1)
 
 console.log('\nBALANCE - loading well must beat loading badly, by a lot\n')
-balance('one layer, gentle', 'oneLayer', 2.25)
-balance('full stack, gentle', 'fullStack', 2.25)
-balance('one layer, quick', 'oneLayer', 3)
-balance('full stack, quick', 'fullStack', 3)
+// Driving styles as a fraction of what the rig can do, not as bare speeds -
+// those were picked when the top speed was 4.5 and quietly became "crawling"
+// when it went up, which made the careful strategies look unplayable.
+balance('one layer, gentle', 'oneLayer', MAX_SPEED * 0.5)
+balance('full stack, gentle', 'fullStack', MAX_SPEED * 0.5)
+balance('one layer, quick', 'oneLayer', MAX_SPEED * 0.72)
+balance('full stack, quick', 'fullStack', MAX_SPEED * 0.72)
 balance('thoughtless', 'naive', 99)
 balance('all in one pile', 'tower', 99)
 
@@ -445,3 +511,6 @@ recovery()
 
 console.log('\nWRECK - the rig comes apart into real bodies\n')
 wreck()
+
+console.log('\nHAZARDS - what placarded freight does when it goes\n')
+hazards()
