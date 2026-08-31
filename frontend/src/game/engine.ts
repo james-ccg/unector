@@ -58,6 +58,8 @@ export interface TruckWorld {
   braking: boolean
   /** What is left of the rig once it has been written off. */
   debris: Matter.Body[]
+  /** What is left in the tank, 1 to 0. Only burns while under way. */
+  fuel: number
   /** Engine timestamp until which impacts on the rig are ignored. */
   truckSettledAt: number
   /** Height of the deck surface right now, in world coordinates. */
@@ -362,6 +364,7 @@ export function createWorld(route: Route): TruckWorld {
     slipping: false,
     braking: false,
     debris: [],
+    fuel: 1,
     // The rig is built above the road and drops onto it. Without a grace
     // period that first landing is an impact like any other, and the truck
     // would start the run already dented.
@@ -480,6 +483,31 @@ const HOLD = 0.3
 const STOPPED = 0.35
 
 const MAX_SPEED = 4.5
+
+/**
+ * Fuel burn per second: a fixed amount for having the engine running, and
+ * the same again at full throttle.
+ *
+ * The tank is what stops a run being free.
+ *
+ * Until it existed, driving carefully had no cost at all - you could crawl
+ * the whole route, reverse back for everything you dropped, and collect
+ * around 90% every time, so there was no decision anywhere in the game.
+ * This is the genre's standard answer to that. Hill Climb Racing uses fuel
+ * as a timer for exactly this reason, and Cargo, Please! states the trade
+ * plainly: reckless driving risks the cargo, cautious driving costs you
+ * time. Now it costs fuel, which is the same thing with a gauge on it.
+ *
+ * Idle and drive are deliberately equal, so TIME on the route costs as much
+ * as THROTTLE does. If idle were negligible, crawling would still be free;
+ * if throttle were negligible, flooring it would be. Measured over the real
+ * routes: a brisk run uses about two thirds of the tank, a careful one
+ * finishes with very little left, and a detour to pick up a dropped crate
+ * costs about a fifth of it. So every one of those is now a choice.
+ */
+const FUEL_IDLE_PER_SECOND = 0.016
+const FUEL_DRIVE_PER_SECOND = 0.016
+
 /** (1000/60)^2 - see coast(). Matter scales an applied force by this. */
 const STEP_SQUARED = (1000 / 60) ** 2
 /**
@@ -539,14 +567,31 @@ function applyAtRoad(world: TruckWorld, fx: number) {
   )
 }
 
-/** Throttle in [-1, 1]; negative reverses. */
+/**
+ * Throttle in [-1, 1]; negative reverses.
+ *
+ * Called once per step for the whole of the run, including when the player
+ * is asking for nothing - the engine is running either way, and that is
+ * what makes time cost fuel.
+ */
 export function drive(world: TruckWorld, throttle: number) {
   const target = Math.max(-1, Math.min(1, throttle))
   const delta = target - world.throttle
   world.throttle += Math.max(-THROTTLE_RATE, Math.min(THROTTLE_RATE, delta))
 
+  world.fuel = Math.max(0, world.fuel - (
+    FUEL_IDLE_PER_SECOND + FUEL_DRIVE_PER_SECOND * Math.abs(world.throttle)
+  ) / 60)
+
   const vx = world.chassis.velocity.x
   world.slipping = false
+
+  // Dry. The rig rolls to a halt on what momentum it has; coast() takes it
+  // from there.
+  if (world.fuel <= 0) {
+    world.throttle = 0
+    return
+  }
 
   if (Math.abs(world.throttle) < 0.01) return
 

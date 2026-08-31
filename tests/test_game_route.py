@@ -36,15 +36,16 @@ JS_PRNG_VECTORS = {
 
 JS_ROUTE_123456 = {
     "heights_head": [420, 420, 420],
-    "heights_tail": [553.2039456099, 552.6095774129, 550.7839744799],
+    "heights_tail": [606.2066412255, 609.4597806849, 613.9702732518],
     # (weight, kind, w, h, rate, fragile)
     "crates": [
-        (600, "pallet", 55, 22, 950, True),
-        (400, "drum", 18, 36, 350, False),
-        (400, "pallet", 45, 18, 350, False),
-        (600, "crate", 33, 33, 550, False),
+        (300, "pallet", 40, 16, 650, True),
+        (800, "crate", 39, 39, 700, False),
+        (700, "crate", 36, 36, 1050, True),
+        (800, "drum", 26, 52, 700, False),
+        (200, "pallet", 35, 14, 600, True),
     ],
-    "max_payout": 2200,
+    "max_payout": 3700,
     "distance": 3600,
 }
 

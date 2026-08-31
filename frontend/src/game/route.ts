@@ -107,8 +107,16 @@ export function generateRoute(seed: number): Route {
       // balanced load loose.
       height += randInt(rand, 5, 11)
       slope = 0
-    } else if (i > 16 && rand() < 0.035) {
+    } else if (i > 16 && rand() < 0.012 + 0.055 * (i / ROUTE_SEGMENTS)) {
       // Washout - the shoulder has gone and the road drops away.
+      //
+      // Rarer at the start of a route and common by the end: about 1 in 80
+      // samples early against 1 in 15 late. A run should get harder as it
+      // goes rather than being uniformly rough, so that the fuel running
+      // low and the road turning bad arrive together. The rise is only in
+      // how OFTEN they appear, not in how big they are - scaling several
+      // difficulty knobs at once is what makes late-game hazards read as
+      // unfair rather than hard.
       //
       // Deep on purpose. The rig is 250px long on a 188px wheelbase, so it
       // simply bridges a small step: dropping the road 18-30px moved the

@@ -33,6 +33,13 @@
  * slams - landing flat after clearing a crest, driving hard into a rise -
  * so if ordinary driving is registering damage here, it is set too low and
  * the player will be written off for nothing they did wrong.
+ *
+ * FUEL: the tank is what stops a careful run being free, so it has to be
+ * tight without being unfair. A brisk run should finish with a comfortable
+ * margin, a careful one with very little, and going back for something you
+ * dropped should cost enough to be a real decision. If nothing ever runs
+ * dry the tank is doing nothing; if the careful strategies run dry the game
+ * has stopped being about looking after the load.
  */
 import Matter from 'matter-js'
 import { generateRoute, type Crate } from '../src/game/route.ts'
@@ -66,6 +73,7 @@ function stillness(label: string, load: boolean, throttle: number) {
   let sum = 0
   let max = 0
   for (let i = 0; i < 600; i++) {
+    world.fuel = 1
     if (throttle) drive(world, throttle)
     coast(world)
     Matter.Engine.update(world.engine, STEP)
@@ -144,7 +152,7 @@ function run(seed: number, strategy: Strategy, cap: number) {
 
   let steps = 0
   let braking = false
-  while (steps < 60 * 180 && world.chassis.position.x < world.finishX) {
+  while (steps < 60 * 180 && world.chassis.position.x < world.finishX && world.fuel > 0) {
     // Hold the brake until properly back under speed, rather than pulsing it
     // at the threshold sixty times a second - which no person does, and
     // which shakes a load off on its own.
@@ -164,6 +172,8 @@ function run(seed: number, strategy: Strategy, cap: number) {
   const reached = world.chassis.position.x >= world.finishX
   const result = {
     pct: route.maxPayout ? (reached ? currentPayout(world) : 0) / route.maxPayout : 0,
+    fuel: world.fuel,
+    dry: world.fuel <= 0 && !reached,
     lost: world.cargo.filter((c) => c.state !== 'deck').length,
     truckDamage: world.truckDamage,
     carried: world.cargo.length,
@@ -183,10 +193,11 @@ function balance(label: string, strategy: Strategy, cap: number) {
     `  carried ${avg((r) => r.carried).toFixed(1)}  lost ${avg((r) => r.lost).toFixed(1)}` +
     `  arrived ${String(rs.filter((r) => r.reached).length).padStart(2)}/${rs.length}` +
     `  ${avg((r) => r.seconds).toFixed(0)}s` +
-    `  rig damage avg ${(avg((r) => r.truckDamage) * 100).toFixed(0)}%` +
-    ` worst ${(Math.max(...rs.map((r) => r.truckDamage)) * 100).toFixed(0)}%` +
+    `  rig ${(avg((r) => r.truckDamage) * 100).toFixed(0)}%/${(Math.max(...rs.map((r) => r.truckDamage)) * 100).toFixed(0)}%` +
     `  wrecked ${rs.filter((r) => r.truckDamage >= 1).length}` +
-    `  off-deck ${rs.reduce((a, r) => a + r.offDeck, 0)}`,
+    `  fuel left ${(avg((r) => r.fuel) * 100).toFixed(0)}%` +
+    ` (worst ${(Math.min(...rs.map((r) => r.fuel)) * 100).toFixed(0)}%)` +
+    `  ran dry ${rs.filter((r) => r.dry).length}`,
   )
 }
 
@@ -228,6 +239,8 @@ function impacts() {
     for (let i = 0; i < 150; i++) Matter.Engine.update(world.engine, STEP)
     let steps = 0
     while (steps < 60 * 90 && world.chassis.position.x < world.finishX) {
+      // Impacts are about the road, not the tank.
+      world.fuel = 1
       drive(world, 1)
       coast(world)
       Matter.Engine.update(world.engine, STEP)
@@ -261,6 +274,8 @@ function recovery() {
   let collected = 0
   let stillOnAtTheEnd = 0
   let paidExtra = 0
+  let fuelSpentRecovering = 0
+  let strandedGoingBack = 0
 
   for (const seed of SEEDS) {
     const route = generateRoute(seed)
@@ -274,13 +289,15 @@ function recovery() {
 
     let steps = 0
     let recovering = false
+    let fuelAtFirstDrop = -1
     const beforeRecovery = new Set<number>()
 
-    while (steps < 60 * 150 && world.chassis.position.x < world.finishX) {
+    while (steps < 60 * 150 && world.chassis.position.x < world.finishX && world.fuel > 0) {
       const dropped = world.cargo.filter((c) => c.state === 'road')
 
       if (!recovering && dropped.length > 0) {
         recovering = true
+        if (fuelAtFirstDrop < 0) fuelAtFirstDrop = world.fuel
         for (const d of dropped) beforeRecovery.add(world.cargo.indexOf(d))
       }
 
@@ -310,11 +327,13 @@ function recovery() {
           }
         }
       } else {
-        // Gently, once something has already been dropped - flooring it
-        // again would just put the same crate back on the road and measure
-        // nothing except how fast that happens.
-        drive(world, beforeRecovery.size > 0 ? 0.4 : 1)
-        if (beforeRecovery.size > 0 && world.chassis.velocity.x > 2) brake(world)
+        // Back up to normal driving once everything is aboard again. An
+        // earlier version crawled at 0.4 throttle for the whole rest of the
+        // route after the first drop, which measured the cost of crawling
+        // rather than the cost of the detour.
+        const stillDown = world.cargo.some((c) => c.state === 'road')
+        drive(world, stillDown ? 0.4 : 1)
+        if (stillDown && world.chassis.velocity.x > 2) brake(world)
       }
       coast(world)
 
@@ -323,6 +342,8 @@ function recovery() {
       steps++
     }
 
+    if (fuelAtFirstDrop >= 0) fuelSpentRecovering += fuelAtFirstDrop - world.fuel
+    if (world.fuel <= 0) strandedGoingBack++
     for (const idx of beforeRecovery) {
       const entry = world.cargo[idx]
       if (entry.state === 'deck') {
@@ -337,6 +358,10 @@ function recovery() {
   console.log(
     `${stillOnAtTheEnd} of them were still on the deck at the drop, ` +
     `worth $${paidExtra.toLocaleString('en-US')} that would otherwise have been left on the road`,
+  )
+  console.log(
+    `the detours cost ${(fuelSpentRecovering / SEEDS.length * 100).toFixed(0)}% of a tank on average, ` +
+    `and stranded the rig ${strandedGoingBack}/${SEEDS.length} times`,
   )
   if (collected === 0) console.log('  NOTHING COULD BE PICKED UP - the mechanic is dead')
 }

@@ -23,7 +23,7 @@ import './TruckGame.css'
  * takes damage from real impacts, and enough of them end the run outright.
  */
 
-type Phase = 'loading' | 'driving' | 'reloading' | 'arrived' | 'failed' | 'wrecked'
+type Phase = 'loading' | 'driving' | 'reloading' | 'arrived' | 'failed' | 'wrecked' | 'stranded'
 
 const VIEW = { w: 900, h: 520 }
 
@@ -60,6 +60,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const [payout, setPayout] = useState(0)
   const [progress, setProgress] = useState(0)
   const [condition, setCondition] = useState(1)
+  const [fuel, setFuel] = useState(1)
   const [canRecover, setCanRecover] = useState(false)
   // Only the wreck has anything to watch before the result panel covers it.
   const [wreckPlayed, setWreckPlayed] = useState(false)
@@ -85,6 +86,12 @@ export default function TruckGame({ seed, onFinish }: Props) {
   // into world space with the exact camera that produced the frame.
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
   const wreckedAt = useRef(0)
+  // setPhase does not take effect until React re-renders, and the draw loop
+  // keeps running against the old value until then - so an ending whose
+  // condition stays true (out of fuel, say) would submit the same run once
+  // per frame in the meantime. The server rejects a re-used ticket, so this
+  // was harmless, but it was a burst of pointless requests.
+  const finished = useRef(false)
 
   const aiming = phase === 'loading' || phase === 'reloading'
 
@@ -110,9 +117,11 @@ export default function TruckGame({ seed, onFinish }: Props) {
     setPlaced(0)
     placedRef.current = 0
     reloadRef.current = null
+    finished.current = false
     setPayout(0)
     setProgress(0)
     setCondition(1)
+    setFuel(1)
     setCanRecover(false)
     setWreckPlayed(false)
     setReloadCrate(null)
@@ -503,7 +512,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       last = now
       // 'wrecked' steps too, without input: the debris is real physics and
       // has to fall somewhere.
-      if (phase !== 'arrived' && phase !== 'failed') {
+      if (phase !== 'arrived' && phase !== 'failed' && phase !== 'stranded') {
         const steps = Math.max(1, Math.round(elapsed / (1000 / 60)))
         for (let i = 0; i < steps; i++) {
           if (phase === 'driving') {
@@ -764,44 +773,58 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.fillStyle = 'rgba(0,0,0,0.2)'
         ctx.fillRect(-125, -13, 250, 3)
 
-        // Cab: a sloped nose, a deep windscreen and a door line. This is
-        // what makes it read as a truck rather than a plank on wheels.
+        // Cab.
+        //
+        // Sized against the real thing rather than by eye. A day-cab tractor
+        // is about 20ft of a 70ft combination and stands roughly twice the
+        // height of a flatbed deck, so on a 250px chassis the cab wants
+        // about 73px of length and should reach about twice the deck height
+        // above the road. The first version was 70x41 and sat noticeably
+        // squat on the frame; this one runs flush to the front of the
+        // chassis and up to where the mirrors would be.
         ctx.fillStyle = bodyColor
         ctx.beginPath()
-        ctx.moveTo(54, -13)
-        ctx.lineTo(54, -54)
-        ctx.lineTo(102, -54)
-        ctx.lineTo(124, -30)
-        ctx.lineTo(124, -13)
+        ctx.moveTo(52, -13)
+        ctx.lineTo(52, -64)
+        ctx.lineTo(105, -64)
+        ctx.lineTo(125, -35)
+        ctx.lineTo(125, -13)
         ctx.closePath()
         ctx.fill()
-        // Windscreen and side glass.
+        // Windscreen, raked back over the nose, and the door glass beside it.
         ctx.fillStyle = 'rgba(0,0,0,0.5)'
         ctx.beginPath()
-        ctx.moveTo(78, -49)
-        ctx.lineTo(99, -49)
-        ctx.lineTo(115, -32)
-        ctx.lineTo(78, -32)
+        ctx.moveTo(81, -58)
+        ctx.lineTo(102, -58)
+        ctx.lineTo(119, -37)
+        ctx.lineTo(81, -37)
         ctx.closePath()
         ctx.fill()
-        ctx.fillRect(60, -49, 14, 17)
-        // Door line and handle.
+        ctx.fillRect(59, -58, 17, 21)
+        // Door line and the sleeper seam behind it.
         ctx.strokeStyle = 'rgba(0,0,0,0.35)'
         ctx.lineWidth = 1.5
         ctx.beginPath()
-        ctx.moveTo(76, -50)
-        ctx.lineTo(76, -14)
+        ctx.moveTo(78, -60)
+        ctx.lineTo(78, -14)
+        ctx.moveTo(57, -60)
+        ctx.lineTo(57, -14)
         ctx.stroke()
-        // Exhaust stack behind the cab.
+        // Mirror arm, exhaust stack, grille and lamp.
+        ctx.strokeStyle = COLORS.muted
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(105, -56)
+        ctx.lineTo(114, -60)
+        ctx.stroke()
         ctx.fillStyle = COLORS.muted
-        ctx.fillRect(48, -62, 5, 42)
-        // Lamp and grille.
+        ctx.fillRect(45, -76, 6, 56)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fillRect(112, -33, 13, 7)
         ctx.fillStyle = COLORS.amber
         ctx.beginPath()
-        ctx.arc(119, -20, 3.5, 0, Math.PI * 2)
+        ctx.arc(120, -21, 3.5, 0, Math.PI * 2)
         ctx.fill()
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'
-        ctx.fillRect(112, -29, 12, 5)
         ctx.restore()
 
         for (const wheel of [world.rearWheel, world.frontWheel]) {
@@ -903,6 +926,8 @@ export default function TruckGame({ seed, onFinish }: Props) {
         setPayout(currentPayout(world))
 
         const submit = (result: { payout: number; delivered: number; lost: number }) => {
+          if (finished.current) return
+          finished.current = true
           onFinish?.(result)
           if (ticket) {
             void submitRun({
@@ -921,7 +946,17 @@ export default function TruckGame({ seed, onFinish }: Props) {
         }
         world.braking = false
 
-        if (world.truckDamage >= 1) {
+        setFuel(world.fuel)
+
+        if (finished.current) {
+          // Nothing left to decide; the phase change is on its way.
+        } else if (world.fuel <= 0 && Math.abs(world.chassis.velocity.x) < 0.2) {
+          // Stops where it stands. The load never arrived, so it pays
+          // nothing - the same as losing it, because that is what happened.
+          setPhase('stranded')
+          setPayout(0)
+          submit({ payout: 0, delivered: 0, lost: world.cargo.length })
+        } else if (world.truckDamage >= 1) {
           wreckedAt.current = now
           explodeTruck(world)
           setPhase('wrecked')
@@ -1049,6 +1084,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
   const nextCrate = route.crates[placed]
   const shownCrate = phase === 'reloading' ? reloadCrate : nextCrate
   const conditionPct = Math.max(0, Math.round(condition * 100))
+  const fuelPct = Math.max(0, Math.round(fuel * 100))
 
   return (
     <div className="tg" ref={shellRef}>
@@ -1058,6 +1094,9 @@ export default function TruckGame({ seed, onFinish }: Props) {
         <span className="tg-stat is-muted">Full load <b>${route.maxPayout.toLocaleString('en-US')}</b></span>
         <span className={`tg-stat${conditionPct <= 35 ? ' is-critical' : conditionPct <= 70 ? ' is-warn' : ''}`}>
           Rig <b>{conditionPct}%</b>
+        </span>
+        <span className={`tg-stat${fuelPct <= 15 ? ' is-critical' : fuelPct <= 35 ? ' is-warn' : ''}`}>
+          Fuel <b>{fuelPct}%</b>
         </span>
         <button type="button" className="tg-icon-btn" onClick={toggleFullscreen}>
           {isFullscreen ? 'Exit full screen' : 'Full screen'}
@@ -1159,17 +1198,22 @@ export default function TruckGame({ seed, onFinish }: Props) {
           </div>
         )}
 
-        {(phase === 'arrived' || phase === 'failed' || (phase === 'wrecked' && wreckPlayed)) && (
+        {(phase === 'arrived' || phase === 'failed' || phase === 'stranded'
+          || (phase === 'wrecked' && wreckPlayed)) && (
           <div className="tg-overlay">
             <p className="tg-overlay-title">
-              {phase === 'arrived' ? 'Delivered' : phase === 'wrecked' ? 'Rig totalled' : 'Load lost'}
+              {phase === 'arrived' ? 'Delivered'
+                : phase === 'wrecked' ? 'Rig totalled'
+                  : phase === 'stranded' ? 'Out of fuel' : 'Load lost'}
             </p>
             <p className="tg-overlay-text">
               {phase === 'arrived'
                 ? `$${payout.toLocaleString('en-US')} of $${route.maxPayout.toLocaleString('en-US')} arrived intact.`
                 : phase === 'wrecked'
                   ? 'One impact too many. The load never got there, and neither did the truck.'
-                  : 'Everything came off the trailer before the drop.'}
+                  : phase === 'stranded'
+                    ? 'Dry, short of the drop. Every second the engine runs costs fuel, and so does every trip back for something you dropped.'
+                    : 'Everything came off the trailer before the drop.'}
             </p>
             <button type="button" className="btn btn-primary" onClick={startOver}>
               New route
@@ -1219,7 +1263,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       <p className="tg-hint">
         {aiming
           ? 'Click the deck to set the item down · arrows to nudge · R to turn it · Enter to place'
-          : 'Arrows or A/D to drive · Space to brake · stop beside anything you drop and click it'}
+          : 'Arrows or A/D to drive · Space to brake · watch the fuel · stop beside anything you drop and click it'}
       </p>
     </div>
   )

@@ -98,7 +98,7 @@ def generate_route(seed: int) -> Route:
         if i > 12 and rand() < 0.06:
             height += _rand_int(rand, 5, 11)
             slope = 0.0
-        elif i > 16 and rand() < 0.035:
+        elif i > 16 and rand() < 0.012 + 0.055 * (i / ROUTE_SEGMENTS):
             height += _rand_int(rand, 40, 60)
             slope = 0.0
 
