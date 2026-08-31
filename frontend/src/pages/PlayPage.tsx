@@ -17,7 +17,8 @@ export default function PlayPage() {
           <p className="play-eyebrow">Coffee break</p>
           <h1 className="play-title">Keep on trucking</h1>
           <p className="play-text">
-            Nothing to dispatch for a minute? See how far you can get without hitting anything.
+            Nothing to dispatch for a minute? Load the trailer, and see how much of it you can
+            get to the drop in one piece.
           </p>
 
           <Suspense fallback={<p className="play-text">Loading the yard…</p>}>

@@ -15,6 +15,7 @@ import pytest
 
 from services.game_route import (
     BASE_GROUND_Y,
+    CRATE_SPANS,
     ROUTE_SEGMENTS,
     generate_route,
     mulberry32,
@@ -36,12 +37,13 @@ JS_PRNG_VECTORS = {
 JS_ROUTE_123456 = {
     "heights_head": [420, 420, 420],
     "heights_tail": [421.1446689494, 423.4379437141, 426.5895009756],
+    # (weight, kind, w, h, rate, fragile)
     "crates": [
-        (500, 41, 850, True),
-        (700, 47, 1050, True),
-        (700, 47, 650, False),
+        (500, "drum", 20, 40, 850, True),
+        (300, "crate", 24, 24, 250, False),
+        (500, "crate", 30, 30, 450, False),
     ],
-    "max_payout": 2550,
+    "max_payout": 1550,
     "distance": 3600,
 }
 
@@ -71,7 +73,7 @@ class TestRouteMatchesJavaScript:
         assert [round(h, 10) for h in route.heights[:3]] == JS_ROUTE_123456["heights_head"]
         assert [round(h, 10) for h in route.heights[-3:]] == JS_ROUTE_123456["heights_tail"]
         assert [
-            (c.weight, c.size, c.rate, c.fragile) for c in route.crates
+            (c.weight, c.kind, c.w, c.h, c.rate, c.fragile) for c in route.crates
         ] == JS_ROUTE_123456["crates"]
         assert route.max_payout == JS_ROUTE_123456["max_payout"]
         assert route.distance == JS_ROUTE_123456["distance"]
@@ -121,6 +123,27 @@ class TestRouteIsPlayable:
             heights = generate_route(seed).heights
             for a, b in zip(heights, heights[1:]):
                 assert abs(b - a) <= 18, f"seed {seed}: {a} -> {b} is taller than the wheel"
+
+    def test_dimensions_are_whole_numbers(self):
+        """Sizes are built from integer units on purpose - see the note in
+        generate_route. A fractional one means someone reintroduced a
+        rounded float, which is exactly where JavaScript and Python stop
+        agreeing."""
+        for seed in range(500):
+            for crate in generate_route(seed).crates:
+                assert crate.w == int(crate.w) and crate.h == int(crate.h)
+                assert crate.kind in CRATE_SPANS
+
+    def test_nothing_is_wider_than_the_deck(self):
+        """A single item that cannot fit between the headboard and the rear
+        lip is unloadable, and the player has no way to tell that the route
+        rather than their placement is at fault. The deck runs from -120 to
+        +54 of the chassis centre - 174px - and an item may be laid on its
+        side, so its shorter span is the one that has to fit."""
+        deck = 174
+        for seed in range(500):
+            for crate in generate_route(seed).crates:
+                assert min(crate.w, crate.h) <= deck
 
     def test_same_seed_is_reproducible(self):
         """The property the entire anti-cheat rests on."""

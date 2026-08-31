@@ -20,10 +20,22 @@ BASE_GROUND_Y = 420
 _UINT32 = 0xFFFFFFFF
 
 
+#: Footprint in whole units, upright: (width, height). A pallet is wide and
+#: low and forgiving; a drum stands tall on a small footprint and goes over
+#: on the first camber unless it is laid down or braced.
+CRATE_SPANS = {
+    "pallet": (5, 2),
+    "crate": (3, 3),
+    "drum": (2, 4),
+}
+
+
 @dataclass(frozen=True)
 class Crate:
     weight: int
-    size: int
+    kind: str
+    w: int
+    h: int
     rate: int
     fragile: bool
 
@@ -93,10 +105,22 @@ def generate_route(seed: int) -> Route:
     for _ in range(crate_count):
         weight = _rand_int(rand, 2, 8) * 100
         fragile = rand() < 0.35
+        roll = rand()
+        kind = "pallet" if roll < 0.38 else "crate" if roll < 0.76 else "drum"
+
+        # Whole multiples of a per-weight unit, never a rounded float:
+        # round() here is banker's rounding and Math.round() in the browser
+        # is not, so an exact half would silently split the two sides apart.
+        # weight is always a multiple of 100, so weight // 100 is exact.
+        unit = 5 + weight // 100
+        wu, hu = CRATE_SPANS[kind]
+
         crates.append(
             Crate(
                 weight=weight,
-                size=26 + round(weight / 100) * 3,
+                kind=kind,
+                w=unit * wu,
+                h=unit * hu,
                 rate=round((weight * 0.9 + (400 if fragile else 0)) / 50) * 50,
                 fragile=fragile,
             )

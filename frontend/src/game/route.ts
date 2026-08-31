@@ -21,11 +21,21 @@ export const SEGMENT_WIDTH = 40
 export const ROUTE_SEGMENTS = 90
 export const BASE_GROUND_Y = 420
 
+/**
+ * What kind of thing this is, which is really a statement about its centre
+ * of gravity. A pallet is wide and low and forgiving; a drum stands tall on
+ * a small footprint and will go over on the first camber unless it is laid
+ * down or braced by something beside it.
+ */
+export type CrateKind = 'pallet' | 'crate' | 'drum'
+
 export interface Crate {
   /** Kilograms - drives both the physics mass and the payout. */
   weight: number
-  /** Square crates keep the loading puzzle readable; size follows weight. */
-  size: number
+  kind: CrateKind
+  /** Footprint in pixels, upright. The player can rotate when loading. */
+  w: number
+  h: number
   /** What this crate pays if it arrives undamaged. */
   rate: number
   fragile: boolean
@@ -100,17 +110,34 @@ export function generateRoute(seed: number): Route {
     heights.push(height)
   }
 
-  // Cargo: 3-6 crates, mixed weights. Fragile ones pay more and take damage
-  // from smaller impacts, so the load-out is a real decision rather than
-  // "take everything".
+  // Cargo: 3-6 items, mixed weights and mixed shapes. Fragile ones pay more
+  // and take damage from smaller impacts, so the load-out is a real decision
+  // rather than "take everything".
   const crateCount = randInt(rand, 3, 6)
   const crates: Crate[] = []
   for (let i = 0; i < crateCount; i++) {
     const weight = randInt(rand, 2, 8) * 100
     const fragile = rand() < 0.35
+    const roll = rand()
+    const kind: CrateKind = roll < 0.38 ? 'pallet' : roll < 0.76 ? 'crate' : 'drum'
+
+    // Dimensions are whole multiples of a per-weight unit, never a rounded
+    // float. Math.round and Python's round() disagree on exact halves, and
+    // the server has to reproduce these numbers - so there are no halves to
+    // disagree about. weight is a multiple of 100, so weight / 100 is exact.
+    const unit = 5 + weight / 100
+    const spans: Record<CrateKind, [number, number]> = {
+      pallet: [5, 2],
+      crate: [3, 3],
+      drum: [2, 4],
+    }
+    const [wu, hu] = spans[kind]
+
     crates.push({
       weight,
-      size: 26 + Math.round(weight / 100) * 3,
+      kind,
+      w: unit * wu,
+      h: unit * hu,
       // Round hundreds, scaled off weight, with a premium for fragile.
       rate: Math.round((weight * 0.9 + (fragile ? 400 : 0)) / 50) * 50,
       fragile,

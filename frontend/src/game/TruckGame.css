@@ -68,6 +68,16 @@
   aspect-ratio: 900 / 520;
 }
 
+/* While loading, the canvas IS the control - the player aims at the deck
+   with it. touch-action: none stops a finger dragged across the deck being
+   claimed by the page as a scroll, which on a phone otherwise means the
+   whole loading phase is unusable. It is scoped to the loading phase so
+   ordinary page scrolling still works over the canvas while driving. */
+.tg-canvas.is-aiming {
+  cursor: crosshair;
+  touch-action: none;
+}
+
 .tg:fullscreen .tg-canvas {
   aspect-ratio: auto;
   height: calc(100vh - 190px);
@@ -101,16 +111,58 @@
   background: color-mix(in srgb, var(--card) 86%, transparent);
 }
 
-/* The loading overlay holds real controls, so unlike the end-of-run one it
-   must stay interactive. */
+/* The loading overlay sits ON TOP of the deck the player is clicking, so it
+   has to let pointer events straight through; only the panel takes them
+   back. Without this the overlay silently swallowed every click aimed at
+   the trailer. */
 .tg-overlay-loading {
   justify-content: flex-end;
-  padding-bottom: 28px;
+  padding: 0;
+  pointer-events: none;
+  background: none;
+}
+
+.tg-panel {
+  pointer-events: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 16px;
   background: linear-gradient(
     to top,
-    color-mix(in srgb, var(--card) 94%, transparent) 40%,
+    color-mix(in srgb, var(--card) 96%, transparent) 55%,
     transparent 100%
   );
+}
+
+.tg-panel-line {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.tg-panel-line b {
+  color: var(--text);
+}
+
+.tg-panel-rest {
+  color: var(--hint);
+}
+
+.tg-panel-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hint);
+}
+
+.tg-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .tg-overlay-title {
@@ -126,12 +178,6 @@
   color: var(--text-muted);
   margin: 0;
   max-width: 48ch;
-}
-
-.tg-place-row {
-  display: flex;
-  gap: 8px;
-  margin: 4px 0;
 }
 
 .tg-controls {
@@ -176,6 +222,16 @@
   .tg-hud {
     gap: 12px;
     font-size: 11px;
+  }
+
+  /* The item description and the hint together push the buttons off a small
+     screen, and the hint repeats what the buttons already say. */
+  .tg-panel-hint {
+    display: none;
+  }
+
+  .tg-panel {
+    padding: 10px 10px 12px;
   }
   /* The keyboard hint means nothing on a phone, where the pedals are the
      only control. */
