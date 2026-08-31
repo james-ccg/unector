@@ -4,6 +4,9 @@ import {
   generateRoute, mulberry32, SEGMENT_WIDTH, BASE_GROUND_Y as BASE,
   type Crate, type Route,
 } from './route'
+
+/** Matches RUNOFF in engine.ts - the apron of road past each end. */
+const RUNOFF = 900
 import { claimTicket, refillTickets, submitRun, flushQueue, type Ticket } from './scores'
 import {
   createWorld, loadCrate, reloadCargo, recoverableCargo, explodeTruck, planDrop,
@@ -354,6 +357,38 @@ export default function TruckGame({ seed, onFinish }: Props) {
       })
     }
 
+    /** Birds, because an empty sky over a long road is the emptiest part of
+     *  it. They cross slowly, well behind everything else, and flap on their
+     *  own clocks so they never move as a block. */
+    const birds = Array.from({ length: 9 }, () => ({
+      x: treeRand() * route.heights.length * SEGMENT_WIDTH,
+      y: BASE - 150 - treeRand() * 190,
+      speed: 0.35 + treeRand() * 0.5,
+      scale: 0.7 + treeRand() * 0.7,
+      phase: treeRand() * Math.PI * 2,
+    }))
+
+    const drawBirds = (now: number, from: number, to: number) => {
+      const span = route.heights.length * SEGMENT_WIDTH
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'
+      ctx.lineWidth = 1.6
+      for (const bird of birds) {
+        // Wrapped rather than respawned, so a bird never pops into being in
+        // the middle of the screen.
+        const x = ((bird.x + (now / 1000) * bird.speed * 26) % (span + 400)) - 200
+        if (x < from - 40 || x > to + 40) continue
+        const beat = Math.sin(now / 260 + bird.phase)
+        const w = 6 * bird.scale
+        const lift = beat * 2.4 * bird.scale
+        const y = bird.y + Math.sin(now / 1700 + bird.phase) * 9
+        ctx.beginPath()
+        ctx.moveTo(x - w, y + lift)
+        ctx.quadraticCurveTo(x - w * 0.4, y - lift * 0.8, x, y)
+        ctx.quadraticCurveTo(x + w * 0.4, y - lift * 0.8, x + w, y + lift)
+        ctx.stroke()
+      }
+    }
+
     const drawTree = (x: number, groundY: number, scale: number, tint: string) => {
       const h = 58 * scale
       ctx.save()
@@ -408,7 +443,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       drum: { base: '#6f7b86', light: 'rgba(226,240,255,0.2)', dark: 'rgba(16,24,32,0.45)' },
     }
 
-    const drawCargo = (entry: CargoBody) => {
+    const drawCargo = (entry: CargoBody, world: TruckWorld) => {
       const { body, w, h } = entry
       const skin = MATERIAL[entry.crate.kind]
       ctx.save()
@@ -485,6 +520,23 @@ export default function TruckGame({ seed, onFinish }: Props) {
       // flat cut-outs.
       ctx.fillStyle = skin.light
       ctx.fillRect(-w / 2, -h / 2, w, 2.5)
+
+      // Soaked: darker, and running. A wet load is heavier and the deck it
+      // is sitting on has lost its grip, so it needs to be obvious at a
+      // glance which items took the spill.
+      if (entry.wetUntil > world.engine.timing.timestamp) {
+        ctx.fillStyle = 'rgba(38,86,132,0.42)'
+        ctx.fillRect(-w / 2, -h / 2, w, h)
+        ctx.strokeStyle = 'rgba(150,205,255,0.55)'
+        ctx.lineWidth = 1.5
+        for (let i = 0; i < 3; i++) {
+          const dx = -w / 2 + (w * (i + 1)) / 4
+          ctx.beginPath()
+          ctx.moveTo(dx, h / 2 - 2)
+          ctx.lineTo(dx, h / 2 + 3 + (i % 2) * 2)
+          ctx.stroke()
+        }
+      }
 
       // Damage.
       //
@@ -707,6 +759,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
         ctx.fill()
         ctx.restore()
       }
+      drawBirds(now, camX, camX + VIEW.w / zoom)
       drawRidge(0.35, 96, 0.5, 'rgba(255,255,255,0.045)')
       drawRidge(0.6, 44, 0.7, 'rgba(0,0,0,0.22)')
 
@@ -731,17 +784,24 @@ export default function TruckGame({ seed, onFinish }: Props) {
       }
 
       const surface = new Path2D()
-      surface.moveTo(0, route.heights[0])
-      for (let i = 1; i < route.heights.length; i++) {
+      surface.moveTo(-RUNOFF, route.heights[0])
+      for (let i = 0; i < route.heights.length; i++) {
         surface.lineTo(i * SEGMENT_WIDTH, route.heights[i])
       }
+      surface.lineTo(
+        (route.heights.length - 1) * SEGMENT_WIDTH + RUNOFF,
+        route.heights[route.heights.length - 1],
+      )
 
+      const lastX = (route.heights.length - 1) * SEGMENT_WIDTH
       const earth = new Path2D()
-      earth.moveTo(0, floor)
+      earth.moveTo(-RUNOFF, floor)
+      earth.lineTo(-RUNOFF, route.heights[0])
       for (let i = 0; i < route.heights.length; i++) {
         earth.lineTo(i * SEGMENT_WIDTH, route.heights[i])
       }
-      earth.lineTo((route.heights.length - 1) * SEGMENT_WIDTH, floor)
+      earth.lineTo(lastX + RUNOFF, route.heights[route.heights.length - 1])
+      earth.lineTo(lastX + RUNOFF, floor)
       earth.closePath()
       ctx.fillStyle = grain
       ctx.fill(earth)
@@ -1140,7 +1200,7 @@ export default function TruckGame({ seed, onFinish }: Props) {
       const withinReach = phase === 'driving' ? recoverableCargo(world) : []
       for (const entry of world.cargo) {
         if (entry.state === 'gone') continue
-        drawCargo(entry)
+        drawCargo(entry, world)
         // Ring anything lying on the road, brightly if it is close enough to
         // collect - so going back for it is an offer rather than a guess.
         if (entry.state === 'road' && phase === 'driving') {

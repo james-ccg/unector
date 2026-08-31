@@ -46,6 +46,17 @@ export interface CargoBody {
   /** 0 = pristine, 1 = destroyed. Accumulated from impact impulses. */
   damage: number
   state: CargoState
+  /**
+   * Mass before anything soaked into it.
+   *
+   * Traction is worked out from this rather than from the body's current
+   * mass, so water taken on is pure burden: it makes the rig heavier to move
+   * without giving the tyres anything extra to hold with. That is the whole
+   * point of the effect - a wet load should pull away like a wet load.
+   */
+  dryMass: number
+  /** Engine timestamp the load dries out at, or 0 if it is not wet. */
+  wetUntil: number
   /** Engine timestamp until which impacts are ignored - see loadCrate. */
   settledAt: number
 }
@@ -78,8 +89,8 @@ export interface TruckWorld {
    * animation, and the alternative is the physics knowing about timing.
    */
   events: WorldEvent[]
-  /** A liquid load has burst over the deck, and nothing grips on it now. */
-  deckSoaked: boolean
+  /** Engine timestamp the deck dries out at, or 0 if it is dry. */
+  deckSoakedUntil: number
   /** What is left in the tank, 1 to 0. Only burns while under way. */
   fuel: number
   /** Engine timestamp until which impacts on the rig are ignored. */
@@ -112,6 +123,30 @@ const CHASSIS_H = 26
 const WHEEL_R = 22
 // Cargo sits ON this, not in it - the bed is an open flatbed on purpose.
 const BED_H = 8
+/**
+ * How far the road runs beyond the route at each end.
+ *
+ * Because there is a building at the start and a yard at the finish, and a
+ * player who reverses out of the dock to see what is behind them should find
+ * ground there rather than fall off the edge of the world.
+ */
+const RUNOFF = 900
+/**
+ * Rolling resistance at the road surface.
+ *
+ * Effectively zero, because the rig slides on its wheels rather than rolling
+ * them - any contact friction here is a lie about rolling. Everything the
+ * tyres are meant to do (pull, stop, hold on a slope) is an explicit force
+ * in drive(), brake() and coast() instead.
+ *
+ * The exact value matters far more than it looks. Measured under a constant
+ * half-g of tractive effort on flat ground, 0.03 caps the rig at 2.6px a
+ * frame and 0.002 lets it reach 8.6. Anything that feels like a reasonable
+ * small number here is not small enough.
+ */
+const GROUND_FRICTION = 0.002
+/** Drag on freight lying in the road - see updateCargoState. */
+const ROAD_DRAG = 0.08
 
 /**
  * The usable deck, as offsets from the chassis centre: the inner faces of
@@ -200,14 +235,75 @@ export function createWorld(route: Route): TruckWorld {
     const length = Math.hypot(x2 - x1, y2 - y1)
     const angle = Math.atan2(y2 - y1, x2 - x1)
 
+    // Butted end to end, not overlapped. Overlapping them was an attempt at
+    // stopping the wheels catching on the seams, which turned out not to be
+    // a problem at all - and the doubled contacts at every join pushed a
+    // parked empty rig around at 0.03px a frame, which is the one thing the
+    // ground must never do.
     const slab = Matter.Bodies.rectangle(midX, midY + 30, length, 60, {
       isStatic: true,
       angle,
-      friction: 0.9,
+      // The road is the frictionless half of the contact, not the wheels.
+      //
+      // Matter reads friction off the PARENT of a compound body, never off
+      // the part - pair.friction is min(parentA, parentB) and
+      // pair.frictionStatic is max(parentA, parentB). So setting the wheels
+      // to 0.002 bought nothing at all: the rig parent's own values decided
+      // every contact it made. It also meant the deck's carefully-set grip
+      // of 1.4 had never once been used - the load was riding on whatever
+      // the parent said, which is the same 0.002 the wheels had.
+      //
+      // Since one number has to serve every contact the rig makes, the rig
+      // keeps the high one, for the load, and the road carries the low one,
+      // for the wheels.
+      friction: 0.002,
+      // Zero, and this matters more than it looks.
+      //
+      // Matter takes the MINIMUM of the two bodies' `friction` for a contact
+      // but the MAXIMUM of their `frictionStatic`. So the wheels being
+      // frictionless bought nothing: the road's default static friction of
+      // 0.5 won every contact and quietly held the rig. It is what put a
+      // break-away cliff in the old contact-driven drive model, and with the
+      // gentler tractive force of a geared engine it stopped the truck
+      // getting past 1px a frame at all - measured with drag and rolling
+      // resistance both switched off, so there was nothing else left to
+      // blame. Cargo that falls off still comes to rest, on kinetic friction.
+      frictionStatic: 0,
       label: 'ground',
       render: { fillStyle: '#2a2a26' },
     })
+    // Assigned AFTER construction, and that is the whole point.
+    //
+    // Passing isStatic in the options makes Matter run Body.setStatic, which
+    // sets friction = 1 unconditionally - so every friction value ever given
+    // to these slabs in the constructor was thrown away, and the wheels have
+    // been sliding on friction 1.0 the entire time. That is what put a
+    // break-away cliff in the drive model, what made lowering the wheels'
+    // own friction achieve nothing, and what left the rig unable to get past
+    // 2.6px a frame under a force that reaches 25 in open space.
+    slab.friction = GROUND_FRICTION
+    slab.frictionStatic = 0
     bodies.push(slab)
+  }
+
+  // Apron at each end, so the yard and the dock stand on something. Without
+  // these the world simply stops at the first and last sample, and reversing
+  // away from the loading dock drops the rig into nothing.
+  for (const [from, to, height] of [
+    [-RUNOFF, 0, route.heights[0]],
+    [
+      (route.heights.length - 1) * SEGMENT_WIDTH,
+      (route.heights.length - 1) * SEGMENT_WIDTH + RUNOFF,
+      route.heights[route.heights.length - 1],
+    ],
+  ] as [number, number, number][]) {
+    const apron = Matter.Bodies.rectangle(
+      (from + to) / 2, height + 30, to - from, 60,
+      { isStatic: true, label: 'ground', render: { fillStyle: '#2a2a26' } },
+    )
+    apron.friction = GROUND_FRICTION
+    apron.frictionStatic = 0
+    bodies.push(apron)
   }
 
   // ---- Truck ---------------------------------------------------------
@@ -289,6 +385,11 @@ export function createWorld(route: Route): TruckWorld {
     restitution: 0.02,
     label: 'wheel',
   }
+  // Tried and rejected: building these oversized with 200 sides and scaling
+  // them down, on the theory that a 22px circle is really a 22-gon and a rig
+  // that slides rather than rolls has to walk over every flat. It measured
+  // WORSE - top speed 0.93 against 1.44 - so whatever is absorbing the drive
+  // force at low tractive effort, it is not the faceting.
   const rearWheel = Matter.Bodies.circle(
     TRUCK_START_X + REAR_AXLE.x, startY + REAR_AXLE.y, WHEEL_R, wheelOptions,
   )
@@ -298,12 +399,17 @@ export function createWorld(route: Route): TruckWorld {
 
   const truckBody = Matter.Body.create({
     parts: [chassis, bed, headboard, rearLip, rearWheel, frontWheel],
-    friction: 0.002,
+    // This is the deck's grip, and the only friction the rig has - see the
+    // note on the ground slabs above.
+    friction: 1.2,
     label: 'truck',
   })
   // Stands in for rolling resistance and engine braking: lifting off has to
   // slow the rig down, or every descent ends at terminal velocity.
   truckBody.frictionAir = 0.02
+  // Static friction is the max of the two parents, so this has to be zero or
+  // the road holds the rig however low the road's own value is.
+  truckBody.frictionStatic = 0
 
   bodies.push(truckBody)
 
@@ -388,7 +494,7 @@ export function createWorld(route: Route): TruckWorld {
     debris: [],
     shards: [],
     events: [],
-    deckSoaked: false,
+    deckSoakedUntil: 0,
     fuel: 1,
     // The rig is built above the road and drops onto it. Without a grace
     // period that first landing is an impact like any other, and the truck
@@ -477,6 +583,8 @@ export function loadCrate(
   // a fragile crate 12% damage before the truck had even moved.
   const entry: CargoBody = {
     body, crate, w, h, damage: 0, state: 'deck',
+    dryMass: body.mass,
+    wetUntil: 0,
     settledAt: world.engine.timing.timestamp + 400,
   }
   world.cargo.push(entry)
@@ -505,19 +613,29 @@ export function loadCrate(
  * between them is what matters - the cap decides the top speed and the grip
  * decides how long it takes to get there - so both moved together.
  */
-const GRIP = 0.5
-const BRAKE = 0.34
+const GRIP = 0.62
+const BRAKE = 0.4
 /** Rolling resistance. Small, constant, and the thing that finally stops it. */
 const ROLL = 0.01
-/** Standing in for static friction, so a parked rig does not creep downhill. */
-const HOLD = 0.3
+/**
+ * The parking brake, as a fraction of weight.
+ *
+ * Big enough that its band covers the whole "stopped" range. At 0.3 the
+ * brake only engaged below 0.12px a frame while gravity on a slope adds
+ * 0.07 every frame, so the rig spent alternate frames inside and outside
+ * the band and crept downhill at 0.03px a frame - visible as the entire
+ * scene drifting while the truck sat still being loaded. Nothing in the
+ * game is steep enough to overcome 0.9g, which is the intent: a parked
+ * truck stays where it was parked.
+ */
+const HOLD = 0.9
 /** Below this the rig counts as stopped, for holding and for picking up. */
 const STOPPED = 0.35
 
 /** Top speed the throttle will push to. Exported so the checks can express
  *  a driving style as a fraction of it rather than a bare number that goes
  *  stale the moment the rig is retuned. */
-export const MAX_SPEED = 7
+export const MAX_SPEED = 7.6
 
 /**
  * Fuel burn per second: a fixed amount for having the engine running, and
@@ -540,8 +658,8 @@ export const MAX_SPEED = 7
  * finishes with very little left, and a detour to pick up a dropped crate
  * costs about a fifth of it. So every one of those is now a choice.
  */
-const FUEL_IDLE_PER_SECOND = 0.0165
-const FUEL_DRIVE_PER_SECOND = 0.0165
+const FUEL_IDLE_PER_SECOND = 0.0147
+const FUEL_DRIVE_PER_SECOND = 0.0147
 
 /** (1000/60)^2 - see coast(). Matter scales an applied force by this. */
 const STEP_SQUARED = (1000 / 60) ** 2
@@ -564,7 +682,47 @@ const TAPER_FROM = 0.82
  * force in over about a third of a second is what a driver with a load on
  * actually does, and it makes the pedal something you can be gentle with.
  */
-const THROTTLE_RATE = 0.05
+const THROTTLE_RATE = 0.012
+
+/**
+ * Gear tops, as fractions of the rig's top speed.
+ *
+ * A loaded truck does not simply accelerate: it pulls hard from rest, runs
+ * out of that gear, shifts, and pulls again. Without this the rig went from
+ * standing to full speed in about six tenths of a second, which is what a
+ * hot hatch does and reads as one.
+ *
+ * Modelled as a sawtooth on the tractive force rather than with a shift
+ * timer: full pull at the bottom of each gear and less at the top of it, so
+ * the acceleration visibly steps as it climbs, and no state has to be kept
+ * between frames.
+ *
+ * The dip is shallow - a quarter - and that is not a style choice. Below
+ * roughly 0.5g of tractive effort the rig cannot get moving on the ground
+ * at all, whatever the arithmetic says it should do; measured with air drag
+ * and rolling resistance both switched off, a force that accelerates it
+ * cleanly to 25px a frame in open space leaves it sitting at 1.4 on the
+ * road. A deeper sawtooth would drop it under that floor at every gear
+ * change and stall it. Most of the gradual pull-away comes from the
+ * throttle ramp instead, which is a slower and much safer lever.
+ */
+const GEARS = [0.16, 0.34, 0.55, 0.78, 1]
+/** How much of the pull is left at the top of a gear, before the change. */
+const GEAR_FALLOFF = 0.25
+
+/** Where in the current gear the rig is, as a multiplier on its pull. */
+function gearPull(speed: number): number {
+  const ratio = Math.min(1, speed / MAX_SPEED)
+  let floor = 0
+  for (const top of GEARS) {
+    if (ratio <= top) {
+      const through = (ratio - floor) / (top - floor)
+      return 1 - GEAR_FALLOFF * through
+    }
+    floor = top
+  }
+  return 1 - GEAR_FALLOFF
+}
 
 /**
  * A force of `g` times the weight the tyres are carrying - the rig plus
@@ -581,7 +739,10 @@ function weightForce(world: TruckWorld, g: number): number {
   const gravity = world.engine.gravity
   let mass = world.chassis.mass
   for (const entry of world.cargo) {
-    if (entry.state === 'deck') mass += entry.body.mass
+    // Dry mass, deliberately. Water taken on makes the rig heavier to move
+    // without giving the tyres anything more to push against, which is what
+    // makes a soaked load pull away like one.
+    if (entry.state === 'deck') mass += entry.dryMass
   }
   return g * mass * gravity.y * gravity.scale
 }
@@ -641,7 +802,10 @@ export function drive(world: TruckWorld, throttle: number) {
   // than the rig accelerating - worth showing, since it is the moment the
   // driver should ease off.
   world.slipping = Math.abs(world.throttle) > 0.9 && Math.abs(vx) < 0.4
-  applyAtRoad(world, world.throttle * fade * weightForce(world, GRIP))
+  applyAtRoad(
+    world,
+    world.throttle * fade * gearPull(Math.abs(vx)) * weightForce(world, GRIP),
+  )
 }
 
 /**
@@ -684,16 +848,28 @@ export function coast(world: TruckWorld) {
   const cancelling = (-vx * world.chassis.mass) / STEP_SQUARED
 
   if (speed < STOPPED && Math.abs(world.throttle) < 0.05 && !world.braking) {
-    // Static friction: opposes motion up to a limit and never beyond what
-    // is needed. A flat force of the full limit overshoots zero, flips sign
-    // on the next step and does it again - which showed up as a parked
-    // empty truck vibrating 0.018px every frame once the wheels stopped
-    // providing friction of their own.
+    // The parking brake.
+    //
+    // A force cannot do this job. Cancelling the velocity with one leaves
+    // gravity free to put it back on the very next step, so on any slope the
+    // rig sat in a loop - accelerate, cancel, accelerate - and crept
+    // downhill at 0.03px a frame for ever, which reads on screen as the
+    // whole scene drifting. Setting the velocity outright is what a brake
+    // actually does, and the road under these wheels is frictionless by
+    // design, so nothing else was ever going to hold it.
+    //
+    // The limit still matters: past it the brake is overwhelmed and the rig
+    // rolls, which is what should happen on something genuinely steep.
     const limit = weightForce(world, HOLD)
-    const held = Math.max(-limit, Math.min(limit, cancelling))
+    if (Math.abs(cancelling) <= limit) {
+      Matter.Body.setVelocity(world.chassis, { x: 0, y: world.chassis.velocity.y })
+      return
+    }
     // At the centre of mass, not the road: this is a distributed hold, and
     // putting it at the contact line would pitch a stationary rig.
-    Matter.Body.applyForce(world.chassis, world.chassis.position, { x: held, y: 0 })
+    Matter.Body.applyForce(
+      world.chassis, world.chassis.position, { x: Math.sign(cancelling) * limit, y: 0 },
+    )
     return
   }
 
@@ -753,6 +929,7 @@ export function explodeTruck(world: TruckWorld) {
 
 /** Marks cargo that has fallen off the truck or off the world. */
 export function updateCargoState(world: TruckWorld) {
+  dryOut(world)
   for (const entry of world.cargo) {
     if (entry.state === 'gone') continue
 
@@ -793,7 +970,13 @@ export function updateCargoState(world: TruckWorld) {
     // is genuinely on it can ever be below this line.
     const offTheSide = alongDeck < DECK_MIN_OFFSET - 26 || alongDeck > DECK_MAX_OFFSET + 26
     const belowTheDeck = aboveDeck > world.deckLocalY + 10
-    if (offTheSide || belowTheDeck) entry.state = 'road'
+    if (offTheSide || belowTheDeck) {
+      entry.state = 'road'
+      // The road is frictionless for the rig's benefit, so something that
+      // lands on it would otherwise skate away for ever. Air drag stands in
+      // for the grip the surface is not allowed to have.
+      entry.body.frictionAir = ROAD_DRAG
+    }
   }
 }
 
@@ -822,6 +1005,19 @@ const BLAST_RADIUS = 210
 const SPILL_DAMAGE = 0.12
 /** What is left of the deck's grip once a liquid load has burst over it. */
 const SOAKED_FRICTION = 0.3
+/** How far a spill reaches across the deck. */
+const SPILL_RADIUS = 150
+/** How much heavier a soaked item gets. Water is not light. */
+const SOAKED_MASS = 1.5
+/**
+ * How long a spill takes to drain and dry, in engine milliseconds.
+ *
+ * Temporary on purpose. A permanent slippery deck turns one burst drum into
+ * a run that is already over, which is a punishment rather than a problem to
+ * drive around - and driving around it is the interesting part: ease off,
+ * get through the next few hills gently, and it comes back.
+ */
+const DRY_OUT_MS = 15000
 
 function destroyCargo(world: TruckWorld, entry: CargoBody) {
   const { x, y } = entry.body.position
@@ -848,11 +1044,32 @@ function destroyCargo(world: TruckWorld, entry: CargoBody) {
 
   if (entry.crate.hazard === 'flammable') {
     world.events.push({ kind: 'blast', x, y })
+
+    // The rig, if it is close enough to be caught in it.
     const reach = Math.hypot(x - world.chassis.position.x, y - world.chassis.position.y)
     if (reach < BLAST_RADIUS) {
-      world.truckDamage = Math.min(1, world.truckDamage + BLAST_DAMAGE * (1 - reach / BLAST_RADIUS))
+      const share = 1 - reach / BLAST_RADIUS
+      world.truckDamage = Math.min(1, world.truckDamage + BLAST_DAMAGE * share)
+      // And it is shoved. A blast that leaves the truck sitting exactly where
+      // it was reads as a decal rather than an explosion.
+      Matter.Body.setVelocity(world.chassis, {
+        x: world.chassis.velocity.x + Math.sign(world.chassis.position.x - x || 1) * share * 3.5,
+        y: world.chassis.velocity.y - share * 4.5,
+      })
+      Matter.Body.setAngularVelocity(world.chassis, world.chassis.angularVelocity - share * 0.09)
     }
-    // Everything loose near it gets thrown.
+
+    // Everything else near it is thrown clear AND scorched. Being next to a
+    // drum that goes up has to cost something, or placing the dangerous item
+    // beside the valuable one carries no risk at all.
+    for (const other of world.cargo) {
+      if (other === entry || other.state === 'gone') continue
+      const dist = Math.hypot(other.body.position.x - x, other.body.position.y - y)
+      if (dist > BLAST_RADIUS) continue
+      const share = 1 - dist / BLAST_RADIUS
+      other.damage = Math.min(1, other.damage + share * BLAST_DAMAGE)
+    }
+
     const nearby: Matter.Body[] = [
       ...world.cargo.filter((c) => c.state !== 'gone').map((c) => c.body),
       ...world.shards.map((sh) => sh.body),
@@ -871,14 +1088,44 @@ function destroyCargo(world: TruckWorld, entry: CargoBody) {
   } else if (entry.crate.hazard === 'liquid') {
     world.events.push({ kind: 'spill', x, y })
     world.truckDamage = Math.min(1, world.truckDamage + SPILL_DAMAGE)
-    if (!world.deckSoaked) {
-      world.deckSoaked = true
-      for (const part of world.chassis.parts) {
-        if (part.label === 'bed') {
-          part.friction *= SOAKED_FRICTION
-          part.frictionStatic *= SOAKED_FRICTION
-        }
-      }
+    soakDeck(world)
+    // Anything it runs over takes it on. A soaked crate is heavier and holds
+    // the water until it dries.
+    for (const other of world.cargo) {
+      if (other === entry || other.state === 'gone') continue
+      const dist = Math.hypot(other.body.position.x - x, other.body.position.y - y)
+      if (dist > SPILL_RADIUS) continue
+      soakCargo(world, other)
+    }
+  }
+}
+
+/** Wets one item: heavier until it dries, and visibly so. */
+function soakCargo(world: TruckWorld, entry: CargoBody) {
+  entry.wetUntil = world.engine.timing.timestamp + DRY_OUT_MS
+  Matter.Body.setMass(entry.body, entry.dryMass * SOAKED_MASS)
+}
+
+/** Wets the deck, so nothing on it grips properly until it dries. */
+function soakDeck(world: TruckWorld) {
+  const alreadyWet = world.deckSoakedUntil > world.engine.timing.timestamp
+  world.deckSoakedUntil = world.engine.timing.timestamp + DRY_OUT_MS
+  if (alreadyWet) return
+  // On the parent, because that is where the deck's grip actually lives.
+  world.chassis.friction *= SOAKED_FRICTION
+}
+
+/** Puts the grip and the weight back once everything has dried out. */
+function dryOut(world: TruckWorld) {
+  const now = world.engine.timing.timestamp
+  if (world.deckSoakedUntil > 0 && now >= world.deckSoakedUntil) {
+    world.deckSoakedUntil = 0
+    world.chassis.friction /= SOAKED_FRICTION
+  }
+  for (const entry of world.cargo) {
+    if (entry.wetUntil > 0 && now >= entry.wetUntil) {
+      entry.wetUntil = 0
+      if (entry.state !== 'gone') Matter.Body.setMass(entry.body, entry.dryMass)
     }
   }
 }
@@ -923,6 +1170,7 @@ export function reloadCargo(
   entry.w = spot.w
   entry.h = spot.h
   entry.state = 'deck'
+  entry.body.frictionAir = 0.01
   entry.settledAt = world.engine.timing.timestamp + 400
 }
 

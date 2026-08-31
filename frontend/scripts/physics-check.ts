@@ -455,8 +455,10 @@ function hazards() {
         updateCargoState(world)
       }
 
-      const deck = world.chassis.parts.find((part) => part.label === 'bed')
-      const gripBefore = deck ? deck.friction : 0
+      // The deck's grip lives on the compound parent, not on the bed part -
+      // Matter reads friction off the parent for every contact a compound
+      // body makes, so the part's own value is never consulted.
+      const gripBefore = world.chassis.friction
       const damageBefore = world.truckDamage
 
       // Write it off outright and let updateCargoState notice.
@@ -469,7 +471,7 @@ function hazards() {
         blastDamage += world.truckDamage - damageBefore
       } else {
         liquidTested++
-        if (deck && deck.friction < gripBefore) gripLost++
+        if (world.chassis.friction < gripBefore) gripLost++
       }
       world.destroy()
     }
@@ -484,6 +486,53 @@ function hazards() {
   console.log(`every write-off left wreckage - ${shardsMade} pieces across ${flammableTested + liquidTested} of them`)
   if (flammableTested === 0 || liquidTested === 0) {
     console.log('  NO PLACARDED FREIGHT WAS GENERATED - the hazard code never runs')
+  }
+}
+
+// ---- pulling away ----------------------------------------------------
+
+/**
+ * How the rig gets up to speed.
+ *
+ * It used to go from standing to full speed in about six tenths of a second,
+ * which is what a hot hatch does. A loaded truck pulls hard from rest, runs
+ * out of that gear, changes, and pulls again - so what this is looking for is
+ * a curve that visibly steps rather than one smooth ramp, and a time to full
+ * speed measured in seconds rather than fractions of one.
+ */
+function pullingAway() {
+  for (const load of [false, true]) {
+    // Flat ground on purpose. On the real road this measures the hills, not
+    // the gearbox - it read as "the rig cannot get past 2.3" when the rig was
+    // perfectly capable of 8.6 and simply had a washout in the way.
+    const real = generateRoute(1037)
+    const route = { ...real, heights: real.heights.map(() => real.heights[0]) }
+    const world = createWorld(route)
+    if (load) for (const p of planLoad(route.crates, 'fullStack')) loadCrate(world, p.crate, p.offset, p.laid)
+    for (let i = 0; i < 200; i++) {
+      Matter.Engine.update(world.engine, STEP)
+      updateCargoState(world)
+    }
+
+    // Cruising speed is where the power fade balances the drag, which sits
+    // below the cap by design - so time-to-speed is measured against that
+    // rather than against a number the rig is never meant to reach.
+    const cruise = MAX_SPEED * 0.87
+    const samples: string[] = []
+    let full = -1
+    for (let i = 0; i < 60 * 8; i++) {
+      drive(world, 1)
+      coast(world)
+      Matter.Engine.update(world.engine, STEP)
+      updateCargoState(world)
+      if (i % 30 === 29) samples.push(world.chassis.velocity.x.toFixed(1))
+      if (full < 0 && world.chassis.velocity.x >= cruise) full = i
+    }
+    console.log(
+      `${load ? 'loaded' : 'empty '} speed each half second: ${samples.slice(0, 10).join(' ')}` +
+      `  ->  up to speed in ${full < 0 ? 'over 8s' : `${(full / 60).toFixed(1)}s`}`,
+    )
+    world.destroy()
   }
 }
 
@@ -502,6 +551,9 @@ balance('one layer, quick', 'oneLayer', MAX_SPEED * 0.72)
 balance('full stack, quick', 'fullStack', MAX_SPEED * 0.72)
 balance('thoughtless', 'naive', 99)
 balance('all in one pile', 'tower', 99)
+
+console.log('\nPULLING AWAY - a truck, not a hot hatch\n')
+pullingAway()
 
 console.log('\nIMPACTS - where the rig damage threshold has to sit\n')
 impacts()
