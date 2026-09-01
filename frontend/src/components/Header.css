@@ -37,19 +37,31 @@
   z-index: 1001;
 }
 
+/* The mark, drawn as a mask rather than as an <img>.
+ *
+ * There are two authored versions of this logo, one black and one white,
+ * for placing on light and dark backgrounds. Neither is used here: a mask
+ * reads the alpha channel and ignores colour entirely, so the file supplies
+ * the shape and the brand tokens supply the paint. That means one file
+ * serves both themes, the logo picks up the same gradient as every other
+ * primary surface on the site, and changing its colour is one line here
+ * rather than a new export.
+ *
+ * The browser tab is the one place that cannot do this, since a favicon
+ * gets no CSS from us - public/favicon.svg carries its own
+ * prefers-color-scheme rule instead. */
 .logo-icon {
+  /* Explicit, because this is a <span> and an inline element ignores width
+     and height outright - it collapsed to nothing and drew no mark at all.
+     The element it replaced was a flex <div>, which is why the old monogram
+     never needed this. */
+  display: block;
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--on-primary);
-  box-shadow: 0 4px 12px rgba(195, 248, 50, 0.28);
+  -webkit-mask: url('/logo-black.svg') center / contain no-repeat;
+  mask: url('/logo-black.svg') center / contain no-repeat;
 }
 
 .logo-text {

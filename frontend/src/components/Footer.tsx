@@ -9,7 +9,7 @@ export default function Footer() {
         <div className="footer-grid">
           <div className="footer-column footer-brand">
             <div className="footer-logo">
-              <div className="logo-icon">FP</div>
+              <span className="logo-icon" role="presentation" />
               <span className="logo-text">Freight Pilot</span>
             </div>
             <p className="footer-description">

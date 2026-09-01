@@ -79,7 +79,7 @@ export default function Header({ transparent = false }: HeaderProps) {
     <header className={headerClass} id="header">
       <nav className="nav container">
         <Link to="/" className="nav-logo">
-          <div className="logo-icon">FP</div>
+          <span className="logo-icon" role="presentation" />
           <span className="logo-text">Freight Pilot</span>
         </Link>
 
