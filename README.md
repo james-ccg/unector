@@ -4,6 +4,25 @@ A Telegram dispatch bot for trucking companies: pulls Rate Confirmations from em
 load details with AI, checks load pictures and BOLs, forwards PODs, tracks GPS proximity to
 pickup/delivery, and gives owners a web dashboard (Mini App) to manage drivers and dispatchers.
 
+## Status
+
+Freight Pilot is new. The first commit is dated 19 August 2026, and the whole history is
+visible in `git log` - there is no earlier version. Everything described below works, but read
+this before assuming it is a finished product:
+
+- **Not deployed anywhere permanent.** It runs locally. `MINIAPP_URL` currently points at a
+  tunnel, so the dashboard links the bot hands out change whenever that tunnel restarts. A real
+  domain is the next infrastructure job.
+- **The Google OAuth consent screen is unpublished**, which means Google revokes each Gmail
+  refresh token after exactly 7 days. The dashboard warns two days ahead and offers a reconnect,
+  and the countdown disappears on its own once the screen is published - see
+  `GOOGLE_OAUTH_TESTING_MODE` in `.env.example`.
+- **The Privacy Policy and Terms pages are real, but have not been reviewed by a lawyer.**
+- **The public stats on `/pages/trust` are read live from the database**, so they show whatever
+  is actually there - which on a fresh install is zeros.
+
+`pytest` currently runs 421 tests, all passing.
+
 ## Stack
 
 - **Bot** (`bot.py`) - aiogram 3, polls Telegram. The actual dispatch automation; runs as its
@@ -16,8 +35,10 @@ pickup/delivery, and gives owners a web dashboard (Mini App) to manage drivers a
 - **AI** (`services/gemini_service.py`) - Google Gemini extracts structured data from RC PDFs
   and reviews load/BOL photos.
 
-See [WEBSITE_STATUS.md](WEBSITE_STATUS.md) for the frontend's page map and auth model, and
-[IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md) for a history of notable fixes.
+See [WEBSITE_STATUS.md](WEBSITE_STATUS.md) for the frontend's page map, auth model and known
+gaps. [IMPROVEMENTS_SUMMARY.md](IMPROVEMENTS_SUMMARY.md) is a one-off write-up of the `/bol`,
+`/loadpics` and `/dashboard` response rewrite from 20 August 2026 - it is not kept up to date,
+and `git log` is the actual history.
 
 ## Prerequisites
 
