@@ -1,0 +1,94 @@
+# Tests and dependency scanning on every push and pull request.
+#
+# Version bumps were already arriving on their own, but nothing ran
+# against them: a bump could be merged without the suite ever executing,
+# and a newly-disclosed advisory in a pinned dependency went unnoticed
+# until someone happened to look. The audit jobs are the standing check;
+# the bumps are what act on what they find.
+name: CI
+
+on:
+  push:
+    branches: [main, dednod]
+  pull_request:
+  schedule:
+    # Advisories are published against code that has not changed, so the
+    # audits need to run on a clock, not only on a commit.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: pytest -q
+
+  frontend:
+    name: Frontend types, lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npx eslint src/
+      - run: npm run build
+
+  audit-python:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt -r requirements-dev.txt --strict
+
+  audit-npm:
+    name: npm dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Moderate and above. Low-severity advisories in dev-only tooling are
+      # not worth blocking a merge on, and a check that cries wolf gets
+      # ignored, which costs more than it saves.
+      - run: npm audit --audit-level=moderate
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history: a key committed and then removed is still a
+          # published key, and a shallow clone would not see it.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

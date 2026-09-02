@@ -3,10 +3,28 @@
 .env.*
 !.env.example
 
-# Database - contains real company/driver data
+# Database - contains real company/driver data, encrypted credentials and
+# password hashes. The bare *.db glob misses a dated backup like
+# freight_pilot.db.bak-20260830-152711, which is the same data with a
+# different suffix - one `git add -A` away from being published.
 *.db
+*.db.*
 *.sqlite
 *.sqlite3
+*.sqlite3.*
+*.dump
+*.sql.gz
+backup/
+backups/
+
+# Key material, however it is named
+*.pem
+*.key
+*.p12
+*.pfx
+service-account*.json
+credentials*.json
+!frontend/**/credentials*.json
 
 # Python
 __pycache__/
@@ -41,3 +59,5 @@ frontend/dist
 *.njsproj
 *.sln
 *.sw?
+
+test_account.py

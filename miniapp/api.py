@@ -15,6 +15,7 @@ a tool like ngrok during development (`ngrok http 8000`), then register that
 URL with @BotFather (see README's Mini App section) and set MINIAPP_URL in .env.
 """
 import os
+import hmac
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -36,6 +37,7 @@ from config import (
     SAMSARA_TEST_MODE,
     TURNSTILE_SECRET_KEY,
     TURNSTILE_SITE_KEY,
+    TRUST_PROXY_HEADERS,
     encrypt_value,
 )
 from db.database import init_db
@@ -71,6 +73,7 @@ from miniapp.auth import (
     clear_session_cookies,
     create_session_token,
     create_token,
+    csrf_token_matches,
     decode_token,
     hash_password,
     set_session_cookies,
@@ -87,7 +90,26 @@ app = FastAPI(title="Freight Pilot Mini App API", lifespan=_lifespan)
 
 # Brute-force / abuse protection on auth and OTP endpoints. In-memory storage
 # is fine for this single-process deployment - no Redis needed.
-limiter = Limiter(key_func=get_remote_address)
+def _rate_limit_key(request: Request) -> str:
+    """Who is being rate limited.
+
+    get_remote_address reads the socket's peer, which behind a proxy is the
+    proxy for every caller alike - one shared bucket, so one attacker locks
+    everyone out and their own attempts are never counted separately. The
+    left-most X-Forwarded-For entry is the original client, but it is
+    client-supplied and forgeable, so it is only believed when the
+    deployment says a proxy it controls is actually in front (see
+    TRUST_PROXY_HEADERS in config.py).
+    """
+    if TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        client = forwarded.split(",")[0].strip()
+        if client:
+            return client
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -105,12 +127,40 @@ _CSP = (
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "
+    "object-src 'none'; "
     "frame-src https://challenges.cloudflare.com; "
     "connect-src 'self' https://challenges.cloudflare.com; "
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
 )
+
+
+# Comfortably above the largest legitimate body - the avatar data URL, which
+# its own validator caps - and far below anything that would hurt. Pydantic
+# only sees the body after Starlette has read it into memory, so a per-field
+# length check does not help against someone posting a gigabyte.
+MAX_REQUEST_BODY_BYTES = 2 * 1024 * 1024
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    """Rejects an oversized body before it is read.
+
+    Content-Length is the client's own claim, so this is not a hard
+    guarantee against a chunked upload - it stops the ordinary case cheaply,
+    and the reverse proxy in front of a real deployment should set its own
+    limit as the backstop (nginx client_max_body_size, or the platform's
+    equivalent)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=413,
+            content={"detail": f"Request body too large (max {MAX_REQUEST_BODY_BYTES // (1024 * 1024)}MB)"},
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -393,8 +443,21 @@ def _gmail_connected_field(role: str, company_id: int) -> dict:
 def verify_csrf(request: Request) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     header_value = request.headers.get(CSRF_HEADER_NAME)
-    if not cookie_value or not header_value or cookie_value != header_value:
+    if not cookie_value or not header_value:
         raise HTTPException(403, "Missing or invalid CSRF token")
+    # compare_digest rather than != so the comparison does not leak the
+    # matching prefix length through timing.
+    if not hmac.compare_digest(cookie_value, header_value):
+        raise HTTPException(403, "Missing or invalid CSRF token")
+
+    # The halves agreeing only proves whoever sent them controls both, which
+    # an attacker who can write cookies on the domain does. The token is an
+    # HMAC over this session's id, so check it actually belongs to the
+    # session being used - see csrf_token_for in miniapp/auth.py.
+    session = request.cookies.get(SESSION_COOKIE_NAME)
+    claims = decode_token(session, purpose=SESSION_PURPOSE) if session else None
+    if claims and not csrf_token_matches(cookie_value, claims.get("sid", "")):
+        raise HTTPException(403, "CSRF token does not match this session")
 
 
 # ------------------------------------------------------------------

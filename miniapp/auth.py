@@ -14,6 +14,8 @@ the X-CSRF-Token header on any state-changing request - the classic
 into sending the session cookie, but can't read the CSRF cookie to also
 set the matching header, so the request gets rejected.
 """
+import hashlib
+import hmac
 import secrets
 import time
 
@@ -26,8 +28,14 @@ ALGORITHM = "HS256"
 TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7  # 7 days - real login sessions
 SHORT_LIVED_SECONDS = 60 * 10  # 10 minutes - 2FA handshake / OAuth state tokens
 
-SESSION_COOKIE_NAME = "fp_session"
-CSRF_COOKIE_NAME = "fp_csrf"
+# The __Host- prefix pins a cookie to this exact origin: no subdomain can
+# set it, overwrite it, or widen its path. That is precisely the attack the
+# double-submit CSRF pattern otherwise falls to - see csrf_token_for below.
+# The prefix requires Secure and Path=/, so it can only be used where the
+# app is actually on HTTPS, which is why local dev keeps the bare names.
+_HOST_PREFIX = "__Host-" if IS_PRODUCTION else ""
+SESSION_COOKIE_NAME = f"{_HOST_PREFIX}fp_session"
+CSRF_COOKIE_NAME = f"{_HOST_PREFIX}fp_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
 # Every token this module mints carries one of these in its `purpose` claim,
@@ -68,8 +76,47 @@ def create_token(payload: dict, lifetime_seconds: int = TOKEN_LIFETIME_SECONDS) 
 
 
 def create_session_token(claims: dict) -> str:
-    """A real login session, for set_session_cookies."""
-    return create_token({**claims, "purpose": SESSION_PURPOSE})
+    """A real login session, for set_session_cookies.
+
+    `sid` is a fresh random id for this particular login. The CSRF token is
+    bound to it, so a token minted for one session cannot be replayed
+    against another - and a re-login invalidates the old pairing."""
+    return create_token({
+        **claims,
+        "purpose": SESSION_PURPOSE,
+        "sid": secrets.token_urlsafe(18),
+    })
+
+
+def _csrf_digest(session_id: str, random_value: str) -> str:
+    # Length-prefixed so ("ab", "cd") and ("a", "bcd") cannot hash alike.
+    message = f"{len(session_id)}!{session_id}!{random_value}".encode()
+    return hmac.new(JWT_SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
+
+
+def csrf_token_for(session_id: str) -> str:
+    """A CSRF token tied to one session.
+
+    The plain double-submit pattern - put a random value in a cookie, make
+    the client echo it in a header, check they match - is only as strong as
+    the attacker's inability to write cookies on the domain. A vulnerable
+    sibling subdomain, a DNS takeover or a plaintext-HTTP injection defeats
+    it, because the attacker sets both halves themselves and they agree.
+
+    OWASP's signed variant closes that: the cookie carries an HMAC over the
+    session id, keyed by a server-side secret. An attacker who can write
+    cookies still cannot produce a value that verifies against the victim's
+    session."""
+    random_value = secrets.token_hex(32)
+    return f"{_csrf_digest(session_id, random_value)}.{random_value}"
+
+
+def csrf_token_matches(token: str, session_id: str) -> bool:
+    """Whether `token` was issued for this session. Constant-time."""
+    digest, _, random_value = token.partition(".")
+    if not digest or not random_value:
+        return False
+    return hmac.compare_digest(digest, _csrf_digest(session_id, random_value))
 
 
 def decode_token(token: str, purpose: str | None = None) -> dict | None:
@@ -99,9 +146,11 @@ def set_session_cookies(response, token: str) -> None:
         max_age=TOKEN_LIFETIME_SECONDS,
         path="/",
     )
+    # Bound to this session's `sid`, so it is useless against any other.
+    claims = decode_token(token, purpose=SESSION_PURPOSE) or {}
     response.set_cookie(
         key=CSRF_COOKIE_NAME,
-        value=secrets.token_urlsafe(32),
+        value=csrf_token_for(claims.get("sid", "")),
         httponly=False,
         secure=IS_PRODUCTION,
         samesite="lax",

@@ -58,6 +58,19 @@ IS_PRODUCTION = ENVIRONMENT == "production"
 # avoid a redirect loop.
 FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").strip().lower() == "true"
 
+# Whether a reverse proxy sits in front of this app and can be believed
+# about the client's IP.
+#
+# The rate limiter keys on the caller's address. Behind a proxy every
+# request arrives from the proxy, so without this all callers share one
+# bucket: one attacker exhausts it and locks out every real user, while
+# their own attempts are never individually counted. Reading
+# X-Forwarded-For unconditionally is worse - the header is client-supplied,
+# so anyone could vary it per request and never be limited at all. Hence a
+# deliberate switch: turn it on only when something you control is actually
+# terminating connections in front of this process.
+TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").strip().lower() == "true"
+
 # Mini App (owner/dispatcher dashboard) settings.
 # JWT_SECRET_KEY signs login sessions - set a real random value in production;
 # the fallback below is only for local development.

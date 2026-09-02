@@ -86,3 +86,69 @@ class TestTokenPurposeIsEnforced:
         login = client.post("/api/auth/owner", json={"mc_number": mc, "password": password})
         assert login.status_code == 200, login.text
         assert client.get("/api/me").status_code == 200
+
+
+class TestCsrfIsBoundToTheSession:
+    """A CSRF token proves the request came from our page, but only if it
+    cannot be minted by whoever sent it. See csrf_token_for in
+    miniapp/auth.py for why matching halves are not enough on their own."""
+
+    def _register(self, client):
+        mc = unique_mc()
+        password = "correct-horse-battery-staple-9"
+        response = client.post("/api/auth/register", json={
+            "mc_number": mc,
+            "company_name": "CSRF Test Freight",
+            "email": f"csrf{mc}@example.com",
+            "password": password,
+            "confirm_password": password,
+        })
+        assert response.status_code == 200, response.text
+        return mc, password
+
+    def test_a_token_from_another_session_is_rejected(self, client):
+        from fastapi.testclient import TestClient
+        from miniapp.api import app
+        from miniapp.auth import CSRF_COOKIE_NAME
+
+        self._register(client)
+        victim_csrf = client.cookies.get(CSRF_COOKIE_NAME)
+
+        # A second, unrelated account - its CSRF token is validly formed and
+        # its two halves match, they are simply not this session's.
+        other = TestClient(app)
+        self._register(other)
+        attacker_csrf = other.cookies.get(CSRF_COOKIE_NAME)
+        assert attacker_csrf and attacker_csrf != victim_csrf
+
+        client.cookies.set(CSRF_COOKIE_NAME, attacker_csrf)
+        response = client.put(
+            "/api/me/status",
+            json={"emoji": None, "text": "on the road", "expires_at": None},
+            headers={"X-CSRF-Token": attacker_csrf},
+        )
+        assert response.status_code == 403, response.text
+
+    def test_a_forged_token_is_rejected(self, client):
+        """Writing both halves is exactly what a cookie-injection attack
+        buys, and it must not be enough."""
+        from miniapp.auth import CSRF_COOKIE_NAME
+
+        self._register(client)
+        forged = "deadbeef" * 8 + ".0123456789abcdef"
+        client.cookies.set(CSRF_COOKIE_NAME, forged)
+        response = client.put(
+            "/api/me/status",
+            json={"emoji": None, "text": "on the road", "expires_at": None},
+            headers={"X-CSRF-Token": forged},
+        )
+        assert response.status_code == 403, response.text
+
+    def test_the_real_token_still_works(self, client):
+        self._register(client)
+        response = client.put(
+            "/api/me/status",
+            json={"emoji": None, "text": "on the road", "expires_at": None},
+            headers=csrf_headers(client),
+        )
+        assert response.status_code == 200, response.text

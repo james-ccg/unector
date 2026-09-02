@@ -2099,6 +2099,34 @@ class TestMandatoryGmailOnboarding:
 
 
 class TestSecurityHeaders:
+    def test_object_src_is_locked_down(self, client):
+        """<object>/<embed> load plugin content and nothing here uses them.
+        default-src covers it by fallback, but hardening guides ask for it
+        to be stated, and a later default-src change must not quietly
+        re-open it."""
+        csp = client.get("/").headers["Content-Security-Policy"]
+        assert "object-src 'none'" in csp
+
+    def test_an_oversized_body_is_refused(self, client):
+        """Starlette reads the whole body into memory before any validator
+        sees it, so a per-field length check does not stop someone posting
+        a gigabyte at an endpoint."""
+        from miniapp.api import MAX_REQUEST_BODY_BYTES
+
+        response = client.post(
+            "/api/auth/owner",
+            content=b"x" * (MAX_REQUEST_BODY_BYTES + 1),
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 413
+        assert "too large" in response.json()["detail"]
+
+    def test_an_ordinary_body_still_gets_through(self, client):
+        """The limit must sit well above anything real - a 401/422 here
+        means the request reached the endpoint, which is the point."""
+        response = client.post("/api/auth/owner", json={"mc_number": "999999", "password": "nope"})
+        assert response.status_code != 413
+
     def test_security_headers_present_on_every_response(self, client):
         response = client.get("/api/public/stats")
         assert response.headers["X-Content-Type-Options"] == "nosniff"

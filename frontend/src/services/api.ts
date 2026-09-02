@@ -1,12 +1,25 @@
 // API service for backend communication
 const API_BASE = ''
 
-const CSRF_COOKIE_NAME = 'fp_csrf'
+// Two names, one cookie. In production the backend issues it with the
+// __Host- prefix, which pins it to this exact origin so no subdomain can
+// overwrite it - the attack the CSRF double-submit pattern otherwise falls
+// to. The prefix requires Secure, so plain-http local dev cannot use it and
+// gets the bare name. Read whichever is actually there.
+const CSRF_COOKIE_NAMES = ['__Host-fp_csrf', 'fp_csrf']
 const CSRF_HEADER_NAME = 'X-CSRF-Token'
 
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
+}
+
+function readCsrfToken(): string | null {
+  for (const name of CSRF_COOKIE_NAMES) {
+    const value = readCookie(name)
+    if (value) return value
+  }
+  return null
 }
 
 type ApiOptions = RequestInit
@@ -80,7 +93,7 @@ export async function apiRequest<T>(
   // CSRF header - see miniapp/auth.py's module docstring for the full pattern.
   const method = (options.method || 'GET').toUpperCase()
   if (method !== 'GET' && method !== 'HEAD') {
-    const csrfToken = readCookie(CSRF_COOKIE_NAME)
+    const csrfToken = readCsrfToken()
     if (csrfToken) {
       headers[CSRF_HEADER_NAME] = csrfToken
     }

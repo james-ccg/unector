@@ -1,5 +1,9 @@
 # Test Suite uchun
-pytest==8.3.2
-pytest-asyncio==0.24.0
-pytest-cov==5.0.0
+# pytest through 9.0.2 reuses predictable /tmp/pytest-of-{user} directories
+# on UNIX, which a local user on the same host can abuse (PYSEC-2026-1845).
+# Dev-only, but CI runs on a shared Ubuntu runner and pip-audit fails the
+# build on it, which is the point of having the audit.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
 httpx==0.28.1  # FastAPI test client uchun - must satisfy google-genai's own httpx>=0.28.1 pin (requirements.txt)
