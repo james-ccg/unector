@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import FleetMap from '../components/FleetMap'
+import { BASEMAPS, type BasemapId } from '../components/basemaps'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { dashboardApi, errorMessage } from '../services/api'
 import './MonitoringPage.css'
 
@@ -13,6 +15,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 
 export default function MonitoringPage() {
   const { user } = useAuth()
+  const { resolvedTheme } = useTheme()
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [connected, setConnected] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -26,6 +29,10 @@ export default function MonitoringPage() {
   // Bumped to tell the map to frame the fleet again. The button lives out
   // here; the Leaflet instance lives inside FleetMap.
   const [recenterNonce, setRecenterNonce] = useState(0)
+  // Opens on whatever suits the app's theme; after that it is the reader's
+  // choice, because road names can be wanted on a dark dashboard.
+  const [basemap, setBasemap] = useState<BasemapId>(resolvedTheme === 'dark' ? 'dark' : 'street')
+  const [layersOpen, setLayersOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!user) return
@@ -168,6 +175,7 @@ export default function MonitoringPage() {
               selectedId={selected?.id ?? null}
               onSelect={setSelectedId}
               recenterNonce={recenterNonce}
+              basemap={basemap}
             />
             <div className="map-toolbar">
               <span>
@@ -177,6 +185,37 @@ export default function MonitoringPage() {
               {/* Was a second Refresh, with a pin on it. A pin on a map
                   means "take me to it", so now it does that - and the
                   refresh lives in exactly one place. */}
+              <div className="map-layers">
+                <button
+                  type="button"
+                  className={`map-control${layersOpen ? ' is-open' : ''}`}
+                  onClick={() => setLayersOpen((open) => !open)}
+                  aria-expanded={layersOpen}
+                  aria-label="Map style"
+                  title="Map style"
+                >
+                  <Icon name="layers" size={17} />
+                </button>
+                {layersOpen && (
+                  <div className="map-layers-menu" role="radiogroup" aria-label="Map style">
+                    {(Object.keys(BASEMAPS) as BasemapId[]).map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="radio"
+                        aria-checked={basemap === id}
+                        className={basemap === id ? 'is-chosen' : undefined}
+                        onClick={() => {
+                          setBasemap(id)
+                          setLayersOpen(false)
+                        }}
+                      >
+                        {BASEMAPS[id].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
                 className="map-control"
                 onClick={() => setRecenterNonce((n) => n + 1)}

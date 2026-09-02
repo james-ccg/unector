@@ -55,62 +55,6 @@
   filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.88);
 }
 
-/* The map and its own controls, positioned together. */
-.fleet-map-wrap {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-/* Basemap picker, opposite Leaflet's own zoom buttons so the two sets of
-   map controls do not crowd one corner. */
-.map-layers {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 400; /* above Leaflet's panes, below its popups */
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-}
-
-.map-layers-menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 116px;
-  padding: 5px;
-  gap: 2px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.55);
-}
-.map-layers-menu button {
-  padding: 7px 10px;
-  text-align: left;
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  cursor: pointer;
-}
-.map-layers-menu button:hover {
-  background: var(--bg);
-}
-.map-layers-menu button.is-chosen {
-  border-color: var(--primary);
-  background: var(--bg);
-  font-weight: 600;
-}
-.map-layers-menu button:focus-visible,
-.map-layers .map-control:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 /* The OpenStreetMap credit.
    Required by the ODbL and by OSM's tile policy, so it stays visible - but
    it is a footnote, not a caption, and Leaflet's default styling makes it
