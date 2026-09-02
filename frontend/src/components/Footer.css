@@ -17,11 +17,22 @@
   max-width: 350px;
 }
 
+/* The mark and the name are the way back to the landing page, the same as
+   the one in the header. inline-flex rather than flex so the hit area stops
+   at the wordmark instead of spanning the whole column. */
 .footer-logo {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+/* The neighbouring links hover to var(--primary), but the wordmark already
+   sits at --text-primary, and in the light theme those two tokens are the
+   same near-black - the hover would do nothing. Opacity reads in both. */
+.footer-logo:hover {
+  opacity: 0.75;
 }
 
 .footer-description {

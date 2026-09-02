@@ -8,10 +8,10 @@ export default function Footer() {
       <div className="container">
         <div className="footer-grid">
           <div className="footer-column footer-brand">
-            <div className="footer-logo">
+            <Link to="/" className="footer-logo">
               <span className="logo-icon" role="presentation" />
               <span className="logo-text">Freight Pilot</span>
-            </div>
+            </Link>
             <p className="footer-description">
               Smart dispatch management for modern trucking companies. Automate your operations
               with AI-powered tools.
