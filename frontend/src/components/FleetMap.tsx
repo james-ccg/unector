@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AttributionControl, MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useTheme } from '../context/ThemeContext'
+import Icon from './Icon'
 import './FleetMap.css'
 
 export type MapVehicle = {
@@ -15,27 +16,60 @@ interface FleetMapProps {
   vehicles: MapVehicle[]
   selectedId: number | null
   onSelect: (id: number) => void
+  /** Bumped by the page's recenter button. The map refits whenever this
+   *  changes, which is how a control outside the MapContainer reaches the
+   *  Leaflet instance living inside it. */
+  recenterNonce?: number
 }
 
-// OpenStreetMap's own tiles, which need no API key and no account.
+// Required by the ODbL: OpenStreetMap data has to be credited wherever it
+// is shown. Leaflet's own "Leaflet |" prefix is courtesy rather than law,
+// and is switched off on the control below.
+const OSM_CREDIT =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>'
+
+// The basemaps on offer, all of them keyless.
 //
-// This used to point at CARTO's basemaps.cartocdn.com light/dark pair,
-// chosen because they came as a matching set. CARTO now requires a key for
-// those and is retiring the open endpoints, so every tile came back stamped
-// "API KEY REQUIRED" across the map.
+// This used to be CARTO's light/dark pair. CARTO now requires an API key
+// and is retiring its open endpoints, so every tile came back stamped
+// "API KEY REQUIRED". Esri's imagery wants registration too. A basemap that
+// needs an account is not one this app can ship, so neither is here.
 //
-// OSM ships one style, and it is a light one. Rather than take a key for a
-// dark twin, the dark theme inverts these in CSS - see .fleet-map.is-dark
-// in FleetMap.css. Inversion alone would turn the land cyan, so the hue is
-// rotated back 180 degrees, which is the standard trick and holds up well
-// on a road map with few saturated colours.
+// "Dark" is not a separate tile set: OSM publishes one style and it is a
+// light one. The dark option inverts it in CSS and rotates the hue back,
+// which is the standard trick and holds up on a road map with few
+// saturated colours. See .fleet-map.is-dark in FleetMap.css.
 //
-// OSM's tile usage policy expects light, non-commercial-scale traffic and
-// requires the attribution below. A fleet map at this size sits well inside
-// that; a heavier deployment should move to a paid tile host.
-const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
+// OSM's tile usage policy expects light traffic and the attribution above.
+// A fleet map at this size sits well inside that; a heavier deployment
+// should move to a paid tile host.
+type BasemapId = 'street' | 'dark' | 'terrain'
+
+const BASEMAPS: Record<BasemapId, { label: string; url: string; attribution: string; maxZoom: number }> = {
+  street: {
+    label: 'Street',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: OSM_CREDIT,
+    maxZoom: 19,
+  },
+  dark: {
+    label: 'Dark',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: OSM_CREDIT,
+    maxZoom: 19,
+  },
+  terrain: {
+    label: 'Terrain',
+    // Elevation is worth seeing on a truck route - a grade is a fuel bill.
+    // OpenTopoMap is a volunteer-run server with a modest usage policy, so
+    // it is an option rather than the default.
+    url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution:
+      OSM_CREDIT +
+      ', <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)',
+    maxZoom: 17,
+  },
+}
 
 // Continental US center - every current customer is a US trucking company
 // (see PricingPage/config.py), so this is a more useful default view than
@@ -62,9 +96,40 @@ function truckDivIcon(selected: boolean) {
 // fix. Separate from FleetMap itself because react-leaflet's useMap() only
 // works inside a MapContainer's children, not in the component that renders
 // the MapContainer.
-function ViewportController({ points, focusPoint }: { points: LatLng[]; focusPoint: LatLng | null }) {
+function ViewportController({
+  points,
+  focusPoint,
+  recenterNonce,
+}: {
+  points: LatLng[]
+  focusPoint: LatLng | null
+  recenterNonce: number
+}) {
   const map = useMap()
   const pointsKey = points.map((p) => p.join(',')).join('|')
+
+  const frame = () => {
+    if (points.length === 0) {
+      map.setView(DEFAULT_CENTER, DEFAULT_ZOOM)
+      return
+    }
+    if (points.length === 1) {
+      map.setView(points[0], 8)
+      return
+    }
+    map.fitBounds(L.latLngBounds(points), { padding: [48, 48], maxZoom: 10 })
+  }
+
+  // Deliberately skips the first render: the map has just framed itself.
+  const first = useRef(true)
+  useEffect(() => {
+    if (first.current) {
+      first.current = false
+      return
+    }
+    frame()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recenterNonce])
 
   useEffect(() => {
     if (points.length === 0) return
@@ -86,8 +151,14 @@ function ViewportController({ points, focusPoint }: { points: LatLng[]; focusPoi
   return null
 }
 
-export default function FleetMap({ vehicles, selectedId, onSelect }: FleetMapProps) {
+export default function FleetMap({ vehicles, selectedId, onSelect, recenterNonce = 0 }: FleetMapProps) {
   const { resolvedTheme } = useTheme()
+  // The app's own theme picks the opening basemap; after that the choice is
+  // the reader's, because someone may want the road names legible on a dark
+  // dashboard, or the terrain regardless of either.
+  const [basemap, setBasemap] = useState<BasemapId>(resolvedTheme === 'dark' ? 'dark' : 'street')
+  const [layersOpen, setLayersOpen] = useState(false)
+  const tiles = BASEMAPS[basemap]
 
   const located = useMemo(
     () =>
@@ -102,22 +173,65 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: FleetMapPro
   const focusPoint: LatLng | null = focusVehicle ? [focusVehicle.location.lat, focusVehicle.location.lng] : null
 
   return (
-    <MapContainer
-      center={points[0] ?? DEFAULT_CENTER}
-      zoom={points.length ? 6 : DEFAULT_ZOOM}
-      className={`fleet-map${resolvedTheme === 'dark' ? ' is-dark' : ''}`}
-      scrollWheelZoom
-    >
-      <TileLayer url={TILES} attribution={TILE_ATTRIBUTION} maxZoom={19} />
-      <ViewportController points={points} focusPoint={focusPoint} />
-      {located.map((vehicle) => (
-        <Marker
-          key={vehicle.id}
-          position={[vehicle.location.lat, vehicle.location.lng]}
-          icon={truckDivIcon(vehicle.id === selectedId)}
-          eventHandlers={{ click: () => onSelect(vehicle.id) }}
-        />
-      ))}
-    </MapContainer>
+    <div className="fleet-map-wrap">
+      <MapContainer
+        center={points[0] ?? DEFAULT_CENTER}
+        zoom={points.length ? 6 : DEFAULT_ZOOM}
+        className={`fleet-map${basemap === 'dark' ? ' is-dark' : ''}`}
+        scrollWheelZoom
+        attributionControl={false}
+      >
+        {/* key forces a fresh layer rather than a re-used one with a
+            swapped URL, which Leaflet handles by holding the old tiles
+            until every new one has loaded - a visibly torn map. */}
+        <TileLayer key={basemap} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} />
+        {/* prefix={false} drops "Leaflet |". The OpenStreetMap credit
+            stays: the ODbL requires it, and it has to be visible without
+            anyone having to go looking. It is small and out of the way,
+            which the guidelines allow - it is not optional. */}
+        <AttributionControl position="bottomright" prefix={false} />
+        <ViewportController points={points} focusPoint={focusPoint} recenterNonce={recenterNonce} />
+        {located.map((vehicle) => (
+          <Marker
+            key={vehicle.id}
+            position={[vehicle.location.lat, vehicle.location.lng]}
+            icon={truckDivIcon(vehicle.id === selectedId)}
+            eventHandlers={{ click: () => onSelect(vehicle.id) }}
+          />
+        ))}
+      </MapContainer>
+
+      <div className="map-layers">
+        <button
+          type="button"
+          className="map-control"
+          onClick={() => setLayersOpen((open) => !open)}
+          aria-expanded={layersOpen}
+          aria-label="Map style"
+          title="Map style"
+        >
+          <Icon name="layers" size={17} />
+        </button>
+        {layersOpen && (
+          <div className="map-layers-menu" role="radiogroup" aria-label="Map style">
+            {(Object.keys(BASEMAPS) as BasemapId[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={basemap === id}
+                className={basemap === id ? 'is-chosen' : undefined}
+                onClick={() => {
+                  setBasemap(id)
+                  setLayersOpen(false)
+                }}
+              >
+                {BASEMAPS[id].label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

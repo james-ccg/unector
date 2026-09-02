@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'phone' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
+type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'layers' | 'phone' | 'refresh' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   'arrow-left': <path d="m15 18-6-6 6-6M9 12h12" />,
@@ -21,6 +21,8 @@ const paths: Record<IconName, ReactNode> = {
   money: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 12h.01M17 12h.01M12 9v6M14 10.5a2 2 0 0 0-4 0c0 2 4 1 4 3a2 2 0 0 1-4 0" /></>,
   monitor: <><rect x="2" y="4" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></>,
   moon: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />,
+  layers: <><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 17l9 5 9-5" /></>,
+  refresh: <><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></>,
   phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z" />,
   settings: <><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" /><circle cx="12" cy="12" r="3" /></>,
   shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10ZM9 12l2 2 4-4" />,

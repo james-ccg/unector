@@ -20,9 +20,19 @@ export default function MonitoringPage() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [error, setError] = useState('')
   const [fleetFilter, setFleetFilter] = useState<'in_transit' | 'all'>('in_transit')
+  // A refresh that returns the same vehicles looks like a button that does
+  // nothing. This drives a spinning icon so the click is visibly received.
+  const [refreshing, setRefreshing] = useState(false)
+  // Bumped to tell the map to frame the fleet again. The button lives out
+  // here; the Leaflet instance lives inside FleetMap.
+  const [recenterNonce, setRecenterNonce] = useState(0)
 
   const refresh = useCallback(async () => {
     if (!user) return
+    setRefreshing(true)
+    // A round trip on a fast connection can finish before the spinner has
+    // drawn a frame, which reads as nothing having happened at all.
+    const spunFor = new Promise((done) => setTimeout(done, 450))
     try {
       const data = await dashboardApi.getMonitoring()
       setVehicles(data.vehicles || [])
@@ -37,6 +47,8 @@ export default function MonitoringPage() {
       // the data could be minutes out of date.
       setError(errorMessage(err, "Couldn't refresh live GPS data."))
     } finally {
+      await spunFor
+      setRefreshing(false)
       setLoading(false)
     }
   }, [user])
@@ -78,8 +90,14 @@ export default function MonitoringPage() {
                 <span className={connected ? 'pulse-dot online' : 'pulse-dot'} />
                 {connected ? 'Samsara connected' : 'Samsara not connected'}
               </div>
-              <button className="icon-button" onClick={refresh} aria-label="Refresh monitoring">
-                <Icon name="clock" size={17} />
+              <button
+                className={`icon-button${refreshing ? ' is-busy' : ''}`}
+                onClick={refresh}
+                disabled={refreshing}
+                aria-label="Refresh vehicle positions"
+                title="Refresh vehicle positions"
+              >
+                <Icon name="refresh" size={16} />
               </button>
             </div>
             {error && (
@@ -145,13 +163,27 @@ export default function MonitoringPage() {
           </aside>
 
           <section className="map-panel" aria-label="Live vehicle map">
-            <FleetMap vehicles={vehicles} selectedId={selected?.id ?? null} onSelect={setSelectedId} />
+            <FleetMap
+              vehicles={vehicles}
+              selectedId={selected?.id ?? null}
+              onSelect={setSelectedId}
+              recenterNonce={recenterNonce}
+            />
             <div className="map-toolbar">
               <span>
                 <span className="pulse-dot online" />
                 Live map
               </span>
-              <button className="map-control" onClick={refresh} aria-label="Refresh map">
+              {/* Was a second Refresh, with a pin on it. A pin on a map
+                  means "take me to it", so now it does that - and the
+                  refresh lives in exactly one place. */}
+              <button
+                className="map-control"
+                onClick={() => setRecenterNonce((n) => n + 1)}
+                disabled={!located.length}
+                aria-label="Centre the map on the fleet"
+                title={located.length ? 'Centre on the fleet' : 'No vehicle positions to centre on'}
+              >
                 <Icon name="location" size={18} />
               </button>
             </div>
@@ -196,7 +228,18 @@ export default function MonitoringPage() {
               </div>
               <div>
                 <small>Last refresh</small>
-                <strong>{updatedAt ? updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</strong>
+                {/* Seconds, not just minutes. Without them a refresh inside the
+                    same minute changes nothing on screen, which is most of
+                    why the button felt dead. */}
+                <strong>
+                  {updatedAt
+                    ? updatedAt.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })
+                    : '—'}
+                </strong>
               </div>
             </>
           ) : (
