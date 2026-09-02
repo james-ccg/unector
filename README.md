@@ -154,3 +154,21 @@ pytest
 ```
 
 Frontend type-checking/build: `cd frontend && npm run build`.
+
+`pytest` drives the app in-process, which never opens a socket. For a run
+against a real uvicorn over real HTTP - registration, 2FA, tenant isolation,
+CSRF, rate limits, the error copy - there is an end-to-end script. It starts
+its own server on port 8099 with a throwaway database, so it touches neither
+`freight_pilot.db` nor anything you already have running:
+
+```bash
+python scripts/e2e.py
+```
+
+The game's physics has no assertions a type checker or a screenshot could
+catch, so it has a measurement harness of its own - stillness, load balance,
+acceleration, impacts, recovery, wrecks and hazards:
+
+```bash
+cd frontend && npm run physics
+```
