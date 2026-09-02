@@ -165,6 +165,11 @@ export async function apiRequest<T>(
           errorMsg = 'Server error. Please try again later.'
           break
         case 502:
+          // Bad Gateway: something in front reached the app and got nothing
+          // back - in dev that is the Vite proxy with no API running behind
+          // it. "Did not answer in time" describes 504 and misdirects here.
+          errorMsg = 'Could not reach the server. It may be restarting.'
+          break
         case 504:
           errorMsg = 'The server did not answer in time. Please try again.'
           break
