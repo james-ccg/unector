@@ -24,11 +24,23 @@ const OSM_CREDIT =
 // That works on a road map with few saturated colours - it is why terrain,
 // which is nothing but saturated colour, looked wrong under it.
 //
-// Satellite is USGS imagery: public-domain US government aerial photography
-// served without a key. It covers the United States only, which is where
-// every customer of this app operates. Esri's world imagery would cover
-// more, but its current basemap service wants a token, and CARTO now wants
-// one too - a basemap that needs an account is not one this app can ship.
+// Satellite is Sentinel-2 cloudless from EOX, which covers the whole world
+// and needs no key.
+//
+// The licence is the reason it is this one and not a sharper alternative:
+//
+//   * EOX publish several years of this layer. Everything from 2018 on is
+//     CC BY-NC-SA - non-commercial. Freight Pilot is a paid product, so
+//     those are not available to it however good they look. The 2016 layer
+//     is plain CC BY 4.0, which is.
+//   * Esri's World Imagery is sharper and still answers on its legacy
+//     endpoint, but their current terms point at a basemap service that
+//     wants a token, and CARTO now wants one too.
+//   * USGS imagery is public domain and sharper again, but stops at the US
+//     border, and this map should work wherever a truck is.
+//
+// So: worldwide, keyless, and licensed for commercial use, at the cost of
+// some resolution. The attribution below is a condition of that licence.
 export type BasemapId = 'street' | 'satellite' | 'dark'
 
 export const BASEMAPS: Record<
@@ -43,10 +55,11 @@ export const BASEMAPS: Record<
   },
   satellite: {
     label: 'Satellite',
-    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+    url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg',
     attribution:
-      'Imagery <a href="https://www.usgs.gov/" target="_blank" rel="noreferrer">USGS</a> - United States only',
-    maxZoom: 16,
+      'Sentinel-2 cloudless by <a href="https://eox.at" target="_blank" rel="noreferrer">EOX IT Services GmbH</a>' +
+      ' (contains modified Copernicus Sentinel data 2016)',
+    maxZoom: 15,
   },
   dark: {
     label: 'Dark',

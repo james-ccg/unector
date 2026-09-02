@@ -123,12 +123,17 @@ export default function FleetMap({
   const focusVehicle = located.find((v) => v.id === selectedId)
   const focusPoint: LatLng | null = focusVehicle ? [focusVehicle.location.lat, focusVehicle.location.lng] : null
 
+  // The invert class lives on a wrapper, not on MapContainer. react-leaflet
+  // builds the Leaflet instance once and does not push later className
+  // changes onto it, so switching basemap left the old class in place -
+  // which is why Street and Dark rendered identically and Satellite, being
+  // dark imagery already, came out black.
   return (
-    <>
+    <div className={`fleet-map-wrap${tiles.invert ? ' is-dark' : ''}`}>
       <MapContainer
         center={points[0] ?? DEFAULT_CENTER}
         zoom={points.length ? 6 : DEFAULT_ZOOM}
-        className={`fleet-map${tiles.invert ? ' is-dark' : ''}`}
+        className="fleet-map"
         scrollWheelZoom
         attributionControl={false}
       >
@@ -151,7 +156,6 @@ export default function FleetMap({
           />
         ))}
       </MapContainer>
-
-    </>
+    </div>
   )
 }

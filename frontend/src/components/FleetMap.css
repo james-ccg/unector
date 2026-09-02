@@ -51,7 +51,11 @@
    the colours back the right way round, since a plain invert turns land
    cyan and water orange. Only the tiles are touched - markers, popups and
    controls are the app's own and must not be inverted with them. */
-.leaflet-container.is-dark .leaflet-tile-pane {
+.fleet-map-wrap {
+  width: 100%;
+  height: 100%;
+}
+.fleet-map-wrap.is-dark .leaflet-tile-pane {
   filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.88);
 }
 

@@ -5,7 +5,6 @@ import Icon from '../components/Icon'
 import FleetMap from '../components/FleetMap'
 import { BASEMAPS, type BasemapId } from '../components/basemaps'
 import { useAuth } from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
 import { dashboardApi, errorMessage } from '../services/api'
 import './MonitoringPage.css'
 
@@ -15,7 +14,6 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 
 export default function MonitoringPage() {
   const { user } = useAuth()
-  const { resolvedTheme } = useTheme()
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [connected, setConnected] = useState(false)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -29,9 +27,12 @@ export default function MonitoringPage() {
   // Bumped to tell the map to frame the fleet again. The button lives out
   // here; the Leaflet instance lives inside FleetMap.
   const [recenterNonce, setRecenterNonce] = useState(0)
-  // Opens on whatever suits the app's theme; after that it is the reader's
-  // choice, because road names can be wanted on a dark dashboard.
-  const [basemap, setBasemap] = useState<BasemapId>(resolvedTheme === 'dark' ? 'dark' : 'street')
+  // Always opens on Street, whatever the app's appearance is set to. No
+  // mapping product ties its basemap to the surrounding interface theme,
+  // and it is the wrong default anyway: a dark dashboard says nothing about
+  // whether someone wants road names legible on the map inside it. Dark
+  // stays on the menu as a choice.
+  const [basemap, setBasemap] = useState<BasemapId>('street')
   const [layersOpen, setLayersOpen] = useState(false)
 
   const refresh = useCallback(async () => {
