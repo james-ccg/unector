@@ -41,7 +41,7 @@ class TestJWTTokens:
     
     def test_create_token(self):
         """Test creating a token"""
-        payload = {"role": "owner", "company_id": 1}
+        payload = {"role": "owner", "company_id": 1, "purpose": "session"}
         token = create_token(payload)
         
         assert isinstance(token, str)
@@ -50,7 +50,7 @@ class TestJWTTokens:
     
     def test_decode_valid_token(self):
         """Test decoding valid token"""
-        payload = {"role": "dispatcher", "company_id": 5}
+        payload = {"role": "dispatcher", "company_id": 5, "purpose": "session"}
         token = create_token(payload)
         decoded = decode_token(token)
         
@@ -69,12 +69,28 @@ class TestJWTTokens:
     def test_token_contains_expiration(self):
         """Test that token contains expiration"""
         import time
-        payload = {"user_id": 1}
+        payload = {"user_id": 1, "purpose": "session"}
         token = create_token(payload)
         decoded = decode_token(token)
         
         assert "exp" in decoded
         assert decoded["exp"] > time.time()
+
+    def test_token_without_a_purpose_is_refused(self):
+        """A token with no purpose is accepted by whoever is least strict,
+        so it cannot be minted at all - see miniapp/auth.py."""
+        import pytest
+
+        with pytest.raises(ValueError, match="purpose"):
+            create_token({"role": "owner", "company_id": 1})
+
+    def test_decode_rejects_a_token_minted_for_another_job(self):
+        """The whole point of the purpose claim."""
+        token = create_token({"company_id": 1, "purpose": "gmail_oauth"})
+
+        assert decode_token(token, purpose="gmail_oauth") is not None
+        assert decode_token(token, purpose="session") is None
+        assert decode_token(token, purpose="2fa_login") is None
 
 
 if __name__ == "__main__":

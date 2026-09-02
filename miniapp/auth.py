@@ -30,6 +30,18 @@ SESSION_COOKIE_NAME = "fp_session"
 CSRF_COOKIE_NAME = "fp_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
+# Every token this module mints carries one of these in its `purpose` claim,
+# and whoever accepts a token names the purpose it will accept.
+#
+# They are all signed with the same key, so without this a token issued for
+# one job is a valid token for another. The 2FA handshake token was the
+# dangerous case: the login endpoint returns it to the caller *before* any
+# second factor has been given, and the session check only verified the
+# signature - so setting it as fp_session skipped 2FA outright. The OAuth
+# `state` tokens are the same shape of problem, and they travel through a
+# third party in a URL.
+SESSION_PURPOSE = "session"
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -43,16 +55,35 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_token(payload: dict, lifetime_seconds: int = TOKEN_LIFETIME_SECONDS) -> str:
+    """Signs a token. `payload` must carry a `purpose` - see SESSION_PURPOSE.
+
+    Required rather than defaulted so a new token cannot be added without
+    deciding what it is for: a token with no purpose is accepted by whoever
+    happens to be least strict."""
     data = dict(payload)
+    if not data.get("purpose"):
+        raise ValueError("create_token: every token needs a `purpose` claim")
     data["exp"] = int(time.time()) + lifetime_seconds
     return jwt.encode(data, JWT_SECRET_KEY, algorithm=ALGORITHM)
 
 
-def decode_token(token: str) -> dict | None:
+def create_session_token(claims: dict) -> str:
+    """A real login session, for set_session_cookies."""
+    return create_token({**claims, "purpose": SESSION_PURPOSE})
+
+
+def decode_token(token: str, purpose: str | None = None) -> dict | None:
+    """Verifies signature and expiry, and - when `purpose` is given - that
+    the token was minted for that job. Pass it wherever the token's purpose
+    is known, which is everywhere except the two callbacks that read the
+    purpose out in order to decide what to do next."""
     try:
-        return jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
     except jwt.PyJWTError:
         return None
+    if purpose is not None and payload.get("purpose") != purpose:
+        return None
+    return payload
 
 
 def set_session_cookies(response, token: str) -> None:

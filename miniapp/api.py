@@ -64,10 +64,12 @@ from db.repository import (
 )
 from miniapp.auth import (
     CSRF_COOKIE_NAME,
+    SESSION_PURPOSE,
     CSRF_HEADER_NAME,
     SESSION_COOKIE_NAME,
     SHORT_LIVED_SECONDS,
     clear_session_cookies,
+    create_session_token,
     create_token,
     decode_token,
     hash_password,
@@ -360,7 +362,11 @@ def get_current_user(request: Request) -> dict:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         raise HTTPException(401, "Missing or invalid session")
-    payload = decode_token(token)
+    # SESSION_PURPOSE, explicitly: the 2FA handshake token, the OAuth state
+    # tokens and the password-reset token are all signed with the same key,
+    # and without this any of them authenticated as a full session. The 2FA
+    # one is handed to the caller before the second factor is given.
+    payload = decode_token(token, purpose=SESSION_PURPOSE)
     if not payload:
         raise HTTPException(401, "Invalid or expired session - please log in again")
     return payload
@@ -495,7 +501,9 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 save_company_credential(new_company.id, "gmail_refresh_token", pending_gmail["gmail_refresh_token"])
                 mark_token_connected(new_company.id)
 
-            token = create_token({"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name})
+            token = create_session_token(
+                {"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name}
+            )
             set_session_cookies(response, token)
             return {
                 "company_name": new_company.company_name,
@@ -551,7 +559,7 @@ def _finish_password_step(response: Response, account_type: str, account_id: int
     base_claims = {"role": account_type, **extra_claims}
 
     if not status["any_enabled"]:
-        token = create_token(base_claims)
+        token = create_session_token(base_claims)
         set_session_cookies(response, token)
         return {"role": account_type, **extra_claims, **_gmail_connected_field(account_type, extra_claims["company_id"])}
 
@@ -1310,8 +1318,8 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
     # Best-effort recovery of where to send the owner back to, even on an
     # error/expired-state path - falls back to Settings, the safer default.
     return_path = _GMAIL_RETURN_PATHS["settings"]
-    payload = decode_token(state) if state else None
-    if payload and payload.get("purpose") == "gmail_oauth":
+    payload = decode_token(state, purpose="gmail_oauth") if state else None
+    if payload:
         return_path = _GMAIL_RETURN_PATHS.get(payload.get("return_to"), return_path)
 
     # Four different failures used to redirect with the same ?gmail=error,
@@ -1327,7 +1335,7 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
     if not code or not state:
         return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_incomplete")
 
-    if not payload or payload.get("purpose") != "gmail_oauth":
+    if not payload:
         return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_expired_link")
 
     try:
@@ -1426,8 +1434,8 @@ def google_login_callback(
     def _fail(reason: str) -> RedirectResponse:
         return RedirectResponse(f"{FRONTEND_URL}/login?google={reason}")
 
-    payload = decode_token(state) if state else None
-    if error or not code or not payload or payload.get("purpose") != "google_login":
+    payload = decode_token(state, purpose="google_login") if state else None
+    if error or not code or not payload:
         return _fail("error")
 
     try:
@@ -1519,7 +1527,7 @@ def register_gmail_callback(code: str | None = None, state: str | None = None, e
     from db.repository import create_pending_registration
     from services.gmail_service import exchange_code_for_refresh_token, get_email_address
 
-    payload = decode_token(state) if state else None
+    payload = decode_token(state, purpose="register_gmail") if state else None
     # Split for the same reason as the Settings callback above - a cancelled
     # consent screen and an expired link are not the same problem.
     if error:
@@ -1528,7 +1536,7 @@ def register_gmail_callback(code: str | None = None, state: str | None = None, e
         )
     if not code or not state:
         return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_incomplete")
-    if not payload or payload.get("purpose") != "register_gmail":
+    if not payload:
         return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_expired_link")
 
     try:
@@ -2059,8 +2067,8 @@ class WebAuthnLoginVerifyRequest(BaseModel):
 def get_pending_2fa_claims(authorization: str = Header(default="")) -> dict:
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "Missing pending session")
-    payload = decode_token(authorization.removeprefix("Bearer ").strip())
-    if not payload or payload.get("purpose") != "2fa_login":
+    payload = decode_token(authorization.removeprefix("Bearer ").strip(), purpose="2fa_login")
+    if not payload:
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
     return payload
 
@@ -2322,8 +2330,8 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
 @app.post("/api/2fa/login/verify")
 @limiter.limit("10/minute")
 async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, response: Response):
-    claims = decode_token(body.pending_token)
-    if not claims or claims.get("purpose") != "2fa_login":
+    claims = decode_token(body.pending_token, purpose="2fa_login")
+    if not claims:
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
 
     account_type, account_id = claims["account_type"], claims["account_id"]
@@ -2350,7 +2358,7 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
         raise HTTPException(400, "Incorrect or expired code")
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
-    token = create_token(session_claims)
+    token = create_session_token(session_claims)
     set_session_cookies(response, token)
     return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
@@ -2360,8 +2368,8 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
 async def login_2fa_webauthn_verify(
     request: Request, body: WebAuthnLoginVerifyRequest, response: Response,
 ):
-    claims = decode_token(body.pending_token)
-    if not claims or claims.get("purpose") != "2fa_login":
+    claims = decode_token(body.pending_token, purpose="2fa_login")
+    if not claims:
         raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
 
     account_type, account_id = claims["account_type"], claims["account_id"]
@@ -2389,7 +2397,7 @@ async def login_2fa_webauthn_verify(
         raise HTTPException(400, "Could not verify security key")
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
-    token = create_token(session_claims)
+    token = create_session_token(session_claims)
     set_session_cookies(response, token)
     return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
