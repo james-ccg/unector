@@ -165,7 +165,16 @@
   font-weight: 600;
   color: var(--text-muted);
 }
+/* Sized to its own content, not to the modal.
+   Stretched full-width, the native drop-down arrow ended up a couple of
+   hundred pixels away from the word it belongs to, reading as a stray
+   control rather than part of this one. fit-content keeps the arrow next
+   to the text; the min-width stops it jumping about as the selection
+   changes length. */
 .status-duration select {
+  width: fit-content;
+  min-width: 170px;
+  max-width: 100%;
   padding: 10px 12px;
   font: inherit;
   font-size: 14px;

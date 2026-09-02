@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   ESSENTIAL_STORAGE, SIGN_IN_STORAGE, hasDecided, saveConsent, getConsent, type ConsentCategory,
 } from '../lib/consent'
+import Icon from './Icon'
 import './CookieConsent.css'
 
 /**
@@ -73,18 +74,32 @@ export default function CookieConsent() {
   return (
     <div className="consent" role="dialog" aria-label="Storage preferences" aria-modal="false">
       <div className="consent-inner">
+        {/* First level: the one sentence that matters, and both decisions.
+            Everything else is a click away.
+
+            The detail collapses; the choices never do. Progressive
+            disclosure is fine as long as no option is hidden or made harder
+            to reach than another - "Essential only" and "Accept all" sit
+            side by side, same size, same weight, at every level. */}
         <div className="consent-copy">
-          <p className="consent-title">A note on what we store</p>
           <p className="consent-text">
-            Freight Pilot keeps you signed in with a session cookie, which it needs to work at all.
-            Beyond that it only remembers settings you choose on this device.{' '}
-            <strong>No analytics, no advertising, no third-party trackers.</strong>{' '}
-            <Link to="/pages/privacy">Read the privacy policy</Link>.
+            <strong>No analytics, no advertising, no third-party trackers.</strong> Freight Pilot
+            keeps you signed in, and remembers the settings you choose on this device.
           </p>
+          <button
+            type="button"
+            className="consent-disclosure"
+            onClick={() => setShowDetail((shown) => !shown)}
+            aria-expanded={showDetail}
+            aria-controls="consent-detail"
+          >
+            <Icon name="chevron-right" size={14} />
+            {showDetail ? 'Hide the detail' : 'What exactly is stored'}
+          </button>
         </div>
 
         {showDetail && (
-          <div className="consent-detail">
+          <div className="consent-detail" id="consent-detail">
             <div className="consent-row is-locked">
               <div>
                 <p className="consent-row-label">Essential</p>
@@ -122,13 +137,9 @@ export default function CookieConsent() {
         )}
 
         <div className="consent-actions">
-          {showDetail ? (
-            <button type="button" className="btn btn-primary" onClick={() => decide(choice)}>
+          {showDetail && (
+            <button type="button" className="btn btn-ghost" onClick={() => decide(choice)}>
               Save choices
-            </button>
-          ) : (
-            <button type="button" className="btn btn-ghost" onClick={() => setShowDetail(true)}>
-              Choose what to store
             </button>
           )}
           {/* Same size, same styling, same prominence as Accept. */}
@@ -147,6 +158,9 @@ export default function CookieConsent() {
             Accept all
           </button>
         </div>
+        <Link className="consent-policy" to="/pages/privacy">
+          Read the privacy policy
+        </Link>
       </div>
     </div>
   )
