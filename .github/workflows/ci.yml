@@ -14,10 +14,16 @@ on:
     # twice over the same code and doubled the minutes for nothing.
     branches: [main]
   pull_request:
-  schedule:
-    # Advisories are published against code that has not changed, so the
-    # audits need to run on a clock, not only on a commit.
-    - cron: '0 6 * * 1'
+  # Run it deliberately, from the Actions tab.
+  workflow_dispatch:
+
+# Deliberately no `schedule:`. A weekly cron would run the audits against
+# code nobody had touched - useful, since advisories land against unchanged
+# dependencies - but it also runs on this account with nobody watching, and
+# that is not something to switch on for someone else. Version bumps
+# already arrive as PRs weekly and cover most of the same ground; those PRs
+# trigger this workflow through pull_request, so the audits still see new
+# versions. Add the cron back only if asked for it.
 
 permissions:
   contents: read
