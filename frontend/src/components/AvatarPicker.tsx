@@ -1,57 +1,41 @@
 import { useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { authApi, errorMessage } from '../services/api'
+import AvatarCropper from './AvatarCropper'
 import Icon from './Icon'
 import './AvatarPicker.css'
 
-const OUTPUT_SIZE = 160
-
-/** Center-crops `file` to a square and resizes it to OUTPUT_SIZE, returning
- * a JPEG data URL small enough to store as plain text (see
- * _MAX_AVATAR_DATA_URL_LENGTH in miniapp/api.py) without needing a separate
- * file-storage service for what's just a small profile picture. */
-function resizeToSquareDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => {
-      const side = Math.min(img.width, img.height)
-      const sx = (img.width - side) / 2
-      const sy = (img.height - side) / 2
-      const canvas = document.createElement('canvas')
-      canvas.width = OUTPUT_SIZE
-      canvas.height = OUTPUT_SIZE
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error("Couldn't process image"))
-        return
-      }
-      ctx.drawImage(img, sx, sy, side, side, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
-      resolve(canvas.toDataURL('image/jpeg', 0.85))
-      URL.revokeObjectURL(img.src)
-    }
-    img.onerror = () => reject(new Error("Couldn't read that image"))
-    img.src = URL.createObjectURL(file)
-  })
-}
+/* The picture used to be centre-cropped the moment it was chosen, which is
+ * right roughly never - faces are rarely dead centre. Picking a file now
+ * opens AvatarCropper, and the crop is the person's own decision. It still
+ * comes back as a small JPEG data URL, stored as plain text rather than
+ * needing a file-storage service for a profile picture; see
+ * _MAX_AVATAR_DATA_URL_LENGTH in miniapp/api.py. */
 
 export default function AvatarPicker() {
   const { user, refreshUser } = useAuth()
   const inputRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [pending, setPending] = useState<File | null>(null)
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setError('Please choose an image file.')
+      setError('That file is not an image. Choose a JPEG, PNG or WebP.')
       return
     }
+    setError('')
+    setPending(file)
+  }
+
+  const handleCropped = async (dataUrl: string) => {
+    setPending(null)
     setBusy(true)
     setError('')
     try {
-      const dataUrl = await resizeToSquareDataUrl(file)
       await authApi.setAvatar(dataUrl)
       await refreshUser()
     } catch (err) {
@@ -98,6 +82,9 @@ export default function AvatarPicker() {
         </div>
         <input ref={inputRef} type="file" accept="image/*" onChange={handleFileChange} hidden />
       </div>
+      {pending && (
+        <AvatarCropper file={pending} onCancel={() => setPending(null)} onDone={handleCropped} />
+      )}
       {error && <p className="form-error">{error}</p>}
     </div>
   )

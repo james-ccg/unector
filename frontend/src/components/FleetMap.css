@@ -54,3 +54,22 @@
 .fleet-map-marker.is-selected {
   outline: 4px solid rgba(195, 248, 50, 0.35);
 }
+
+/* OSM ships one tile style, and it is light. Inverting it gives a dark map
+   without taking an API key for a second tile set; the hue rotation puts
+   the colours back the right way round, since a plain invert turns land
+   cyan and water orange. Only the tiles are touched - markers, popups and
+   controls are the app's own and must not be inverted with them. */
+.leaflet-container.is-dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.88);
+}
+
+/* The attribution sits on top of inverted tiles, so it needs its own
+   readable ground rather than inheriting the map's. */
+.leaflet-container.is-dark .leaflet-control-attribution {
+  background: rgba(22, 22, 22, 0.82);
+  color: var(--text-muted);
+}
+.leaflet-container.is-dark .leaflet-control-attribution a {
+  color: var(--text);
+}

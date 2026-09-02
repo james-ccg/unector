@@ -266,7 +266,7 @@ export default function DashboardPage() {
           {dashboardData?.gmail_needs_reconnect && (
             <Alert kind="error">
               Gmail has disconnected, so new rate confirmations aren't being picked up.{' '}
-              <Link to="/settings">Reconnect it in Settings</Link> to start processing loads again.
+              <Link to="/settings#gmail">Reconnect it in Settings</Link> to start processing loads again.
             </Alert>
           )}
 
@@ -493,15 +493,22 @@ export default function DashboardPage() {
                   <div className="driver-header">
                     <div className="driver-name-row">
                       <span className={`status-dot ${driver.subscription_active ? 'on' : 'off'}`} />
+                      {/* Each unit is one indivisible chip: the label and
+                          its number must never be split across a line
+                          break, which is what happened when they were loose
+                          inline text at two very different sizes. */}
                       <h3 className="driver-name">
                         {driver.truck ? (
                           <>
-                            <span className="unit-label">Truck</span> {driver.truck.unit_number}
+                            <span className="unit">
+                              <span className="unit-label">Truck</span>
+                              <span className="unit-number">{driver.truck.unit_number}</span>
+                            </span>
                             {driver.trailer && (
-                              <>
-                                <span className="unit-sep">·</span>
-                                <span className="unit-label">Trailer</span> {driver.trailer.unit_number}
-                              </>
+                              <span className="unit">
+                                <span className="unit-label">Trailer</span>
+                                <span className="unit-number">{driver.trailer.unit_number}</span>
+                              </span>
                             )}
                           </>
                         ) : (

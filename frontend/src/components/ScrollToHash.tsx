@@ -24,19 +24,37 @@ export default function ScrollToHash() {
     let frames = 0
     let raf = 0
 
+    let clear = 0
+
     const tryScroll = () => {
       const target = document.querySelector(hash)
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (!target) {
+        if (frames++ < 30) raf = requestAnimationFrame(tryScroll)
         return
       }
-      if (frames++ < 30) {
-        raf = requestAnimationFrame(tryScroll)
+
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      target.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' })
+
+      // Arriving somewhere in the middle of a long page is disorienting
+      // unless something says "this is the thing you were sent to". The
+      // class fades out on its own; the CSS lives with each target.
+      target.classList.add('is-deep-linked')
+      clear = window.setTimeout(() => target.classList.remove('is-deep-linked'), 2400)
+
+      // Scrolling moves the eye but not the keyboard. Without this, tabbing
+      // after following the link resumes from the top of the document.
+      if (target instanceof HTMLElement) {
+        if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1')
+        target.focus({ preventScroll: true })
       }
     }
 
     raf = requestAnimationFrame(tryScroll)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.clearTimeout(clear)
+    }
   }, [pathname, hash])
 
   return null

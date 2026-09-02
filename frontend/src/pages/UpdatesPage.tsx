@@ -1,4 +1,4 @@
-import { Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket } from 'lucide-react'
+import { Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket, UserRound } from 'lucide-react'
 import Layout from '../components/Layout'
 
 /** The changelog, and only what actually happened.
@@ -38,6 +38,38 @@ export default function UpdatesPage() {
                 </li>
                 <li>The offline game only works offline from your second visit, once the browser has cached it.</li>
                 <li>No public status page or uptime figure - we will not publish one we cannot measure.</li>
+                <li>
+                  Signing out does not yet revoke a session server-side. The cookie goes, but a
+                  token captured beforehand stays valid until it expires.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">2 September 2026</div>
+              <h3 className="update-title"><ShieldCheck size={20} /> Security, and how errors read</h3>
+              <ul className="update-list">
+                <li>
+                  A token issued for one job could be used as a login session. The 2FA handshake
+                  token is handed back before any second factor, so knowing a password was enough
+                  to get in. Every token now says what it is for, and the check is enforced.
+                </li>
+                <li>CSRF tokens are now tied to your session, so writing a cookie is no longer enough to forge one</li>
+                <li>Every error names itself - the status code, the failure kind - instead of &ldquo;something went wrong&rdquo;</li>
+                <li>Error wording rewritten against the published guidance: say what happened, say what to do, don&apos;t blame the reader</li>
+                <li>Live GPS was returning a server error on every visit and never loaded; the fleet map no longer needs a map-provider key</li>
+                <li>Continuous integration, dependency auditing and secret scanning on every push</li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">2 September 2026</div>
+              <h3 className="update-title"><UserRound size={20} /> Profile and status</h3>
+              <ul className="update-list">
+                <li>Profile pictures are cropped by you, not centre-cropped by us - drag, zoom, pinch on a phone</li>
+                <li>Status has one-click presets for the statuses a driver&apos;s day is actually made of, and tells you when it will clear</li>
+                <li>The dashboard&apos;s &ldquo;Reconnect it in Settings&rdquo; now lands on the button itself rather than the top of the page</li>
+                <li>Truck and trailer numbers no longer break across two lines on a driver card</li>
               </ul>
             </div>
 

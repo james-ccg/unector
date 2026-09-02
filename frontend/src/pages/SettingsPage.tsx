@@ -703,7 +703,7 @@ export default function SettingsPage() {
         <section className={sectionClass('integrations')}>
           <h2 className="section-title">Integrations</h2>
 
-          <div className="card integration-card">
+          <div className="card integration-card" id="gmail">
             <div className="integration-header">
               <div className="integration-icon"><Icon name="email" size={22} /></div>
               <div className="integration-info">
@@ -770,7 +770,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="card integration-card">
+          <div className="card integration-card" id="samsara">
             <div className="integration-header">
               <div className="integration-icon"><Icon name="location" size={22} /></div>
               <div className="integration-info">

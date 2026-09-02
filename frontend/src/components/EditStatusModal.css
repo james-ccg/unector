@@ -1,0 +1,197 @@
+/* The status picker.
+ *
+ * It used to be a loose strip of emoji, a text field and a select, each
+ * doing its own thing. The emoji had no relationship to the words it was
+ * meant to accompany, and nothing helped with the fact that the same six
+ * statuses get typed over and over. This puts the emoji inside the field it
+ * belongs to and leads with the statuses themselves.
+ */
+.status-modal {
+  max-width: 440px;
+}
+
+.status-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ---- the field: emoji, words and a way to empty it, as one control ---- */
+.status-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s ease;
+}
+.status-field:focus-within {
+  border-color: var(--primary);
+}
+
+.status-field input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 8px 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+}
+.status-field input::placeholder {
+  color: var(--hint);
+}
+
+.status-emoji-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.status-emoji {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  line-height: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.status-emoji:hover,
+.status-emoji[aria-expanded='true'] {
+  border-color: var(--primary);
+}
+.status-emoji.has-emoji {
+  background: var(--card);
+}
+
+.status-emoji-picker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(6, 38px);
+  gap: 4px;
+  padding: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.6);
+}
+.status-emoji-picker button {
+  width: 38px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 1;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.status-emoji-picker button:hover {
+  background: var(--bg);
+}
+.status-emoji-picker button.is-chosen {
+  border-color: var(--primary);
+  background: var(--bg);
+}
+
+.status-field-clear {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--hint);
+  cursor: pointer;
+}
+.status-field-clear:hover {
+  background: var(--card);
+  color: var(--text);
+}
+
+/* ---- the shortcuts that mean nobody has to type ---- */
+.status-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.status-chip:hover {
+  border-color: var(--text-muted);
+}
+.status-chip.is-chosen {
+  border-color: var(--primary);
+  background: var(--card);
+}
+
+/* ---- expiry ---- */
+.status-duration {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.status-duration > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.status-duration select {
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.status-duration select:focus-visible,
+.status-chip:focus-visible,
+.status-emoji:focus-visible,
+.status-emoji-picker button:focus-visible,
+.status-field-clear:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* The duration answers "how long"; this answers "until when", which is the
+   question someone is actually asking themselves before they commit. */
+.status-duration small {
+  font-size: 12px;
+  color: var(--hint);
+}
+
+@media (max-width: 420px) {
+  .status-emoji-picker {
+    grid-template-columns: repeat(4, 38px);
+  }
+}

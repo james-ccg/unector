@@ -545,3 +545,39 @@
     flex: 1 1 100%;
   }
 }
+
+/* Deep-link targets. The dashboard's "Reconnect it in Settings" banner
+   links to #gmail, so the reader lands on the card with the button rather
+   than at the top of a long settings page to hunt for it.
+
+   scroll-margin-top keeps the card clear of the fixed header, which would
+   otherwise sit over the thing just scrolled to. The outline says "this is
+   what you were sent to" and then gets out of the way - arriving in the
+   middle of a page with no acknowledgement is disorienting. */
+.integration-card {
+  scroll-margin-top: 96px;
+}
+.integration-card:focus {
+  outline: none;
+}
+.integration-card.is-deep-linked {
+  animation: deep-link-arrive 2.4s ease-out;
+}
+
+@keyframes deep-link-arrive {
+  0%, 55% {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(195, 248, 50, 0.16);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: 0 0 0 3px rgba(195, 248, 50, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .integration-card.is-deep-linked {
+    animation: none;
+    border-color: var(--primary);
+  }
+}

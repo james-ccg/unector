@@ -17,15 +17,25 @@ interface FleetMapProps {
   onSelect: (id: number) => void
 }
 
-// Free, no-API-key tile sets (CartoDB, built on OpenStreetMap data) - picked
-// specifically because they ship a matching light/dark pair, so the map
-// itself follows the app's Appearance setting instead of always looking
-// like a light-mode iframe dropped into a dark page.
-const LIGHT_TILES = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+// OpenStreetMap's own tiles, which need no API key and no account.
+//
+// This used to point at CARTO's basemaps.cartocdn.com light/dark pair,
+// chosen because they came as a matching set. CARTO now requires a key for
+// those and is retiring the open endpoints, so every tile came back stamped
+// "API KEY REQUIRED" across the map.
+//
+// OSM ships one style, and it is a light one. Rather than take a key for a
+// dark twin, the dark theme inverts these in CSS - see .fleet-map.is-dark
+// in FleetMap.css. Inversion alone would turn the land cyan, so the hue is
+// rotated back 180 degrees, which is the standard trick and holds up well
+// on a road map with few saturated colours.
+//
+// OSM's tile usage policy expects light, non-commercial-scale traffic and
+// requires the attribution below. A fleet map at this size sits well inside
+// that; a heavier deployment should move to a paid tile host.
+const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> ' +
-  '&copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>'
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
 
 // Continental US center - every current customer is a US trucking company
 // (see PricingPage/config.py), so this is a more useful default view than
@@ -95,10 +105,10 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: FleetMapPro
     <MapContainer
       center={points[0] ?? DEFAULT_CENTER}
       zoom={points.length ? 6 : DEFAULT_ZOOM}
-      className="fleet-map"
+      className={`fleet-map${resolvedTheme === 'dark' ? ' is-dark' : ''}`}
       scrollWheelZoom
     >
-      <TileLayer url={resolvedTheme === 'dark' ? DARK_TILES : LIGHT_TILES} attribution={TILE_ATTRIBUTION} maxZoom={19} />
+      <TileLayer url={TILES} attribution={TILE_ATTRIBUTION} maxZoom={19} />
       <ViewportController points={points} focusPoint={focusPoint} />
       {located.map((vehicle) => (
         <Marker

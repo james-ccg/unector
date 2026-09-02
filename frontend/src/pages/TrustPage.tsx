@@ -46,7 +46,9 @@ export default function TrustPage() {
               <Icon name="shield" size={28} /> Trust &amp; Platform Stats
             </h1>
             <p className="page-description">
-              Live numbers pulled directly from our database - updated in real time as the platform grows.
+              Counted from our own database when you loaded this page. Freight Pilot started in
+              August 2026, so these are small numbers - they are also the real ones, which is the
+              only reason to put them on a page at all.
             </p>
           </div>
 
