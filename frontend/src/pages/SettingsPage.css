@@ -213,9 +213,15 @@
   font-size: 13px;
   line-height: 1.6;
 }
+/* Every other button row on the site sets a gap; this one did not, so on a
+   dead Gmail connection - the only card that shows two buttons at once -
+   Reconnect and Disconnect sat flush against each other. 10px matches
+   .modal-actions below. */
 .integration-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .btn-danger-ghost {
