@@ -87,3 +87,28 @@
 .leaflet-container .leaflet-control-attribution:hover a {
   color: var(--text);
 }
+
+/* Mapbox's wordmark. Their terms require it on the map itself alongside
+   the text attribution, so it is not styling anyone may remove - only
+   rendered when a Mapbox style is actually in use. Bottom-left, which is
+   where Mapbox place it themselves and opposite the text credit. */
+.map-wordmark {
+  position: absolute;
+  left: 10px;
+  bottom: 6px;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--text);
+  background: rgba(22, 22, 22, 0.7);
+  opacity: 0.9;
+}
+.map-wordmark:hover {
+  opacity: 1;
+}
+.map-wordmark:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

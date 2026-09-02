@@ -33,6 +33,7 @@ from config import (
     GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET,
     IS_PRODUCTION,
+    MAPBOX_TOKEN,
     PLAN_LIMITS,
     SAMSARA_TEST_MODE,
     TURNSTILE_SECRET_KEY,
@@ -129,7 +130,12 @@ _CSP = (
     "script-src 'self' https://challenges.cloudflare.com; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
-    "img-src 'self' data:; "
+    # Map tiles are images from other origins, and this said 'self' only -
+    # so on a production deploy (where this app serves the page and this
+    # header) every tile was blocked and the map rendered empty. It never
+    # showed in development because Vite serves the page without this CSP.
+    "img-src 'self' data: https://tile.openstreetmap.org https://tiles.maps.eox.at "
+    "https://api.mapbox.com; "
     "object-src 'none'; "
     "frame-src https://challenges.cloudflare.com; "
     "connect-src 'self' https://challenges.cloudflare.com; "
@@ -497,7 +503,7 @@ def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
 def get_public_config():
     """Tells the frontend whether to render the Turnstile widget at all,
     and with which site key - the secret key never leaves the backend."""
-    return {"turnstile_site_key": TURNSTILE_SITE_KEY}
+    return {"turnstile_site_key": TURNSTILE_SITE_KEY, "mapbox_token": MAPBOX_TOKEN}
 
 
 @app.post("/api/auth/register")

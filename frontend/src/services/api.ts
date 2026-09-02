@@ -740,7 +740,10 @@ export const publicApi = {
 
   // turnstile_site_key is null when Cloudflare Turnstile isn't configured -
   // the widget just doesn't render in that case and forms submit without it.
-  getConfig: () => apiRequest<{ turnstile_site_key: string | null }>('/api/public/config'),
+  getConfig: () =>
+    apiRequest<{ turnstile_site_key: string | null; mapbox_token: string | null }>(
+      '/api/public/config'
+    ),
 }
 
 export interface BillingStatus {

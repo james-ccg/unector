@@ -124,6 +124,15 @@ def run() -> None:
     csp = r.headers.get("Content-Security-Policy", "")
     check("CSP locks frame-ancestors", "frame-ancestors 'none'" in csp, csp[:80])
     check("CSP locks object-src", "object-src 'none'" in csp, csp[:80])
+    # The map is images from other origins. img-src said 'self' only, so on
+    # a production deploy every tile was blocked and the map came up empty -
+    # invisible in development, where Vite serves the page without this
+    # header at all.
+    for host in ("tile.openstreetmap.org", "tiles.maps.eox.at", "api.mapbox.com"):
+        check(f"CSP admits map tiles from {host}", host in csp, csp[:200])
+
+    body = r.json()
+    check("config offers a mapbox token field", "mapbox_token" in body, str(body)[:160])
 
     # ---------------------------------------------------------------
     section("2. An unknown API path is a 404, not the SPA")

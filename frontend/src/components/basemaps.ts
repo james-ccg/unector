@@ -43,10 +43,22 @@ const OSM_CREDIT =
 // some resolution. The attribution below is a condition of that licence.
 export type BasemapId = 'street' | 'satellite' | 'dark'
 
-export const BASEMAPS: Record<
-  BasemapId,
-  { label: string; url: string; attribution: string; maxZoom: number; invert?: boolean }
-> = {
+export interface Basemap {
+  label: string
+  url: string
+  attribution: string
+  maxZoom: number
+  /** Inverted in CSS to make a dark map out of a light tile set. Only ever
+   *  true for the keyless fallback - Mapbox ships a real dark style. */
+  invert?: boolean
+  /** Mapbox serves 512px tiles; Leaflet assumes 256 and needs telling. */
+  tileSize?: number
+  zoomOffset?: number
+  /** Mapbox's terms require their wordmark on the map, not just text. */
+  logo?: 'mapbox'
+}
+
+const KEYLESS: Record<BasemapId, Basemap> = {
   street: {
     label: 'Street',
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -69,3 +81,50 @@ export const BASEMAPS: Record<
     invert: true,
   },
 }
+
+// ---------------------------------------------------------------------
+// Mapbox, when a token is configured.
+//
+// Sharper than the keyless set and it has a real dark style rather than an
+// inverted light one, so `invert` is off here. The token is public by
+// design - Mapbox issues it to be embedded - and is restricted by URL in
+// their dashboard rather than kept secret. See MAPBOX_TOKEN in config.py.
+//
+// Their attribution terms want three links and the Mapbox wordmark. The
+// links go in the attribution string; the wordmark is drawn by the map
+// component when `logo` is set. Neither is optional on these styles.
+// ---------------------------------------------------------------------
+const MAPBOX_CREDIT =
+  '&copy; <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noreferrer">Mapbox</a> ' +
+  OSM_CREDIT +
+  ' <a href="https://www.mapbox.com/map-feedback/" target="_blank" rel="noreferrer">Improve this map</a>'
+
+function mapboxStyle(label: string, style: string, token: string): Basemap {
+  return {
+    label,
+    url:
+      `https://api.mapbox.com/styles/v1/mapbox/${style}/tiles/512/{z}/{x}/{y}@2x` +
+      `?access_token=${encodeURIComponent(token)}`,
+    attribution: MAPBOX_CREDIT,
+    maxZoom: 20,
+    tileSize: 512,
+    zoomOffset: -1,
+    logo: 'mapbox',
+  }
+}
+
+/** The basemaps to offer. Mapbox when a token is configured, otherwise the
+ *  keyless set - the map works either way, and nothing has to be signed up
+ *  for to get a working one. */
+export function basemapsFor(mapboxToken: string | null | undefined): Record<BasemapId, Basemap> {
+  if (!mapboxToken) return KEYLESS
+  return {
+    street: mapboxStyle('Street', 'streets-v12', mapboxToken),
+    satellite: mapboxStyle('Satellite', 'satellite-streets-v12', mapboxToken),
+    dark: mapboxStyle('Dark', 'dark-v11', mapboxToken),
+  }
+}
+
+/** Kept as the default export shape for anything that does not care which
+ *  set it got. */
+export const BASEMAPS = KEYLESS

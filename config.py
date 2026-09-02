@@ -108,6 +108,17 @@ SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
 # sign up at dash.cloudflare.com/?to=/:account/turnstile. Leave both empty
 # to disable; register/login work normally without it, just unprotected.
 TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "").strip() or None
+
+# Mapbox basemaps. Optional: without it the fleet map falls back to
+# OpenStreetMap and Sentinel-2, which need no account at all.
+#
+# This is a PUBLIC token (pk....), not a secret. Mapbox issues it precisely
+# to be embedded in a page, and it is served to the browser alongside the
+# Turnstile site key. What stops it being abused is a URL restriction set
+# in the Mapbox dashboard, not secrecy - so restrict it there. A secret
+# token (sk....) must never be put here; it would be handed to every
+# visitor.
+MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "").strip() or None
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip() or None
 
 # SMS OTP - pluggable provider. Only Twilio is wired up as an example; you

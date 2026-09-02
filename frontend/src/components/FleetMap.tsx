@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { AttributionControl, MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { BASEMAPS, type BasemapId } from './basemaps'
+import { type Basemap } from './basemaps'
 import './FleetMap.css'
 
 export type MapVehicle = {
@@ -15,7 +15,7 @@ interface FleetMapProps {
   vehicles: MapVehicle[]
   selectedId: number | null
   onSelect: (id: number) => void
-  basemap: BasemapId
+  basemap: Basemap
   /** Bumped by the page's recenter button. The map refits whenever this
    *  changes, which is how a control outside the MapContainer reaches the
    *  Leaflet instance living inside it. */
@@ -109,7 +109,7 @@ export default function FleetMap({
   basemap,
   recenterNonce = 0,
 }: FleetMapProps) {
-  const tiles = BASEMAPS[basemap]
+  const tiles = basemap
 
   const located = useMemo(
     () =>
@@ -140,7 +140,14 @@ export default function FleetMap({
         {/* key forces a fresh layer rather than a re-used one with a
             swapped URL, which Leaflet handles by holding the old tiles
             until every new one has loaded - a visibly torn map. */}
-        <TileLayer key={basemap} url={tiles.url} attribution={tiles.attribution} maxZoom={tiles.maxZoom} />
+        <TileLayer
+          key={tiles.url}
+          url={tiles.url}
+          attribution={tiles.attribution}
+          maxZoom={tiles.maxZoom}
+          tileSize={tiles.tileSize ?? 256}
+          zoomOffset={tiles.zoomOffset ?? 0}
+        />
         {/* prefix={false} drops "Leaflet |". The OpenStreetMap credit
             stays: the ODbL requires it, and it has to be visible without
             anyone having to go looking. It is small and out of the way,
@@ -156,6 +163,28 @@ export default function FleetMap({
           />
         ))}
       </MapContainer>
+      {tiles.logo === 'mapbox' && (
+        /* Required by Mapbox's terms alongside the text attribution - the
+           wordmark is not optional on their styles, and the text alone
+           does not satisfy them. */
+        <a
+          className="map-wordmark"
+          href="https://www.mapbox.com/"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Mapbox"
+        >
+          <svg viewBox="0 0 84 19" width="66" height="15" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M9.5 0A9.5 9.5 0 1 0 19 9.5 9.5 9.5 0 0 0 9.5 0Zm4.3 11.2a5.2 5.2 0 0 1-5.8 1.2 5.2 5.2 0 0 1-1.2-5.8 5.2 5.2 0 0 1 5.8-1.2 5.2 5.2 0 0 1 1.2 5.8Z"
+            />
+            <text x="24" y="14" fill="currentColor" fontSize="13" fontWeight="700" fontFamily="inherit">
+              mapbox
+            </text>
+          </svg>
+        </a>
+      )}
     </div>
   )
 }

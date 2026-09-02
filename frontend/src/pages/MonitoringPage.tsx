@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
 import FleetMap from '../components/FleetMap'
-import { BASEMAPS, type BasemapId } from '../components/basemaps'
+import { basemapsFor, type BasemapId } from '../components/basemaps'
 import { useAuth } from '../context/AuthContext'
-import { dashboardApi, errorMessage } from '../services/api'
+import { dashboardApi, errorMessage, publicApi } from '../services/api'
 import './MonitoringPage.css'
 
 type Vehicle = { id: number; name: string; driver_id: string; vehicle_id: string | null; active: boolean; location?: { lat?: number; lng?: number; updated_at?: string } | null; load?: { load_id: string; status: string; pickup: string; delivery: string; rate: number } | null }
@@ -34,6 +34,20 @@ export default function MonitoringPage() {
   // stays on the menu as a choice.
   const [basemap, setBasemap] = useState<BasemapId>('street')
   const [layersOpen, setLayersOpen] = useState(false)
+  // Mapbox when the deployment has a token, the keyless set otherwise. The
+  // map works either way, so this is never awaited before rendering.
+  const [mapboxToken, setMapboxToken] = useState<string | null>(null)
+  const basemaps = useMemo(() => basemapsFor(mapboxToken), [mapboxToken])
+
+  useEffect(() => {
+    publicApi
+      .getConfig()
+      .then((config) => setMapboxToken(config.mapbox_token))
+      .catch(() => {
+        // A missing config just means the keyless basemaps. Not worth a
+        // banner - nothing the reader could do about it either way.
+      })
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!user) return
@@ -176,7 +190,7 @@ export default function MonitoringPage() {
               selectedId={selected?.id ?? null}
               onSelect={setSelectedId}
               recenterNonce={recenterNonce}
-              basemap={basemap}
+              basemap={basemaps[basemap]}
             />
             <div className="map-toolbar">
               <span>
@@ -199,7 +213,7 @@ export default function MonitoringPage() {
                 </button>
                 {layersOpen && (
                   <div className="map-layers-menu" role="radiogroup" aria-label="Map style">
-                    {(Object.keys(BASEMAPS) as BasemapId[]).map((id) => (
+                    {(Object.keys(basemaps) as BasemapId[]).map((id) => (
                       <button
                         key={id}
                         type="button"
@@ -211,7 +225,7 @@ export default function MonitoringPage() {
                           setLayersOpen(false)
                         }}
                       >
-                        {BASEMAPS[id].label}
+                        {basemaps[id].label}
                       </button>
                     ))}
                   </div>
