@@ -26,7 +26,8 @@ export default function FAQPage() {
               <p className="faq-answer">
                 Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers.
                 Max plans are $100/mo for up to 25 drivers, or $200/mo for up to 100 drivers.
-                Every paid plan starts with a 7-day free trial.
+                Every paid plan starts with a 7-day free trial, and the trial doesn't ask for a
+                card. Add one when you decide to stay; nothing is charged before that.
               </p>
             </div>
 

@@ -74,7 +74,13 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
     # card with nothing left pointing at it). None (never subscribed) and
     # "canceled"/"incomplete_expired" (no live subscription) fall through
     # to a normal fresh checkout.
-    if company["subscription_status"] in ("active", "trialing", "past_due", "unpaid", "incomplete"):
+    # "paused" belongs here too: a trial that ended without a card pauses
+    # rather than cancelling, and a paused subscription is still a live
+    # Stripe object that can be resumed. Leaving it out would let that
+    # company start a second checkout and orphan the first.
+    if company["subscription_status"] in (
+        "active", "trialing", "past_due", "unpaid", "incomplete", "paused",
+    ):
         raise RuntimeError("This company already has a subscription - use Manage Billing instead")
 
     customer_id = company["stripe_customer_id"]
@@ -90,12 +96,25 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
     subscription_data = {"metadata": {"company_id": str(company_id), "tier": tier}}
     if check_trial_eligibility(company["email"], company["mc_number"]):
         subscription_data["trial_period_days"] = 7
+        # What happens when the trial runs out and no card was ever given.
+        # Left to Stripe's default this creates an invoice nobody can pay
+        # and parks the subscription in past_due - a debt on a customer who
+        # never agreed to pay anything. Pausing keeps the subscription
+        # resumable the moment they add a card, and the app already treats
+        # anything outside active/trialing as back on free-tier limits.
+        subscription_data["trial_settings"] = {
+            "end_behavior": {"missing_payment_method": "pause"}
+        }
 
     session = stripe.checkout.Session.create(
         mode="subscription",
         customer=customer_id,
         line_items=[{"price": price_id, "quantity": 1}],
-        payment_method_collection="always",
+        # "if_required", not "always": with a trial attached, this means no
+        # card is asked for to start one. Someone evaluating a dispatch tool
+        # should be able to see it work before handing over a card, and the
+        # trial converts to paid only if they choose to add one.
+        payment_method_collection="if_required",
         subscription_data=subscription_data,
         success_url=f"{FRONTEND_URL}/settings?billing=success",
         cancel_url=f"{FRONTEND_URL}/pages/pricing?billing=cancelled",

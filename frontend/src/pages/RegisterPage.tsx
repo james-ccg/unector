@@ -199,7 +199,7 @@ export default function RegisterPage() {
               {step === 'verify-email' && 'Confirm this is your inbox to continue.'}
               {step === 'company-details' &&
                 (plan
-                  ? "Start your 7-day free trial today - you won't be charged until it ends, and you can cancel anytime before then."
+                  ? "Start your 7-day free trial - no card needed. Add one only if you decide to keep it."
                   : 'Get started free - no card required')}
             </p>
           </div>

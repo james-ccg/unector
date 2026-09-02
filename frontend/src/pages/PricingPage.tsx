@@ -100,8 +100,9 @@ export default function PricingPage() {
           <div className="page-header">
             <h1 className="page-title">Simple, Transparent Pricing</h1>
             <p className="page-description">
-              Start free, no card required. Every paid plan includes a 7-day free trial - you're
-              charged automatically once it ends, and can cancel anytime before then.
+              Start free, no card required - and the 7-day trial on every paid plan doesn't ask
+              for one either. Add a card when you decide to keep it. Nothing is charged until you
+              do, and if you never do, the trial simply stops.
             </p>
           </div>
 

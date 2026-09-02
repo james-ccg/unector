@@ -38,7 +38,9 @@ def _configure(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("status", ["active", "trialing", "past_due", "unpaid", "incomplete"])
+@pytest.mark.parametrize(
+    "status", ["active", "trialing", "past_due", "unpaid", "incomplete", "paused"]
+)
 def test_checkout_blocked_while_a_subscription_is_still_live(monkeypatch, status):
     monkeypatch.setattr(stripe_service, "get_company_billing_info", lambda company_id: _fake_company(status))
     create_session = MagicMock()
@@ -61,3 +63,44 @@ def test_checkout_allowed_when_no_subscription_is_live(monkeypatch, status):
 
     assert url == "https://checkout.stripe.com/fake"
     create_session.assert_called_once()
+
+
+class TestTrialDoesNotDemandACard:
+    """A trial that asks for a card before it starts is not really a trial.
+
+    Stripe collects one anyway unless told otherwise, and if a trial then
+    runs out with no card on file its default is to raise an invoice and
+    park the subscription in past_due - a debt owed by someone who never
+    agreed to pay. Both are configured explicitly here."""
+
+    def test_checkout_does_not_collect_a_card_up_front(self, monkeypatch):
+        monkeypatch.setattr(
+            stripe_service, "get_company_billing_info", lambda company_id: _fake_company(None)
+        )
+        monkeypatch.setattr(stripe_service, "check_trial_eligibility", lambda *a, **k: True)
+        create_session = MagicMock()
+        create_session.return_value = MagicMock(url="https://checkout.example/session")
+        monkeypatch.setattr(stripe_service.stripe.checkout.Session, "create", create_session)
+
+        stripe_service.create_checkout_session(1, "pro", "month")
+
+        kwargs = create_session.call_args.kwargs
+        assert kwargs["payment_method_collection"] == "if_required"
+
+    def test_a_trial_that_ends_without_a_card_pauses_rather_than_owing(self, monkeypatch):
+        monkeypatch.setattr(
+            stripe_service, "get_company_billing_info", lambda company_id: _fake_company(None)
+        )
+        monkeypatch.setattr(stripe_service, "check_trial_eligibility", lambda *a, **k: True)
+        create_session = MagicMock()
+        create_session.return_value = MagicMock(url="https://checkout.example/session")
+        monkeypatch.setattr(stripe_service.stripe.checkout.Session, "create", create_session)
+
+        stripe_service.create_checkout_session(1, "pro", "month")
+
+        subscription_data = create_session.call_args.kwargs["subscription_data"]
+        assert subscription_data["trial_period_days"] == 7
+        assert (
+            subscription_data["trial_settings"]["end_behavior"]["missing_payment_method"]
+            == "pause"
+        )
