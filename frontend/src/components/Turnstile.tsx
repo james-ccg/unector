@@ -22,7 +22,7 @@ function loadTurnstileScript(): Promise<void> {
       script.async = true
       script.defer = true
       script.onload = () => resolve()
-      script.onerror = () => reject(new Error('Failed to load Turnstile'))
+      script.onerror = () => reject(new Error("Couldn't load the bot check. Check your connection and reload."))
       document.head.appendChild(script)
     })
   }

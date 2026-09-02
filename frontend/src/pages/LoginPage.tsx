@@ -229,7 +229,7 @@ export default function LoginPage() {
       const data = await twoFaApi.loginWebauthnVerify(challenge.pending_token, credentialJson)
       finishLogin(data)
     } catch (err) {
-      setError(errorMessage(err, 'Security key verification failed.'))
+      setError(errorMessage(err, "Couldn't verify that security key. Try again, or use another method."))
     } finally {
       setLoading(false)
     }

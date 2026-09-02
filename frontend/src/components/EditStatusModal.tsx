@@ -40,7 +40,7 @@ export default function EditStatusModal({ onClose }: { onClose: () => void }) {
       await refreshUser()
       onClose()
     } catch (err) {
-      setError(errorMessage(err, 'Could not set status.'))
+      setError(errorMessage(err, "Couldn't set status."))
     } finally {
       setBusy(false)
     }
@@ -53,7 +53,7 @@ export default function EditStatusModal({ onClose }: { onClose: () => void }) {
       await refreshUser()
       onClose()
     } catch (err) {
-      setError(errorMessage(err, 'Could not clear status.'))
+      setError(errorMessage(err, "Couldn't clear status."))
       setBusy(false)
     }
   }

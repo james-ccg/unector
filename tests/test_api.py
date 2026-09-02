@@ -53,7 +53,10 @@ class TestAuth:
             "confirm_password": "different123"
         })
         assert response.status_code == 400
-        assert "do not match" in response.json()["detail"].lower()
+        # Matched on the idea, not the sentence - see
+        # test_error_message_style.py. Copy improves; behaviour should not
+        # have to be re-asserted every time it does.
+        assert "match" in response.json()["detail"].lower()
 
     def test_register_short_password(self, client):
         """Test registration with short password"""
@@ -666,7 +669,7 @@ class TestTurnstile:
             "confirm_password": "password123",
         })
         assert response.status_code == 400
-        assert "bot verification" in response.json()["detail"].lower()
+        assert "bot" in response.json()["detail"].lower()
 
     def test_register_allowed_with_valid_token_when_turnstile_configured(self, client, monkeypatch):
         monkeypatch.setattr("miniapp.api.TURNSTILE_SECRET_KEY", "fake-secret-for-test")

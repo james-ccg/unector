@@ -117,7 +117,7 @@ export default function RegisterPage() {
       const { auth_url } = await authApi.registerGmailStart()
       window.location.href = auth_url
     } catch (err) {
-      setConnectError(errorMessage(err, 'Could not start the Gmail connection.'))
+      setConnectError(errorMessage(err, "Couldn't start the Gmail connection."))
       setConnectBusy(false)
     }
   }
@@ -145,7 +145,7 @@ export default function RegisterPage() {
       await authApi.registerResendVerification(pendingToken)
       setResendMessage('Sent - check your inbox.')
     } catch (err) {
-      setVerifyError(errorMessage(err, 'Could not resend the email.'))
+      setVerifyError(errorMessage(err, "Couldn't resend the email."))
     } finally {
       setResendBusy(false)
     }

@@ -22,14 +22,14 @@ function resizeToSquareDataUrl(file: File): Promise<string> {
       canvas.height = OUTPUT_SIZE
       const ctx = canvas.getContext('2d')
       if (!ctx) {
-        reject(new Error('Could not process image'))
+        reject(new Error("Couldn't process image"))
         return
       }
       ctx.drawImage(img, sx, sy, side, side, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
       resolve(canvas.toDataURL('image/jpeg', 0.85))
       URL.revokeObjectURL(img.src)
     }
-    img.onerror = () => reject(new Error('Could not read that image'))
+    img.onerror = () => reject(new Error("Couldn't read that image"))
     img.src = URL.createObjectURL(file)
   })
 }
@@ -55,7 +55,7 @@ export default function AvatarPicker() {
       await authApi.setAvatar(dataUrl)
       await refreshUser()
     } catch (err) {
-      setError(errorMessage(err, 'Could not update your picture.'))
+      setError(errorMessage(err, "Couldn't update your picture."))
     } finally {
       setBusy(false)
     }
@@ -68,7 +68,7 @@ export default function AvatarPicker() {
       await authApi.clearAvatar()
       await refreshUser()
     } catch (err) {
-      setError(errorMessage(err, 'Could not remove your picture.'))
+      setError(errorMessage(err, "Couldn't remove your picture."))
     } finally {
       setBusy(false)
     }

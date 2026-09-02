@@ -35,7 +35,7 @@ export default function MonitoringPage() {
       // beats a blank one) - just surface that the last refresh failed,
       // since otherwise this silently retries forever with no indication
       // the data could be minutes out of date.
-      setError(errorMessage(err, 'Could not refresh live GPS data.'))
+      setError(errorMessage(err, "Couldn't refresh live GPS data."))
     } finally {
       setLoading(false)
     }

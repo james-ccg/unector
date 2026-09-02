@@ -51,7 +51,7 @@ export default function OnboardingGmailPage() {
       const { auth_url } = await settingsApi.getGmailAuthUrl('onboarding')
       window.location.href = auth_url
     } catch (err) {
-      setError(errorMessage(err, 'Could not start the Gmail connection.'))
+      setError(errorMessage(err, "Couldn't start the Gmail connection."))
       setConnecting(false)
     }
   }

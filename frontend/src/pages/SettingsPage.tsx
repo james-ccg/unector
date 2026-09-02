@@ -224,7 +224,7 @@ export default function SettingsPage() {
       const { url } = await billingApi.openPortal()
       window.location.href = url
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not open the billing portal.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't open the billing portal.") })
       setBillingBusy(false)
     }
   }
@@ -236,7 +236,7 @@ export default function SettingsPage() {
       // Full-page redirect to Google's own consent screen - no code to copy/paste.
       window.location.href = auth_url
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not start the Gmail connection.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't start the Gmail connection.") })
     }
   }
 
@@ -263,7 +263,7 @@ export default function SettingsPage() {
       setBanner({ kind: 'success', text: 'Samsara connected successfully.' })
       loadAll()
     } catch (err) {
-      setSamsaraError(errorMessage(err, 'Could not connect Samsara. Double-check the API token.'))
+      setSamsaraError(errorMessage(err, "Couldn't connect Samsara. Double-check the API token."))
     } finally {
       setSamsaraBusy(false)
     }
@@ -297,7 +297,7 @@ export default function SettingsPage() {
       setBanner({ kind: 'success', text: 'Dispatcher login created.' })
       loadAll()
     } catch (err) {
-      setAddDispatcherError(errorMessage(err, 'Could not create that dispatcher login.'))
+      setAddDispatcherError(errorMessage(err, "Couldn't create that dispatcher login."))
     } finally {
       setAddDispatcherBusy(false)
     }
@@ -335,7 +335,7 @@ export default function SettingsPage() {
       setBanner({ kind: 'success', text: 'Dispatcher login updated.' })
       loadAll()
     } catch (err) {
-      setEditDispatcherError(errorMessage(err, 'Could not update that dispatcher login.'))
+      setEditDispatcherError(errorMessage(err, "Couldn't update that dispatcher login."))
     } finally {
       setEditDispatcherBusy(false)
     }
@@ -348,7 +348,7 @@ export default function SettingsPage() {
       setBanner({ kind: 'success', text: 'Dispatcher login removed.' })
       loadAll()
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not remove that dispatcher login.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't remove that dispatcher login.") })
     }
   }
 
@@ -376,7 +376,7 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!newTruckUnit.trim()) return
     const ok = await runFleetAction(
-      () => dashboardApi.createTruck(newTruckUnit.trim()), 'Could not add that truck.',
+      () => dashboardApi.createTruck(newTruckUnit.trim()), "Couldn't add that truck.",
     )
     if (ok) setNewTruckUnit('')
   }
@@ -385,24 +385,24 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!newTrailerUnit.trim()) return
     const ok = await runFleetAction(
-      () => dashboardApi.createTrailer(newTrailerUnit.trim()), 'Could not add that trailer.',
+      () => dashboardApi.createTrailer(newTrailerUnit.trim()), "Couldn't add that trailer.",
     )
     if (ok) setNewTrailerUnit('')
   }
 
   const handleDeleteTruck = (truck: Truck) => {
     if (!window.confirm(`Delete truck ${truck.unit_number}? Its driver stays, and is unassigned.`)) return
-    runFleetAction(() => dashboardApi.deleteTruck(truck.id), 'Could not delete that truck.')
+    runFleetAction(() => dashboardApi.deleteTruck(truck.id), "Couldn't delete that truck.")
   }
 
   const handleDeleteTrailer = (trailer: Trailer) => {
     if (!window.confirm(`Delete trailer ${trailer.unit_number}?`)) return
-    runFleetAction(() => dashboardApi.deleteTrailer(trailer.id), 'Could not delete that trailer.')
+    runFleetAction(() => dashboardApi.deleteTrailer(trailer.id), "Couldn't delete that trailer.")
   }
 
   const handleDeleteDriver = (driver: Driver) => {
     if (!window.confirm(`Remove ${driver.full_name || driver.driver_bot_id}?`)) return
-    runFleetAction(() => dashboardApi.deleteDriver(driver.id), 'Could not remove that driver.')
+    runFleetAction(() => dashboardApi.deleteDriver(driver.id), "Couldn't remove that driver.")
   }
 
   const handleAddDriver = async (e: React.FormEvent) => {
@@ -434,7 +434,7 @@ export default function SettingsPage() {
       setLinkDriverId(created.id)
       setLinkCode({ code: created.link_code, bot_command: created.bot_command })
     } catch (err) {
-      setAddDriverError(errorMessage(err, 'Could not add that driver.'))
+      setAddDriverError(errorMessage(err, "Couldn't add that driver."))
     } finally {
       setAddDriverBusy(false)
     }
@@ -447,7 +447,7 @@ export default function SettingsPage() {
       setLinkDriverId(driverId)
       setLinkCode(code)
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not generate a linking code.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't generate a linking code.") })
     } finally {
       setLinkBusy(false)
     }
@@ -487,7 +487,7 @@ export default function SettingsPage() {
       setNewRuleDistance('5')
       setNewRuleMessage('')
     } catch (err) {
-      setAlertRuleError(errorMessage(err, 'Could not create that rule.'))
+      setAlertRuleError(errorMessage(err, "Couldn't create that rule."))
     } finally {
       setAlertRuleBusy(false)
     }
@@ -498,7 +498,7 @@ export default function SettingsPage() {
       const updated = await settingsApi.updateAlertRule(rule.id, { enabled: !rule.enabled })
       setAlertRules((prev) => prev.map((r) => (r.id === rule.id ? updated : r)))
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not update that rule.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't update that rule.") })
     }
   }
 
@@ -508,7 +508,7 @@ export default function SettingsPage() {
       await settingsApi.deleteAlertRule(rule.id)
       setAlertRules((prev) => prev.filter((r) => r.id !== rule.id))
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, 'Could not delete that rule.') })
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't delete that rule.") })
     }
   }
 
@@ -892,7 +892,7 @@ export default function SettingsPage() {
                           () => dashboardApi.assignTruck(t.id, {
                             trailer_id: e.target.value ? Number(e.target.value) : null,
                           }),
-                          'Could not change the trailer.',
+                          "Couldn't change the trailer.",
                         )
                       }
                     >
@@ -917,7 +917,7 @@ export default function SettingsPage() {
                           () => dashboardApi.assignTruck(t.id, {
                             driver_id: e.target.value ? Number(e.target.value) : null,
                           }),
-                          'Could not change the driver.',
+                          "Couldn't change the driver.",
                         )
                       }
                     >

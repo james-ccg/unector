@@ -27,7 +27,7 @@ export default function TrustPage() {
         if (!cancelled) setStats(data)
       } catch (err) {
         console.error('Failed to load stats:', err)
-        if (!cancelled) setError(errorMessage(err, 'Could not load the numbers.'))
+        if (!cancelled) setError(errorMessage(err, "Couldn't load the numbers."))
       } finally {
         if (!cancelled) setLoading(false)
       }

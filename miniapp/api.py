@@ -412,20 +412,20 @@ class AlertRuleUpdateRequest(BaseModel):
 def get_current_user(request: Request) -> dict:
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
-        raise HTTPException(401, "Missing or invalid session")
+        raise HTTPException(401, "You're not signed in. Log in to continue.")
     # SESSION_PURPOSE, explicitly: the 2FA handshake token, the OAuth state
     # tokens and the password-reset token are all signed with the same key,
     # and without this any of them authenticated as a full session. The 2FA
     # one is handed to the caller before the second factor is given.
     payload = decode_token(token, purpose=SESSION_PURPOSE)
     if not payload:
-        raise HTTPException(401, "Invalid or expired session - please log in again")
+        raise HTTPException(401, "Your session has ended. Log in again to pick up where you left off.")
     return payload
 
 
 def require_owner(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "owner":
-        raise HTTPException(403, "Only the company owner can do this")
+        raise HTTPException(403, "Only the company owner can do this. Ask them to make the change.")
     return user
 
 
@@ -445,11 +445,11 @@ def verify_csrf(request: Request) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     header_value = request.headers.get(CSRF_HEADER_NAME)
     if not cookie_value or not header_value:
-        raise HTTPException(403, "Missing or invalid CSRF token")
+        raise HTTPException(403, "This page has been open too long to submit safely. Reload it and try again.")
     # compare_digest rather than != so the comparison does not leak the
     # matching prefix length through timing.
     if not hmac.compare_digest(cookie_value, header_value):
-        raise HTTPException(403, "Missing or invalid CSRF token")
+        raise HTTPException(403, "This page has been open too long to submit safely. Reload it and try again.")
 
     # The halves agreeing only proves whoever sent them controls both, which
     # an attacker who can write cookies on the domain does. The token is an
@@ -458,7 +458,7 @@ def verify_csrf(request: Request) -> None:
     session = request.cookies.get(SESSION_COOKIE_NAME)
     claims = decode_token(session, purpose=SESSION_PURPOSE) if session else None
     if claims and not csrf_token_matches(cookie_value, claims.get("sid", "")):
-        raise HTTPException(403, "CSRF token does not match this session")
+        raise HTTPException(403, "This page belongs to an earlier sign-in. Reload it and try again.")
 
 
 # ------------------------------------------------------------------
@@ -473,7 +473,7 @@ def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
     if not TURNSTILE_SECRET_KEY:
         return
     if not token:
-        raise HTTPException(400, "Bot verification failed. Please try again.")
+        raise HTTPException(400, "Couldn't confirm you're not a bot. Try again.")
 
     import requests
 
@@ -487,10 +487,10 @@ def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
     except Exception:
         import logging
         logging.exception("Turnstile verification request failed")
-        raise HTTPException(503, "Bot verification service unavailable. Please try again.")
+        raise HTTPException(503, "The bot check is unreachable right now. Try again in a moment.")
 
     if not result.get("success"):
-        raise HTTPException(400, "Bot verification failed. Please try again.")
+        raise HTTPException(400, "Couldn't confirm you're not a bot. Try again.")
 
 
 @app.get("/api/public/config")
@@ -510,9 +510,9 @@ def register_company(request: Request, body: RegisterRequest, response: Response
     verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
 
     if body.password != body.confirm_password:
-        raise HTTPException(400, "Passwords do not match")
+        raise HTTPException(400, "The two passwords don't match. Retype them and try again.")
     if len(body.password) < 8:
-        raise HTTPException(400, "Password must be at least 8 characters")
+        raise HTTPException(400, "Password must be at least 8 characters.")
     # bcrypt only hashes the first 72 bytes of a password - older bcrypt
     # versions silently truncated anything past that, but bcrypt>=5 raises
     # ValueError instead. hash_password() below isn't wrapped in a
@@ -533,7 +533,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
         pending_gmail = consume_pending_registration(body.pending_token)
         if not pending_gmail:
             raise HTTPException(
-                400, "That Gmail connection is invalid or has expired. Please connect Gmail again."
+                400, "This Gmail connection has expired. Reconnect it from Settings."
             )
 
     try:
@@ -541,7 +541,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
             # Check if MC exists
             existing = session.query(models.Company).filter_by(mc_number=body.mc_number).first()
             if existing:
-                raise HTTPException(400, "This MC number is already registered")
+                raise HTTPException(400, "That MC number already has an account. Log in instead, or use a different number.")
 
             # Create company
             new_company = models.Company(
@@ -581,7 +581,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
     except Exception:
         import logging
         logging.exception("Registration failed")
-        raise HTTPException(500, "Registration failed. Please try again.")
+        raise HTTPException(500, "Couldn't create the account. Try again in a moment.")
 
 @app.post("/api/auth/owner")
 @limiter.limit("5/minute")
@@ -589,7 +589,7 @@ def login_owner(request: Request, body: OwnerLoginRequest, response: Response):
     verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
     company = get_company_by_mc(body.mc_number.strip())
     if not company or not company.password_hash or not verify_password(body.password, company.password_hash):
-        raise HTTPException(401, "Invalid MC number or password")
+        raise HTTPException(401, "That MC number and password don't match an account. Check both and try again.")
 
     return _finish_password_step(
         response, "owner", company.id, {"company_name": company.company_name, "company_id": company.id}
@@ -602,7 +602,7 @@ def login_dispatcher(request: Request, body: DispatcherLoginRequest, response: R
     verify_turnstile(body.turnstile_token, request.client.host if request.client else None)
     dispatcher = get_dispatcher_by_username(body.username.strip())
     if not dispatcher or not verify_password(body.password, dispatcher.password_hash):
-        raise HTTPException(401, "Invalid username or password")
+        raise HTTPException(401, "That username and password don't match an account. Check both and try again.")
 
     return _finish_password_step(
         response, "dispatcher", dispatcher.id,
@@ -855,7 +855,7 @@ def game_leaderboard(period: str = "week"):
     from db.repository import get_game_leaderboard
 
     if period not in ("week", "month"):
-        raise HTTPException(400, "period must be 'week' or 'month'")
+        raise HTTPException(400, "Unknown period. Use week or month.")
     return {"period": period, "entries": get_game_leaderboard(period)}
 
 
@@ -907,13 +907,13 @@ def forgot_password(request: Request, body: ForgotPasswordRequest):
 @limiter.limit("10/minute")
 def reset_password(request: Request, body: ResetPasswordRequest):
     if body.new_password != body.confirm_password:
-        raise HTTPException(400, "Passwords do not match")
+        raise HTTPException(400, "The two passwords don't match. Retype them and try again.")
 
     from db.repository import consume_password_reset_token
 
     company_id = consume_password_reset_token(body.token)
     if not company_id:
-        raise HTTPException(400, "That reset link is invalid or has expired. Request a new one.")
+        raise HTTPException(400, "This reset link has expired. Request a new one from the login page.")
 
     set_company_password(company_id, hash_password(body.new_password))
     return {"success": True}
@@ -930,7 +930,7 @@ def list_drivers(user: dict = Depends(get_current_user)):
     except Exception:
         import logging
         logging.exception("Failed to fetch drivers for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to load drivers.")
+        raise HTTPException(500, "Couldn't load the driver list. Try again in a moment.")
 
 
 @app.get("/api/drivers/{driver_id}")
@@ -943,20 +943,20 @@ def get_driver(driver_id: int, user: dict = Depends(get_current_user)):
         with get_session() as session:
             driver_record = session.get(models.Driver, driver_id)
             if not driver_record:
-                raise HTTPException(404, "Driver not found")
+                raise HTTPException(404, "Driver not found.")
             if driver_record.company_id != user["company_id"]:
-                raise HTTPException(403, "Access denied")
+                raise HTTPException(403, "Access denied.")
         
         driver = get_driver_details(driver_id, user["company_id"])
         if not driver:
-            raise HTTPException(404, "Driver details not available")
+            raise HTTPException(404, "This driver has no details recorded yet.")
         return driver
     except HTTPException:
         raise
     except Exception:
         import logging
         logging.exception("Failed to fetch driver details for driver %s", driver_id)
-        raise HTTPException(500, "Failed to load driver details.")
+        raise HTTPException(500, "Couldn't load this driver. Try again in a moment.")
 
 
 @app.patch("/api/drivers/{driver_id}/subscription")
@@ -968,7 +968,7 @@ def update_subscription(
     # waiting on the owner, but only the owner can activate one - that
     # commits the company to another billable driver against its plan.
     if body.active and user.get("role") != "owner":
-        raise HTTPException(403, "Only the company owner can activate a driver's subscription.")
+        raise HTTPException(403, "Only the company owner can activate a driver's subscription. Ask them to do it.")
 
     try:
         # Security: verify driver belongs to this company
@@ -977,9 +977,9 @@ def update_subscription(
         with get_session() as session:
             driver_record = session.get(models.Driver, driver_id)
             if not driver_record:
-                raise HTTPException(404, "Driver not found")
+                raise HTTPException(404, "Driver not found.")
             if driver_record.company_id != user["company_id"]:
-                raise HTTPException(403, "Access denied")
+                raise HTTPException(403, "Access denied.")
 
             # Enforce the plan's driver cap when turning a driver ON.
             #
@@ -1011,7 +1011,7 @@ def update_subscription(
     except Exception:
         import logging
         logging.exception("Failed to toggle subscription for driver %s", driver_id)
-        raise HTTPException(500, "Failed to update subscription.")
+        raise HTTPException(500, "Couldn't update the subscription. Try again in a moment.")
 
 
 def _issue_driver_link_code(driver_id: int) -> dict:
@@ -1069,7 +1069,7 @@ def add_driver(
     except Exception:
         import logging
         logging.exception("Failed to create driver for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to create driver. Please try again.")
+        raise HTTPException(500, "Couldn't add the driver. Try again in a moment.")
 
 
 @app.post("/api/drivers/{driver_id}/link-token")
@@ -1084,9 +1084,9 @@ def regenerate_driver_link_code(
     with get_session() as session:
         driver_record = session.get(models.Driver, driver_id)
         if not driver_record:
-            raise HTTPException(404, "Driver not found")
+            raise HTTPException(404, "Driver not found.")
         if driver_record.company_id != user["company_id"]:
-            raise HTTPException(403, "Access denied")
+            raise HTTPException(403, "Access denied.")
 
     return _issue_driver_link_code(driver_id)
 
@@ -1159,7 +1159,7 @@ def assign_truck_endpoint(
         trailer_id=provided["trailer_id"] if "trailer_id" in provided else ...,
     )
     if not updated:
-        raise HTTPException(404, "Truck, driver or trailer not found")
+        raise HTTPException(404, "Truck, driver or trailer not found.")
     return {"success": True}
 
 
@@ -1170,7 +1170,7 @@ def remove_truck(
     from db.repository import delete_truck
 
     if not delete_truck(truck_id, user["company_id"]):
-        raise HTTPException(404, "Truck not found")
+        raise HTTPException(404, "Truck not found.")
     return {"success": True}
 
 
@@ -1184,7 +1184,7 @@ def remove_driver(
     if refusal:
         raise HTTPException(409, refusal)
     if not deleted:
-        raise HTTPException(404, "Driver not found")
+        raise HTTPException(404, "Driver not found.")
     return {"success": True}
 
 
@@ -1214,7 +1214,7 @@ def remove_trailer(
     from db.repository import delete_trailer
 
     if not delete_trailer(trailer_id, user["company_id"]):
-        raise HTTPException(404, "Trailer not found")
+        raise HTTPException(404, "Trailer not found.")
     return {"success": True}
 
 
@@ -1235,22 +1235,22 @@ def add_dispatcher(
 ):
     username = body.username.strip()
     if len(body.password) < 6:
-        raise HTTPException(400, "Password must be at least 6 characters")
+        raise HTTPException(400, "Password must be at least 6 characters.")
     # See register_company's identical check for why - bcrypt only hashes
     # the first 72 bytes, and bcrypt>=5 raises instead of truncating.
     if len(body.password.encode("utf-8")) > 72:
         raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
     if not username:
-        raise HTTPException(400, "Username cannot be empty")
+        raise HTTPException(400, "Enter a username.")
     if get_dispatcher_by_username(username):
-        raise HTTPException(400, "Username already exists")
+        raise HTTPException(400, "That username is taken. Pick a different one.")
     try:
         dispatcher_id = create_dispatcher(user["company_id"], username, hash_password(body.password))
         return {"id": dispatcher_id, "username": username}
     except Exception:
         import logging
         logging.exception("Failed to create dispatcher for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to create dispatcher. Please try again.")
+        raise HTTPException(500, "Couldn't create the dispatcher login. Try again in a moment.")
 
 
 @app.patch("/api/dispatchers/{dispatcher_id}")
@@ -1265,12 +1265,12 @@ def update_dispatcher_account(
 
     username = body.username.strip() if body.username is not None else None
     if username is not None and not username:
-        raise HTTPException(400, "Username cannot be empty")
+        raise HTTPException(400, "Enter a username.")
 
     password_hash = None
     if body.password is not None:
         if len(body.password) < 6:
-            raise HTTPException(400, "Password must be at least 6 characters")
+            raise HTTPException(400, "Password must be at least 6 characters.")
         if len(body.password.encode("utf-8")) > 72:
             raise HTTPException(400, "Password must be 72 bytes or fewer (most passwords qualify).")
         password_hash = hash_password(body.password)
@@ -1280,9 +1280,9 @@ def update_dispatcher_account(
 
     result = update_dispatcher(dispatcher_id, user["company_id"], username=username, password_hash=password_hash)
     if result == "not_found":
-        raise HTTPException(404, "Dispatcher not found")
+        raise HTTPException(404, "Dispatcher not found.")
     if result == "username_taken":
-        raise HTTPException(400, "Username already exists")
+        raise HTTPException(400, "That username is taken. Pick a different one.")
     return {"success": True}
 
 
@@ -1293,7 +1293,7 @@ def remove_dispatcher(
     from db.repository import delete_dispatcher
 
     if not delete_dispatcher(dispatcher_id, user["company_id"]):
-        raise HTTPException(404, "Dispatcher not found")
+        raise HTTPException(404, "Dispatcher not found.")
     return {"success": True}
 
 
@@ -1306,7 +1306,7 @@ def get_settings(user: dict = Depends(get_current_user)):
     company_id = user.get("company_id")
     company = get_company(company_id)
     if not company:
-        raise HTTPException(404, "Company not found")
+        raise HTTPException(404, "Company not found.")
 
     gmail_token = get_company_credential(company_id, "gmail_refresh_token")
     samsara_key = get_company_credential(company_id, "samsara_api_key")
@@ -1348,7 +1348,7 @@ def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owne
     from services.gmail_service import build_authorization_url
 
     if return_to not in _GMAIL_RETURN_PATHS:
-        raise HTTPException(400, "Invalid return_to")
+        raise HTTPException(400, "Unknown return_to. Use settings or onboarding.")
 
     # The state token proves the callback belongs to this company - it's
     # short-lived and signed, so it can't be forged or reused elsewhere.
@@ -1665,7 +1665,7 @@ def register_pending_status(pending_token: str):
 
     info = get_pending_registration(pending_token)
     if not info:
-        raise HTTPException(404, "That Gmail connection is invalid or has expired. Please connect Gmail again.")
+        raise HTTPException(404, "This Gmail connection has expired. Reconnect it from Settings.")
     return info
 
 
@@ -1676,7 +1676,7 @@ def register_resend_verification(request: Request, body: RegistrationVerificatio
 
     info = get_pending_registration(body.pending_token)
     if not info:
-        raise HTTPException(400, "That Gmail connection is invalid or has expired. Please connect Gmail again.")
+        raise HTTPException(400, "This Gmail connection has expired. Reconnect it from Settings.")
     if info["email_verified"]:
         return {"success": True}
 
@@ -1687,7 +1687,7 @@ def register_resend_verification(request: Request, body: RegistrationVerificatio
     except Exception:
         import logging
         logging.exception("Failed to resend registration verification email")
-        raise HTTPException(500, "Failed to send the email. Please try again.")
+        raise HTTPException(500, "Couldn't send the email. Try again in a moment.")
     return {"success": True}
 
 
@@ -1752,7 +1752,7 @@ def connect_samsara(
         return {"success": True, "message": "Samsara connected successfully"}
     except Exception:
         logging.exception("Failed to save Samsara credential for company %s", company_id)
-        raise HTTPException(500, "Failed to connect Samsara.")
+        raise HTTPException(500, "Couldn't connect Samsara. Check the API token and try again.")
 
 @app.delete("/api/settings/samsara")
 def disconnect_samsara(user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf)):
@@ -1790,7 +1790,7 @@ def update_alert_rule_endpoint(
 ):
     updated = update_alert_rule(rule_id, user["company_id"], body.model_dump(exclude_unset=True))
     if not updated:
-        raise HTTPException(404, "Alert rule not found")
+        raise HTTPException(404, "Alert rule not found.")
     return updated
 
 
@@ -1799,7 +1799,7 @@ def delete_alert_rule_endpoint(
     rule_id: int, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
 ):
     if not delete_alert_rule(rule_id, user["company_id"]):
-        raise HTTPException(404, "Alert rule not found")
+        raise HTTPException(404, "Alert rule not found.")
     return {"deleted": True}
 
 
@@ -1813,7 +1813,7 @@ def get_billing(user: dict = Depends(get_current_user)):
     many of its PLAN_LIMITS driver cap is in use."""
     info = get_company_billing_info(user["company_id"])
     if info is None:
-        raise HTTPException(404, "Company not found")
+        raise HTTPException(404, "Company not found.")
     tier = info["subscription_tier"]
     return {
         "tier": tier,
@@ -1841,7 +1841,7 @@ def create_billing_checkout(
     except Exception:
         import logging
         logging.exception("Failed to create checkout session for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to start checkout.")
+        raise HTTPException(500, "Couldn't start checkout. Try again in a moment.")
 
 
 @app.post("/api/billing/portal")
@@ -1858,7 +1858,7 @@ def create_billing_portal(user: dict = Depends(get_current_user), _csrf: None = 
     except Exception:
         import logging
         logging.exception("Failed to create billing portal session for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to open billing portal.")
+        raise HTTPException(500, "Couldn't open the billing portal. Try again in a moment.")
 
 
 @app.post("/api/billing/webhook")
@@ -1977,7 +1977,7 @@ def get_dashboard(user: dict = Depends(get_current_user)):
             # Get company info
             company = session.get(models.Company, user["company_id"])
             if not company:
-                raise HTTPException(404, "Company not found")
+                raise HTTPException(404, "Company not found.")
             
             # Get drivers
             drivers = get_drivers_by_company(user["company_id"])
@@ -2045,7 +2045,7 @@ def get_dashboard(user: dict = Depends(get_current_user)):
     except Exception:
         import logging
         logging.exception("Failed to load dashboard for company %s", user["company_id"])
-        raise HTTPException(500, "Failed to load dashboard.")
+        raise HTTPException(500, "Couldn't load the dashboard. Try again in a moment.")
 
 
 # ------------------------------------------------------------------
@@ -2160,10 +2160,10 @@ class WebAuthnLoginVerifyRequest(BaseModel):
 
 def get_pending_2fa_claims(authorization: str = Header(default="")) -> dict:
     if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Missing pending session")
+        raise HTTPException(401, "This sign-in has expired. Start again from the login page.")
     payload = decode_token(authorization.removeprefix("Bearer ").strip(), purpose="2fa_login")
     if not payload:
-        raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
+        raise HTTPException(401, "This sign-in took too long to finish. Start again from the login page.")
     return payload
 
 
@@ -2203,12 +2203,12 @@ def totp_verify(
     account_type, account_id = _self_account(user)
     info = get_2fa_delivery_info(account_type, account_id)
     if not info or not info["totp_secret_encrypted"]:
-        raise HTTPException(400, "Run TOTP setup first")
+        raise HTTPException(400, "Start the authenticator setup before confirming a code.")
     step = twofactor_service.verify_totp_code(
         info["totp_secret_encrypted"], body.code, info["totp_last_used_step"]
     )
     if step is None:
-        raise HTTPException(400, "Incorrect code")
+        raise HTTPException(400, "That code is incorrect. Check the digits and try again.")
     update_totp_last_used_step(account_type, account_id, step)
     set_totp_enabled(account_type, account_id, True)
     return {"enabled": True}
@@ -2238,19 +2238,19 @@ async def otp_send(
     try:
         if body.channel == "email":
             if not body.contact:
-                raise HTTPException(400, "Email address is required")
+                raise HTTPException(400, "Enter an email address.")
             email_otp_service.send_otp_email(body.contact, code)
         elif body.channel == "sms":
             if not body.contact:
-                raise HTTPException(400, "Phone number is required")
+                raise HTTPException(400, "Enter a phone number.")
             sms_service.send_otp_sms(body.contact, code)
         elif body.channel == "telegram":
             info = get_2fa_delivery_info(account_type, account_id)
             if not info or not info["telegram_user_id"]:
-                raise HTTPException(400, "Link your Telegram account first (see the Telegram tab)")
+                raise HTTPException(400, "Link your Telegram account first (see the Telegram tab).")
             await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
         else:
-            raise HTTPException(400, "Unknown channel")
+            raise HTTPException(400, "Unknown channel. Use email, sms or telegram.")
     except HTTPException:
         raise
     except NotImplementedError as e:
@@ -2258,7 +2258,7 @@ async def otp_send(
     except Exception:
         import logging
         logging.exception("Failed to send %s OTP enrollment code for %s %s", body.channel, account_type, account_id)
-        raise HTTPException(502, "Could not send the verification code. Please try again.")
+        raise HTTPException(502, "Couldn't send the verification code. Try again in a moment.")
 
     create_pending_otp(
         account_type, account_id, body.channel, "enroll",
@@ -2276,7 +2276,7 @@ def otp_confirm(
 ):
     account_type, account_id = _self_account(user)
     if not consume_pending_otp(account_type, account_id, body.channel, "enroll", twofactor_service.hash_otp_code(body.code)):
-        raise HTTPException(400, "Incorrect or expired code")
+        raise HTTPException(400, "That code is incorrect or has expired. Request a new one and try again.")
 
     if body.channel == "email":
         set_email_otp(account_type, account_id, contact, True)
@@ -2300,7 +2300,7 @@ def otp_disable(channel: str, user: dict = Depends(get_current_user), _csrf: Non
     elif channel == "telegram":
         _set_tg(account_type, account_id, None, False)
     else:
-        raise HTTPException(400, "Unknown channel")
+        raise HTTPException(400, "Unknown channel. Use email, sms or telegram.")
     return {"enabled": False}
 
 
@@ -2339,7 +2339,7 @@ def webauthn_register_verify(
     account_type, account_id = _self_account(user)
     expected_challenge = consume_webauthn_challenge(account_type, account_id, "register")
     if not expected_challenge:
-        raise HTTPException(400, "This registration attempt has expired - please try again.")
+        raise HTTPException(400, "This registration has expired. Start it again from the sign-up page.")
     try:
         result = webauthn_service.verify_registration(body.credential_json, expected_challenge)
     except Exception as e:
@@ -2356,7 +2356,7 @@ def webauthn_delete(
 ):
     account_type, account_id = _self_account(user)
     if not delete_webauthn_credential(account_type, account_id, credential_pk):
-        raise HTTPException(404, "Security key not found")
+        raise HTTPException(404, "Security key not found.")
     return {"deleted": True}
 
 
@@ -2376,7 +2376,7 @@ async def login_2fa_challenge(
     account_type, account_id = claims["account_type"], claims["account_id"]
     info = get_2fa_delivery_info(account_type, account_id)
     if not info:
-        raise HTTPException(400, "Two-factor auth is not set up for this account")
+        raise HTTPException(400, "Two-factor authentication isn't set up on this account yet.")
 
     code = twofactor_service.generate_otp_code()
 
@@ -2392,7 +2392,7 @@ async def login_2fa_challenge(
         elif body.channel == "telegram" and info["telegram_otp_enabled"] and info["telegram_user_id"]:
             await telegram_otp_service.send_otp_telegram(info["telegram_user_id"], code)
         else:
-            raise HTTPException(400, "That method isn't enabled for this account")
+            raise HTTPException(400, "That method isn't enabled for this account.")
     except HTTPException:
         raise
     except NotImplementedError as e:
@@ -2400,7 +2400,7 @@ async def login_2fa_challenge(
     except Exception:
         import logging
         logging.exception("Failed to send %s OTP login code for %s %s", body.channel, account_type, account_id)
-        raise HTTPException(502, "Could not send the verification code. Please try again.")
+        raise HTTPException(502, "Couldn't send the verification code. Try again in a moment.")
 
     create_pending_otp(
         account_type, account_id, body.channel, "login",
@@ -2415,7 +2415,7 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
     account_type, account_id = claims["account_type"], claims["account_id"]
     credentials = [c["credential_id"] for c in list_webauthn_credentials(account_type, account_id)]
     if not credentials:
-        raise HTTPException(400, "No security keys registered for this account")
+        raise HTTPException(400, "No security keys are registered on this account. Add one from Settings first.")
     options_json, challenge = webauthn_service.build_authentication_options(credentials)
     create_webauthn_challenge(account_type, account_id, "login", challenge)
     return {"options": options_json}
@@ -2426,7 +2426,7 @@ def login_2fa_webauthn_options(claims: dict = Depends(get_pending_2fa_claims)):
 async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, response: Response):
     claims = decode_token(body.pending_token, purpose="2fa_login")
     if not claims:
-        raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
+        raise HTTPException(401, "This sign-in took too long to finish. Start again from the login page.")
 
     account_type, account_id = claims["account_type"], claims["account_id"]
     verified = False
@@ -2446,10 +2446,10 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
     elif body.method == "recovery":
         verified = consume_recovery_code(account_type, account_id, twofactor_service.hash_recovery_code(body.code))
     else:
-        raise HTTPException(400, "Unknown method")
+        raise HTTPException(400, "Unknown method. Use totp, email, sms, telegram, webauthn or recovery.")
 
     if not verified:
-        raise HTTPException(400, "Incorrect or expired code")
+        raise HTTPException(400, "That code is incorrect or has expired. Request a new one and try again.")
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_session_token(session_claims)
@@ -2464,16 +2464,16 @@ async def login_2fa_webauthn_verify(
 ):
     claims = decode_token(body.pending_token, purpose="2fa_login")
     if not claims:
-        raise HTTPException(401, "Invalid or expired 2FA session - please log in again")
+        raise HTTPException(401, "This sign-in took too long to finish. Start again from the login page.")
 
     account_type, account_id = claims["account_type"], claims["account_id"]
     credentials = list_webauthn_credentials(account_type, account_id)
     if not credentials:
-        raise HTTPException(400, "No security keys registered for this account")
+        raise HTTPException(400, "No security keys are registered on this account. Add one from Settings first.")
 
     expected_challenge = consume_webauthn_challenge(account_type, account_id, "login")
     if not expected_challenge:
-        raise HTTPException(400, "This sign-in attempt has expired - please try again.")
+        raise HTTPException(400, "This sign-in has expired. Start again from the login page.")
 
     verified_any = False
     for cred in credentials:
@@ -2488,7 +2488,7 @@ async def login_2fa_webauthn_verify(
             continue
 
     if not verified_any:
-        raise HTTPException(400, "Could not verify security key")
+        raise HTTPException(400, "Couldn't verify that security key. Try again, or use another method.")
 
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_session_token(session_claims)

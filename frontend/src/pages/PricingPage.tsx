@@ -80,7 +80,7 @@ export default function PricingPage() {
       const { url } = await billingApi.checkout(tier, interval)
       window.location.href = url
     } catch (err) {
-      setUpgradeError(errorMessage(err, 'Could not start checkout. Please try again.'))
+      setUpgradeError(errorMessage(err, "Couldn't start checkout. Try again in a moment."))
       setUpgradeBusy(false)
     }
   }

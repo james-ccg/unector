@@ -64,7 +64,7 @@ export class NetworkError extends Error {
  *
  * Anything thrown from here already names itself, so the fallback is only
  * reached for a non-Error someone threw by hand. */
-export function errorMessage(err: unknown, fallback = 'Something went wrong.'): string {
+export function errorMessage(err: unknown, fallback = "That didn't work. Try again in a moment."): string {
   if (err instanceof Error && err.message) return err.message
   if (typeof err === 'string' && err) return err
   return fallback
@@ -134,7 +134,7 @@ export async function apiRequest<T>(
 
     if (!response.ok) {
       const body = asRecord(data)
-      let errorMsg = (body.detail as string) || (body.message as string) || 'Request failed'
+      let errorMsg = (body.detail as string) || (body.message as string) || "That didn't work. Try again in a moment."
 
       // A 401 from a login/register/2FA-challenge call just means THAT
       // attempt was rejected (wrong password, wrong code, ...) - there was
@@ -153,28 +153,28 @@ export async function apiRequest<T>(
           }
           break
         case 403:
-          errorMsg = (body.detail as string) || 'Access denied'
+          errorMsg = (body.detail as string) || "Your account doesn't have access to that."
           break
         case 404:
-          errorMsg = (body.detail as string) || 'Not found'
+          errorMsg = (body.detail as string) || "That isn't here any more."
           break
         case 429:
           errorMsg = (body.detail as string) || 'Too many attempts. Wait a moment and try again.'
           break
         case 500:
-          errorMsg = 'Server error. Please try again later.'
+          errorMsg = 'Something broke on our side. Try again in a moment.'
           break
         case 502:
           // Bad Gateway: something in front reached the app and got nothing
           // back - in dev that is the Vite proxy with no API running behind
           // it. "Did not answer in time" describes 504 and misdirects here.
-          errorMsg = 'Could not reach the server. It may be restarting.'
+          errorMsg = "Couldn't reach the server. It may be restarting."
           break
         case 504:
-          errorMsg = 'The server did not answer in time. Please try again.'
+          errorMsg = 'The server took too long to answer. Try again in a moment.'
           break
         case 503:
-          errorMsg = 'Service temporarily unavailable'
+          errorMsg = 'The service is down for a moment. Try again shortly.'
           break
       }
 
@@ -200,7 +200,7 @@ export async function apiRequest<T>(
     // connection, a DNS failure or a CORS rejection alike, which tells the
     // person reading it nothing. Say what is actually known instead.
     if (err instanceof TypeError) {
-      throw new NetworkError('Could not reach the server', 'unreachable', { cause: err })
+      throw new NetworkError("Couldn't reach the server", 'unreachable', { cause: err })
     }
 
     throw err

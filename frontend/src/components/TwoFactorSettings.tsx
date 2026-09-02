@@ -241,7 +241,7 @@ export default function TwoFactorSettings() {
       flash('success', 'Security key registered.')
       load()
     } catch (err) {
-      flash('error', errorMessage(err, 'Could not register security key.'))
+      flash('error', errorMessage(err, "Couldn't register security key."))
     } finally {
       setWebauthnBusy(false)
     }

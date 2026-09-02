@@ -44,8 +44,8 @@ export default class ErrorBoundary extends Component<Props, State> {
       <div className="error-boundary">
         <div className="error-boundary-card">
           <Icon name="warning" size={32} />
-          <h1>Something went wrong</h1>
-          <p>An unexpected error occurred. Reloading usually fixes it.</p>
+          <h1>This page stopped working</h1>
+          <p>Reloading usually fixes it. If it keeps happening, the detail below is worth reporting.</p>
           {label && <p className="error-boundary-detail">{label}</p>}
           <button className="error-boundary-btn" onClick={() => window.location.reload()}>
             Reload page
