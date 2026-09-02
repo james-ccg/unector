@@ -9,7 +9,10 @@ name: CI
 
 on:
   push:
-    branches: [main, dednod]
+    # main only. Work happens on dednod and is fast-forwarded into main, so
+    # both branches carry the identical commit - listing both ran every job
+    # twice over the same code and doubled the minutes for nothing.
+    branches: [main]
   pull_request:
   schedule:
     # Advisories are published against code that has not changed, so the
@@ -18,6 +21,13 @@ on:
 
 permissions:
   contents: read
+
+# A newer push makes an in-flight run redundant. Without this they queue up
+# and all of them finish, which costs minutes to learn something already
+# superseded.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
