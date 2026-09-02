@@ -122,7 +122,19 @@ export default function SettingsPage() {
     security: ['security'],
   }
 
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  /* Which tab a #hash belongs to.
+   *
+   * The tabs hide their sections rather than unmounting them, so a link to
+   * #gmail scrolled to a card that was sitting behind display:none - the
+   * page opened on General and the reader saw no reason the link had done
+   * anything. Anything deep-linkable has to say which tab holds it. */
+  const TAB_FOR_HASH: Record<string, SettingsTab> = {
+    gmail: 'integrations',
+    samsara: 'integrations',
+  }
+
+  const initialTab = TAB_FOR_HASH[window.location.hash.slice(1)] ?? 'general'
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab)
   const SETTINGS_NAV: { key: SettingsTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
     { key: 'general', label: 'General', icon: 'briefcase' },
     { key: 'fleet', label: 'Fleet', icon: 'truck' },
@@ -135,6 +147,16 @@ export default function SettingsPage() {
   /** Class for a section block - visible when its tab is the active one. */
   const sectionClass = (section: SettingsSection) =>
     `settings-section ${TAB_SECTIONS[activeTab].includes(section) ? '' : 'settings-section-hidden'}`
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const tab = TAB_FOR_HASH[window.location.hash.slice(1)]
+      if (tab) setActiveTab(tab)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const loadAll = async () => {
     if (!user) return

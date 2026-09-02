@@ -1,9 +1,14 @@
 /* Footer Component Styles */
+/* No margin-top. Every page above this already ends with its own bottom
+   padding - 64px on the marketing pages, 40px on the dashboard ones - and
+   an 80px margin here stacked on top of that, leaving a band of empty
+   background between the last card and the footer's own border. The space
+   above the footer belongs to whatever page is above it; the footer's job
+   starts at its border. */
 .footer {
   background: var(--dark-lighter);
   border-top: 1px solid var(--border);
-  padding: 60px 0 30px;
-  margin-top: 80px;
+  padding: 56px 0 28px;
 }
 
 .footer-grid {
