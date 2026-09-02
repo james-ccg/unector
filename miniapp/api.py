@@ -1916,9 +1916,17 @@ async def get_monitoring(user: dict = Depends(get_current_user)):
             for load in all_loads:
                 latest_by_driver.setdefault(load.driver_id, load)
 
+        # The Samsara link moved onto the truck when the fleet was
+        # reorganised around trucks rather than drivers - a driver between
+        # trucks has no vehicle, and a truck keeps its link when the driver
+        # changes. This still read it off the driver, so the whole page
+        # 500ed the moment anyone opened it.
+        def vehicle_of(driver) -> str | None:
+            return driver.truck.samsara_vehicle_id if driver.truck else None
+
         # One batched Samsara call for the whole fleet instead of one per
         # vehicle - see samsara_service.get_fleet_locations.
-        vehicle_ids = sorted({d.samsara_vehicle_id for d in drivers if d.samsara_vehicle_id})
+        vehicle_ids = sorted({v for d in drivers if (v := vehicle_of(d))})
         locations: dict[str, dict] = {}
         if samsara_connected and vehicle_ids:
             try:
@@ -1933,14 +1941,15 @@ async def get_monitoring(user: dict = Depends(get_current_user)):
         vehicles = []
         for driver in drivers:
             latest_load = latest_by_driver.get(driver.id)
-            location = locations.get(driver.samsara_vehicle_id) if driver.samsara_vehicle_id else None
+            vehicle_id = vehicle_of(driver)
+            location = locations.get(vehicle_id) if vehicle_id else None
 
             vehicles.append(
                 {
                     "id": driver.id,
                     "name": driver.full_name or driver.driver_bot_id,
                     "driver_id": f"#{driver.driver_bot_id}",
-                    "vehicle_id": driver.samsara_vehicle_id,
+                    "vehicle_id": vehicle_id,
                     "active": driver.subscription_active,
                     "location": location,
                     "load": (

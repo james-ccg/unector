@@ -218,6 +218,12 @@ def run() -> None:
     r = a.post(f"/api/drivers/{driver_id}/link-token", headers=csrf(a))
     check("a linking code can be issued", r.status_code == 200, r.text[:200])
 
+    # Every page the dashboard nav offers, because a 500 here is a page that
+    # simply does not open - which is how /api/monitoring shipped broken.
+    for path in ("/api/dashboard", "/api/monitoring", "/api/settings", "/api/trucks", "/api/team"):
+        r = a.get(path)
+        check(f"GET {path} loads", r.status_code == 200, f"{r.status_code} {r.text[:160]}")
+
     # ---------------------------------------------------------------
     section("7. One company cannot read another's data")
     b = httpx.Client(base_url=BASE, timeout=20)
