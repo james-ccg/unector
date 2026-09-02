@@ -16,14 +16,14 @@ on:
   pull_request:
   # Run it deliberately, from the Actions tab.
   workflow_dispatch:
-
-# Deliberately no `schedule:`. A weekly cron would run the audits against
-# code nobody had touched - useful, since advisories land against unchanged
-# dependencies - but it also runs on this account with nobody watching, and
-# that is not something to switch on for someone else. Version bumps
-# already arrive as PRs weekly and cover most of the same ground; those PRs
-# trigger this workflow through pull_request, so the audits still see new
-# versions. Add the cron back only if asked for it.
+  schedule:
+    # Monday morning. Advisories are published against code that has not
+    # changed, so a dependency that was clean at the last commit can be
+    # vulnerable a week later with nothing to trigger a check. On a public
+    # repository these minutes are billed at zero, and the jobs only read -
+    # they run the tests, query the advisory databases, and scan this
+    # repository's own history.
+    - cron: '0 6 * * 1'
 
 permissions:
   contents: read
