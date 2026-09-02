@@ -19,6 +19,12 @@
   /* Core surfaces */
   --bg: #161616;
   --card: #201f1c;
+  /* Panels floating over the map: the toolbar, the layer menu, the
+     attribution, the "no positions yet" card. The tiles beneath them are
+     not themed - a street map is light whichever appearance is set - but
+     these are interface, and follow it. */
+  --overlay: rgba(32, 31, 28, 0.85);
+  --overlay-solid: rgba(32, 31, 28, 0.93);
   --dark: #161616;
   --dark-lighter: #201f1c;
   --border: #322f2a;
@@ -77,6 +83,8 @@
   @media (prefers-color-scheme: light) {
     --bg: #f8f8f6;
     --card: #ffffff;
+    --overlay: rgba(255, 255, 255, 0.88);
+    --overlay-solid: rgba(255, 255, 255, 0.95);
     --dark: #f8f8f6;
     --dark-lighter: #ffffff;
     --border: #e6e4de;
@@ -111,6 +119,8 @@
 :root[data-theme='light'] {
   --bg: #f8f8f6;
   --card: #ffffff;
+  --overlay: rgba(255, 255, 255, 0.88);
+  --overlay-solid: rgba(255, 255, 255, 0.95);
   --dark: #f8f8f6;
   --dark-lighter: #ffffff;
   --border: #e6e4de;
