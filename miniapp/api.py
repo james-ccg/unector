@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, EmailStr, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -66,6 +66,7 @@ from db.repository import (
 )
 from miniapp.auth import (
     CSRF_COOKIE_NAME,
+    LAST_ACCOUNT_COOKIE_NAME,
     SESSION_PURPOSE,
     CSRF_HEADER_NAME,
     SESSION_COOKIE_NAME,
@@ -75,7 +76,9 @@ from miniapp.auth import (
     create_token,
     csrf_token_matches,
     decode_token,
+    forget_last_account,
     hash_password,
+    remember_last_account,
     set_session_cookies,
     verify_password,
 )
@@ -154,8 +157,6 @@ async def limit_request_size(request: Request, call_next):
     equivalent)."""
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
-        from fastapi.responses import JSONResponse
-
         return JSONResponse(
             status_code=413,
             content={"detail": f"Request body too large (max {MAX_REQUEST_BODY_BYTES // (1024 * 1024)}MB)"},
@@ -1358,7 +1359,15 @@ def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owne
         {"company_id": user["company_id"], "purpose": "gmail_oauth", "return_to": return_to},
         lifetime_seconds=SHORT_LIVED_SECONDS,
     )
-    auth_url = build_authorization_url(GMAIL_REDIRECT_URI, state)
+    # On a reconnect the mailbox is already on the company row, so send it
+    # as the hint: Google reopens that account instead of asking. Without
+    # it, an owner with two Google addresses can connect the wrong inbox on
+    # a reconnect and nothing tells them until rate confirmations stop.
+    from db.repository import get_company_email
+
+    auth_url = build_authorization_url(
+        GMAIL_REDIRECT_URI, state, login_hint=get_company_email(user["company_id"])
+    )
     return {"auth_url": auth_url}
 
 
@@ -1468,17 +1477,33 @@ GOOGLE_LOGIN_REDIRECT_URI = os.getenv(
 
 @app.get("/api/auth/google/start")
 @limiter.limit("10/minute")
-def google_login_start(request: Request):
+def google_login_start(request: Request, switch_account: bool = False):
     """Returns the Google consent URL for signing in. The state is a signed,
     short-lived token so the callback can prove the request originated here
-    rather than being replayed from somewhere else."""
+    rather than being replayed from somewhere else.
+
+    Someone who signed out of this browser recently gets sent straight back
+    to the account they used, rather than picking their own address off a
+    list. `switch_account=true` drops that hint and restores the chooser,
+    which is what the "Use a different account" link asks for - a
+    convenience nobody can escape is not one."""
     from services import google_identity_service
 
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(503, "Google sign-in isn't configured on this server.")
 
+    hint = None if switch_account else request.cookies.get(LAST_ACCOUNT_COOKIE_NAME)
     state = create_token({"purpose": "google_login"}, lifetime_seconds=SHORT_LIVED_SECONDS)
-    return {"auth_url": google_identity_service.build_authorization_url(GOOGLE_LOGIN_REDIRECT_URI, state)}
+    body = {
+        "auth_url": google_identity_service.build_authorization_url(
+            GOOGLE_LOGIN_REDIRECT_URI, state, login_hint=hint
+        ),
+        "hinted_account": hint,
+    }
+    payload = JSONResponse(body)
+    if switch_account:
+        forget_last_account(payload)
+    return payload
 
 
 @app.get("/api/auth/google/callback")
@@ -1531,9 +1556,14 @@ def google_login_callback(
         # login response returns the identical list - and the pending token
         # is what actually gates completing the factor.
         methods = ",".join(result.get("methods", []))
-        return RedirectResponse(
+        challenge = RedirectResponse(
             f"{FRONTEND_URL}/login?google_2fa={result['pending_token']}&methods={methods}"
         )
+        # Google has already proved who this is; only the second factor is
+        # outstanding. Worth remembering either way - somebody who abandons
+        # the 2FA step still came back to the same account.
+        remember_last_account(challenge, email)
+        return challenge
 
     # _finish_password_step wrote the session cookies onto `response`; carry
     # those Set-Cookie headers onto the redirect the browser actually follows.
@@ -1541,6 +1571,7 @@ def google_login_callback(
     for key, value in response.raw_headers:
         if key.decode().lower() == "set-cookie":
             redirect.raw_headers.append((key, value))
+    remember_last_account(redirect, email)
     return redirect
 
 

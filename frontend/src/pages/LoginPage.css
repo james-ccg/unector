@@ -246,3 +246,28 @@
 .btn-google svg {
   flex-shrink: 0;
 }
+
+/* "Use a different account" under the Google button. A button, not a link -
+   it performs an action rather than going anywhere - but it should not
+   compete with the real button above it, so it reads as text. */
+.link-button {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  margin: -2px 0 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 6px;
+}
+.link-button:hover {
+  color: var(--text-primary);
+}
+.link-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

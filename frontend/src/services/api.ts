@@ -262,8 +262,14 @@ export const authApi = {
   // The rest of the flow happens as redirects, so there's no second call
   // here: the backend lands the browser back on /dashboard (session set) or
   // on /login with a ?google=... reason.
-  googleLoginStart: () =>
-    apiRequest<{ auth_url: string }>('/api/auth/google/start'),
+  // `switchAccount` drops the remembered address so Google shows its
+  // chooser again - what the "Use a different account" link asks for.
+  // `hinted_account` comes back so the button can name who it will sign in
+  // as, rather than silently picking someone.
+  googleLoginStart: (switchAccount = false) =>
+    apiRequest<{ auth_url: string; hinted_account: string | null }>(
+      `/api/auth/google/start${switchAccount ? '?switch_account=true' : ''}`
+    ),
 
   registerGmailStart: () =>
     apiRequest<{ auth_url: string }>('/api/auth/register/gmail/start'),

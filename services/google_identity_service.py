@@ -33,18 +33,29 @@ def _build_flow(redirect_uri: str) -> Flow:
     return Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=redirect_uri)
 
 
-def build_authorization_url(redirect_uri: str, state: str) -> str:
+def build_authorization_url(
+    redirect_uri: str, state: str, login_hint: str | None = None
+) -> str:
     """The Google consent URL to send a visitor to when they click
     "Continue with Google". `state` must be a signed, verifiable token - the
-    callback trusts nothing else about where the request came from."""
+    callback trusts nothing else about where the request came from.
+
+    `login_hint` is the address this browser last signed in with. With one,
+    the account chooser is skipped and Google goes straight to that account
+    - someone coming back after logging out should not have to pick their
+    own address off a list again. prompt=select_account has to come off for
+    that: it forces the chooser regardless of any hint, so the two together
+    would cancel out. Without a hint the chooser stays, because then there
+    genuinely is nothing to go on."""
     flow = _build_flow(redirect_uri)
+    # No access_type=offline / prompt=consent here: sign-in needs a one-shot
+    # identity assertion, not a stored refresh token, so there is nothing to
+    # persist and nothing to leak.
+    extra = {"login_hint": login_hint} if login_hint else {"prompt": "select_account"}
     auth_url, _ = flow.authorization_url(
-        # No access_type=offline / prompt=consent here: sign-in needs a
-        # one-shot identity assertion, not a stored refresh token, so there
-        # is nothing to persist and nothing to leak.
         include_granted_scopes="true",
         state=state,
-        prompt="select_account",
+        **extra,
     )
     return auth_url
 

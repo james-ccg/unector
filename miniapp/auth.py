@@ -159,6 +159,40 @@ def set_session_cookies(response, token: str) -> None:
     )
 
 
+# Which Google account this browser last signed in with. Set on the way out
+# so that coming back is one click rather than picking your own address off
+# a list again, and read only to build Google's `login_hint`.
+#
+# httpOnly on purpose: nothing on the page needs to read it, and an address
+# that no script can reach is one an XSS payload cannot harvest either. It
+# is a convenience, so it expires on its own - a browser nobody has signed
+# in from for a month should not still be volunteering who used it.
+LAST_ACCOUNT_COOKIE_NAME = f"{_HOST_PREFIX}fp_last_account"
+LAST_ACCOUNT_LIFETIME_SECONDS = 60 * 60 * 24 * 30
+
+
+def remember_last_account(response, email: str) -> None:
+    if not email:
+        return
+    response.set_cookie(
+        key=LAST_ACCOUNT_COOKIE_NAME,
+        value=email,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=LAST_ACCOUNT_LIFETIME_SECONDS,
+        path="/",
+    )
+
+
+def forget_last_account(response) -> None:
+    """For "use a different account" - the hint has to be droppable, or it
+    stops being a convenience and becomes something you cannot get out of."""
+    response.delete_cookie(LAST_ACCOUNT_COOKIE_NAME, path="/")
+
+
 def clear_session_cookies(response) -> None:
+    """Signs the browser out. The last-account hint deliberately survives:
+    remembering who just left is the whole point of it."""
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
     response.delete_cookie(CSRF_COOKIE_NAME, path="/")

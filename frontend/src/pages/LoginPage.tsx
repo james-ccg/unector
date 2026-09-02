@@ -57,6 +57,7 @@ export default function LoginPage() {
   const [turnstileNonce, setTurnstileNonce] = useState(0)
 
   const [googleBusy, setGoogleBusy] = useState(false)
+  const [hintedAccount, setHintedAccount] = useState<string | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const resetTurnstile = () => {
@@ -99,17 +100,28 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (switchAccount = false) => {
     setError('')
     setGoogleBusy(true)
     try {
-      const { auth_url } = await authApi.googleLoginStart()
+      const { auth_url } = await authApi.googleLoginStart(switchAccount)
       window.location.href = auth_url
     } catch (err) {
       setError(errorMessage(err, "Couldn't start Google sign-in."))
       setGoogleBusy(false)
     }
   }
+
+  // Who this browser signed in as last, if anyone. Asked for up front so
+  // the button can say whose account it will open instead of springing it
+  // on someone at Google's end. Nothing is stored here - the address lives
+  // in an httpOnly cookie the server reads, so no script can get at it.
+  useEffect(() => {
+    authApi
+      .googleLoginStart()
+      .then((r) => setHintedAccount(r.hinted_account))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     publicApi.getConfig().then((c) => setTurnstileSiteKey(c.turnstile_site_key)).catch(() => {})
@@ -290,12 +302,21 @@ export default function LoginPage() {
                   <button
                     type="button"
                     className="btn-google btn-full"
-                    onClick={handleGoogleLogin}
+                    onClick={() => handleGoogleLogin()}
                     disabled={googleBusy}
                   >
                     <GoogleMark />
-                    {googleBusy ? 'Opening Google...' : 'Continue with Google'}
+                    {googleBusy
+                      ? 'Opening Google...'
+                      : hintedAccount
+                        ? `Continue as ${hintedAccount}`
+                        : 'Continue with Google'}
                   </button>
+                  {hintedAccount && !googleBusy && (
+                    <button type="button" className="link-button" onClick={() => handleGoogleLogin(true)}>
+                      Use a different account
+                    </button>
+                  )}
 
                   <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px', margin: 0 }}>
                     Don't have an account?{' '}

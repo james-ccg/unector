@@ -182,16 +182,25 @@ def _build_web_flow(redirect_uri: str):
     return Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=redirect_uri)
 
 
-def build_authorization_url(redirect_uri: str, state: str) -> str:
+def build_authorization_url(redirect_uri: str, state: str, login_hint: str | None = None) -> str:
     """Builds the Google consent-screen URL the owner is sent to when they
     click "Connect Gmail". `state` should be a signed, verifiable token
-    (not a raw company_id) so the callback can't be spoofed."""
+    (not a raw company_id) so the callback can't be spoofed.
+
+    `login_hint` is the mailbox this connection is already for. On a
+    reconnect we know it - it is on the company row - and passing it means
+    Google goes straight to that account instead of asking which one, which
+    is the moment someone with two addresses picks the wrong one and
+    silently connects the wrong inbox. It is a hint, not an instruction:
+    Google still shows the picker if that account is not signed in here."""
     flow = _build_web_flow(redirect_uri)
+    extra = {"login_hint": login_hint} if login_hint else {}
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent",  # forces a refresh_token every time, even on reconnect
         state=state,
+        **extra,
     )
     return auth_url
 

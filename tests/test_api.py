@@ -1426,11 +1426,61 @@ class TestGoogleSignIn:
         monkeypatch.setattr(api_module, "GOOGLE_CLIENT_SECRET", "fake-secret")
         monkeypatch.setattr(
             "services.google_identity_service.build_authorization_url",
-            lambda redirect_uri, state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+            lambda redirect_uri, state, login_hint=None: (
+                f"https://accounts.google.com/o/oauth2/auth?state={state}"
+                + (f"&login_hint={login_hint}" if login_hint else "")
+            ),
         )
         response = client.get("/api/auth/google/start")
         assert response.status_code == 200, response.text
         assert response.json()["auth_url"].startswith("https://accounts.google.com/")
+        # Nothing signed in from this browser yet, so nothing to suggest.
+        assert response.json()["hinted_account"] is None
+
+    def test_start_hints_the_account_this_browser_last_used(self, client, monkeypatch):
+        """Someone who signed out recently should land on their own account,
+        not on Google's "choose an account" list."""
+        from miniapp.auth import LAST_ACCOUNT_COOKIE_NAME
+
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_ID", "fake-client-id")
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_SECRET", "fake-secret")
+        monkeypatch.setattr(
+            "services.google_identity_service.build_authorization_url",
+            lambda redirect_uri, state, login_hint=None: (
+                f"https://accounts.google.com/o/oauth2/auth?state={state}"
+                + (f"&login_hint={login_hint}" if login_hint else "")
+            ),
+        )
+        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dave@example.com")
+
+        body = client.get("/api/auth/google/start").json()
+        assert body["hinted_account"] == "dave@example.com"
+        assert "login_hint=dave@example.com" in body["auth_url"]
+
+    def test_switching_account_drops_the_hint_and_forgets_it(self, client, monkeypatch):
+        """A suggestion nobody can get out of is not a convenience."""
+        from miniapp.auth import LAST_ACCOUNT_COOKIE_NAME
+
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_ID", "fake-client-id")
+        monkeypatch.setattr(api_module, "GOOGLE_CLIENT_SECRET", "fake-secret")
+        monkeypatch.setattr(
+            "services.google_identity_service.build_authorization_url",
+            lambda redirect_uri, state, login_hint=None: (
+                f"https://accounts.google.com/o/oauth2/auth?state={state}"
+                + (f"&login_hint={login_hint}" if login_hint else "")
+            ),
+        )
+        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dave@example.com")
+
+        response = client.get("/api/auth/google/start?switch_account=true")
+        body = response.json()
+        assert body["hinted_account"] is None
+        assert "login_hint" not in body["auth_url"]
+        # Asserted on the header rather than the jar: the test client sets
+        # its seeded cookie with no domain, so an expiry for this host does
+        # not match it there even though a real browser drops it.
+        expiry = [v for k, v in response.headers.multi_items() if k.lower() == "set-cookie"]
+        assert any(LAST_ACCOUNT_COOKIE_NAME in v and "Max-Age=0" in v for v in expiry), expiry
 
     def test_start_is_unavailable_when_google_is_not_configured(self, client, monkeypatch):
         monkeypatch.setattr(api_module, "GOOGLE_CLIENT_ID", None)

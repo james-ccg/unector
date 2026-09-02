@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ESSENTIAL_STORAGE, hasDecided, saveConsent, getConsent, type ConsentCategory,
+  ESSENTIAL_STORAGE, SIGN_IN_STORAGE, hasDecided, saveConsent, getConsent, type ConsentCategory,
 } from '../lib/consent'
 import './CookieConsent.css'
 
@@ -91,6 +91,11 @@ export default function CookieConsent() {
                 <p className="consent-row-detail">
                   {ESSENTIAL_STORAGE.map((item) => item.name).join(', ')} &mdash; signing in, security,
                   and remembering this choice. Always on, because the site can&apos;t work without them.
+                </p>
+                <p className="consent-row-detail">
+                  {SIGN_IN_STORAGE.map((item) => item.name).join(', ')} &mdash; only if you sign in
+                  with Google, to remember which account. Clear it with &ldquo;Use a different
+                  account&rdquo; on the login page; it expires after 30 days either way.
                 </p>
               </div>
               <span className="consent-locked-tag">Required</span>

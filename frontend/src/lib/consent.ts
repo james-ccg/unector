@@ -33,6 +33,22 @@ export const STORAGE_BY_CATEGORY: Record<ConsentCategory, string[]> = {
   game: ['fp-game-tickets', 'fp-game-queue'],
 }
 
+/** Set by the server as a direct result of signing in with Google, and only
+ *  then. Not in ESSENTIAL_STORAGE because the site works perfectly well
+ *  without it - it saves picking your own address off Google's list - and
+ *  not an opt-in category either, because nothing on the page can read or
+ *  write it: it is httpOnly, so the browser sends it to the server and
+ *  shows it to no one. "Use a different account" on the login page clears
+ *  it, and it expires by itself after 30 days. Listed because this app
+ *  names everything it stores. */
+export const SIGN_IN_STORAGE = [
+  {
+    name: 'fp_last_account',
+    purpose:
+      'Remembers which Google account signed in here last, so returning after signing out takes one click. Expires after 30 days.',
+  },
+]
+
 /** Storage that works without asking, because the site can't do its job
  *  without it. Listed so the privacy page and the banner can name it rather
  *  than gesturing at "essential cookies". */

@@ -727,6 +727,16 @@ def get_companies_by_email(email: str) -> list[Company]:
         ]
 
 
+def get_company_email(company_id: int) -> str | None:
+    """The address this company's Google account is connected as. Used as
+    the login_hint on a reconnect, so Google reopens the mailbox that is
+    already linked instead of asking which one - the moment an owner with
+    two addresses connects the wrong inbox without noticing."""
+    with get_session() as session:
+        row = session.get(models.Company, company_id)
+        return row.email if row and row.email else None
+
+
 def set_company_email(company_id: int, email: str) -> None:
     """Records the address a company's Google account is connected as, so
     password reset and Google sign-in can find them later. Kept lowercase to
