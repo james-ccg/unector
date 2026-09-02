@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { authApi, billingApi, publicApi, errorMessage } from '../services/api'
 import Turnstile from '../components/Turnstile'
 import PasswordInput from '../components/PasswordInput'
+import { gmailErrorMessage } from '../lib/gmailError'
 import './LoginPage.css'
 
 // Registration is Gmail-first: connect Gmail, confirm you own that inbox
@@ -52,13 +53,7 @@ export default function RegisterPage() {
     const gmailStatus = searchParams.get('gmail')
     if (!gmailStatus) return
     queueMicrotask(() => {
-      setConnectError(
-        gmailStatus === 'error_no_refresh_token'
-          ? "Google didn't grant lasting access this time - this usually happens if you've connected " +
-              "this same account before. Go to myaccount.google.com/permissions, remove Freight Pilot's " +
-              'access there, then try connecting again.'
-          : 'Something went wrong connecting Gmail. Please try again.'
-      )
+      setConnectError(gmailErrorMessage(gmailStatus, searchParams.get('reason')) ?? '')
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

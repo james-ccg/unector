@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { settingsApi, errorMessage } from '../services/api'
 import Icon from '../components/Icon'
+import { gmailErrorMessage } from '../lib/gmailError'
 import './LoginPage.css'
 
 export default function OnboardingGmailPage() {
@@ -36,15 +37,7 @@ export default function OnboardingGmailPage() {
     // since a microtask still runs before the next paint. Same pattern as
     // SettingsPage's gmail-redirect handling.
     queueMicrotask(() => {
-      if (gmailStatus === 'error_no_refresh_token') {
-        setError(
-          "Google didn't grant lasting access this time - this usually happens if you've " +
-            "connected this same account before. Go to myaccount.google.com/permissions, " +
-            "remove Freight Pilot's access there, then try connecting again."
-        )
-      } else {
-        setError('Something went wrong connecting Gmail. Please try again.')
-      }
+      setError(gmailErrorMessage(gmailStatus, searchParams.get('reason')) ?? '')
     })
     searchParams.delete('gmail')
     setSearchParams(searchParams, { replace: true })

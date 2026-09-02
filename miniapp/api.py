@@ -1291,6 +1291,17 @@ def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owne
     return {"auth_url": auth_url}
 
 
+def _safe_oauth_reason(error: str) -> str:
+    """Google's own error code, made safe to reflect into a redirect URL.
+
+    The documented values are short identifiers like "access_denied", but
+    this arrives on a public callback as a plain query parameter, so it is
+    encoded and truncated rather than trusted to be one of them."""
+    from urllib.parse import quote
+
+    return quote(error[:64], safe="")
+
+
 @app.get("/api/settings/gmail/callback")
 def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     from fastapi.responses import RedirectResponse
@@ -1303,11 +1314,21 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
     if payload and payload.get("purpose") == "gmail_oauth":
         return_path = _GMAIL_RETURN_PATHS.get(payload.get("return_to"), return_path)
 
-    if error or not code or not state:
-        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
+    # Four different failures used to redirect with the same ?gmail=error,
+    # so the page could only ever say "something went wrong" - including
+    # when the owner had simply pressed Cancel on Google's consent screen.
+    # Each one now names itself; the frontend maps the code to the sentence.
+    if error:
+        # Google's own code, e.g. access_denied when Cancel was pressed.
+        return RedirectResponse(
+            f"{FRONTEND_URL}{return_path}?gmail=error_google&reason={_safe_oauth_reason(error)}"
+        )
+
+    if not code or not state:
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_incomplete")
 
     if not payload or payload.get("purpose") != "gmail_oauth":
-        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_expired_link")
 
     try:
         refresh_token = exchange_code_for_refresh_token(code, GMAIL_REDIRECT_URI)
@@ -1347,7 +1368,7 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
     except Exception:
         import logging
         logging.exception("Gmail OAuth callback failed for company %s", payload.get("company_id"))
-        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error")
+        return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_exchange")
 
     return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=connected")
 
@@ -1499,8 +1520,16 @@ def register_gmail_callback(code: str | None = None, state: str | None = None, e
     from services.gmail_service import exchange_code_for_refresh_token, get_email_address
 
     payload = decode_token(state) if state else None
-    if error or not code or not state or not payload or payload.get("purpose") != "register_gmail":
-        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error")
+    # Split for the same reason as the Settings callback above - a cancelled
+    # consent screen and an expired link are not the same problem.
+    if error:
+        return RedirectResponse(
+            f"{FRONTEND_URL}/register?gmail=error_google&reason={_safe_oauth_reason(error)}"
+        )
+    if not code or not state:
+        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_incomplete")
+    if not payload or payload.get("purpose") != "register_gmail":
+        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_expired_link")
 
     try:
         refresh_token = exchange_code_for_refresh_token(code, REGISTER_GMAIL_REDIRECT_URI)
@@ -1523,7 +1552,7 @@ def register_gmail_callback(code: str | None = None, state: str | None = None, e
     except Exception:
         import logging
         logging.exception("Gmail OAuth callback failed during registration")
-        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error")
+        return RedirectResponse(f"{FRONTEND_URL}/register?gmail=error_exchange")
 
     return RedirectResponse(f"{FRONTEND_URL}/register?pending_token={pending_token}")
 
@@ -2387,6 +2416,14 @@ if react_build_path.exists():
     @app.get("/{full_path:path}", response_class=FileResponse)
     def serve_react_app(full_path: str):
         """Serve React app for all non-API routes (SPA fallback)"""
+        # An /api path that got this far matched no route above, so it does
+        # not exist. Falling through to index.html would answer it 200 with
+        # a page of HTML: the caller sees a success, parses no JSON, and
+        # carries on with an empty object instead of being told the endpoint
+        # is missing. Say 404, in the same JSON shape as every other error.
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail=f"No such endpoint: /{full_path}")
+
         # If it's a static file in dist, serve it
         file_path = react_build_path / full_path
         if file_path.is_file():

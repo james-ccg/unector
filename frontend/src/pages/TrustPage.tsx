@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import Icon from '../components/Icon'
-import { publicApi } from '../services/api'
+import Alert from '../components/Alert'
+import { publicApi, errorMessage } from '../services/api'
 import { formatCount } from '../lib/format'
 
 interface Stats {
@@ -13,6 +14,10 @@ interface Stats {
 export default function TrustPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+  // A failed fetch used to be swallowed, leaving `stats` null and every
+  // counter rendering a confident 0 - the page claimed no customers rather
+  // than admitting it could not reach the server. Now it says which.
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -22,6 +27,7 @@ export default function TrustPage() {
         if (!cancelled) setStats(data)
       } catch (err) {
         console.error('Failed to load stats:', err)
+        if (!cancelled) setError(errorMessage(err, 'Could not load the numbers.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -44,21 +50,23 @@ export default function TrustPage() {
             </p>
           </div>
 
+          {error && <Alert kind="error">{error}</Alert>}
+
           <div className="stats-showcase">
             <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : stats?.companies ?? 0}</div>
+              <div className="stat-number">{loading || error ? '—' : stats?.companies ?? 0}</div>
               <div className="stat-label">Companies</div>
               <p className="stat-desc">Carriers running dispatch through Freight Pilot</p>
             </div>
 
             <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : formatCount(stats?.active_trucks ?? 0)}</div>
+              <div className="stat-number">{loading || error ? '—' : formatCount(stats?.active_trucks ?? 0)}</div>
               <div className="stat-label">Active Drivers</div>
               <p className="stat-desc">Drivers currently managed through the platform</p>
             </div>
 
             <div className="stat-card card">
-              <div className="stat-number">{loading ? '—' : formatCount(stats?.loads_delivered ?? 0)}</div>
+              <div className="stat-number">{loading || error ? '—' : formatCount(stats?.loads_delivered ?? 0)}</div>
               <div className="stat-label">Loads Processed</div>
               <p className="stat-desc">Rate confirmations extracted and tracked</p>
             </div>

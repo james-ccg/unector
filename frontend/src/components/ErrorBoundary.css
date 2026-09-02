@@ -49,3 +49,18 @@
 .error-boundary-btn:hover {
   filter: brightness(1.08);
 }
+
+/* The error's own name and message. Monospaced and quiet: it is there to be
+   read out or copied into a bug report, not to be the headline. Wrapped
+   because a message can be long and must not push the card wider than the
+   screen. */
+.error-boundary-detail {
+  font-family: var(--font-mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 12px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}

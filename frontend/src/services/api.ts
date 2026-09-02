@@ -11,12 +11,50 @@ function readCookie(name: string): string | null {
 
 type ApiOptions = RequestInit
 
+/** A request that came back with an HTTP status we can't use.
+ *
+ * The message always ends with the status, because "Resource not found" and
+ * "Server error" tell someone reporting a problem - and whoever they report
+ * it to - nothing about which failure they actually hit. `status` is kept as
+ * a field as well so a call site can branch on it without parsing prose. */
+export class ApiError extends Error {
+  readonly status: number
+  /** The message without the "(HTTP nnn)" suffix. */
+  readonly detail: string
+
+  constructor(detail: string, status: number, options?: ErrorOptions) {
+    super(`${detail} (HTTP ${status})`, options)
+    this.name = 'ApiError'
+    this.status = status
+    this.detail = detail
+  }
+}
+
+/** A request that never got a status back at all. Named separately because
+ * "the server said no" and "the server was never reached" are different
+ * problems with different fixes, and a bare "Failed to fetch" from the
+ * browser distinguishes neither. */
+export class NetworkError extends Error {
+  readonly kind: 'offline' | 'timeout' | 'unreachable' | 'malformed response'
+
+  constructor(detail: string, kind: NetworkError['kind'], options?: ErrorOptions) {
+    super(`${detail} (${kind})`, options)
+    this.name = 'NetworkError'
+    this.kind = kind
+  }
+}
+
 /** Extracts a human-readable message from something caught in a try/catch.
  * apiRequest below always throws a real Error, but a catch clause's variable
  * is typed unknown (TS can't statically know what a call site threw), so
- * this is the one place that assumption lives. */
+ * this is the one place that assumption lives.
+ *
+ * Anything thrown from here already names itself, so the fallback is only
+ * reached for a non-Error someone threw by hand. */
 export function errorMessage(err: unknown, fallback = 'Something went wrong.'): string {
-  return err instanceof Error && err.message ? err.message : fallback
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err) return err
+  return fallback
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -67,6 +105,16 @@ export async function apiRequest<T>(
       try {
         data = await response.json()
       } catch (e) {
+        // On a failed response this is survivable - the status below is the
+        // real information. On a successful one it is not: the caller is
+        // about to read fields off an empty object and blame itself.
+        if (response.ok) {
+          throw new NetworkError(
+            'The server sent a reply this app could not read',
+            'malformed response',
+            { cause: e }
+          )
+        }
         console.error('Failed to parse JSON response:', e)
       }
     }
@@ -95,29 +143,46 @@ export async function apiRequest<T>(
           errorMsg = (body.detail as string) || 'Access denied'
           break
         case 404:
-          errorMsg = 'Resource not found'
+          errorMsg = (body.detail as string) || 'Not found'
+          break
+        case 429:
+          errorMsg = (body.detail as string) || 'Too many attempts. Wait a moment and try again.'
           break
         case 500:
           errorMsg = 'Server error. Please try again later.'
+          break
+        case 502:
+        case 504:
+          errorMsg = 'The server did not answer in time. Please try again.'
           break
         case 503:
           errorMsg = 'Service temporarily unavailable'
           break
       }
 
-      throw new Error(errorMsg)
+      throw new ApiError(errorMsg, response.status)
     }
 
     return data as T
   } catch (err: unknown) {
     clearTimeout(timeout)
 
+    // Already named itself on the way past - don't wrap it twice.
+    if (err instanceof ApiError || err instanceof NetworkError) throw err
+
     if ((err instanceof DOMException || err instanceof Error) && err.name === 'AbortError') {
-      throw new Error('Request timeout. Please check your connection.', { cause: err })
+      throw new NetworkError('The request took longer than 15 seconds', 'timeout', { cause: err })
     }
 
     if (!navigator.onLine) {
-      throw new Error('No internet connection', { cause: err })
+      throw new NetworkError('No internet connection', 'offline', { cause: err })
+    }
+
+    // fetch() rejects with a bare TypeError("Failed to fetch") for a refused
+    // connection, a DNS failure or a CORS rejection alike, which tells the
+    // person reading it nothing. Say what is actually known instead.
+    if (err instanceof TypeError) {
+      throw new NetworkError('Could not reach the server', 'unreachable', { cause: err })
     }
 
     throw err

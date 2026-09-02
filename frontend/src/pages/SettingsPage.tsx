@@ -20,6 +20,7 @@ import {
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
 import './SettingsPage.css'
+import { gmailErrorMessage } from '../lib/gmailError'
 
 /** Turns an expiry timestamp into something worth reading on a card. Lives
  *  outside the component because it reads the clock - fine in an event
@@ -188,16 +189,9 @@ export default function SettingsPage() {
       if (gmailStatus === 'connected') {
         setBanner({ kind: 'success', text: 'Gmail connected successfully.' })
         loadAll()
-      } else if (gmailStatus === 'error_no_refresh_token') {
-        setBanner({
-          kind: 'error',
-          text:
-            "Google didn't grant lasting access this time - this usually happens if you've connected this " +
-            "same account before. Go to myaccount.google.com/permissions, remove Freight Pilot's access " +
-            'there, then try connecting again.',
-        })
       } else {
-        setBanner({ kind: 'error', text: 'Something went wrong connecting Gmail. Please try again.' })
+        const text = gmailErrorMessage(gmailStatus, searchParams.get('reason'))
+        if (text) setBanner({ kind: 'error', text })
       }
     })
 

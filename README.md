@@ -21,7 +21,7 @@ this before assuming it is a finished product:
 - **The public stats on `/pages/trust` are read live from the database**, so they show whatever
   is actually there - which on a fresh install is zeros.
 
-`pytest` currently runs 421 tests, all passing.
+`pytest` currently runs 423 tests, all passing.
 
 ## Stack
 

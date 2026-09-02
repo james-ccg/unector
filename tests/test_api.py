@@ -2159,6 +2159,24 @@ class TestHealthCheck:
         response = client.get("/favicon.svg")
         assert response.status_code == 200
 
+    def test_unknown_api_path_is_404_json(self, client):
+        """An /api path with no route must not fall through to the SPA.
+
+        The catch-all that serves index.html used to answer these 200 with a
+        page of HTML, so a caller saw a success, found no JSON to parse, and
+        continued with an empty object rather than being told the endpoint
+        does not exist."""
+        response = client.get("/api/definitely-not-a-real-endpoint")
+        assert response.status_code == 404
+        assert response.headers["content-type"].startswith("application/json")
+        assert "definitely-not-a-real-endpoint" in response.json()["detail"]
+
+    def test_unknown_page_path_still_serves_the_app(self, client):
+        """Only /api is affected - React Router still handles its own routes."""
+        response = client.get("/pages/some-client-side-route")
+        assert response.status_code == 200
+        assert "<!DOCTYPE html>" in response.text or "<!doctype html>" in response.text
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
