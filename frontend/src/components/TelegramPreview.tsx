@@ -1,4 +1,5 @@
 import { motion } from 'motion/react'
+import './TelegramPreview.css'
 
 /** The product, shown rather than described.
  *
