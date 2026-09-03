@@ -237,6 +237,10 @@ export default function PricingPage() {
                 Cancelling before the trial ends means you are never charged.
               </li>
               <li>
+                We email you two days before the trial ends, to the address on your account,
+                saying what will happen and how to stop it.
+              </li>
+              <li>
                 Prices shown do not include tax. A trial isn&apos;t available twice for the same
                 email, company, card, or connected Gmail account.
               </li>

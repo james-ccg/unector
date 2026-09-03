@@ -33,6 +33,10 @@ class Company(Base):
     stripe_customer_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # When the "your trial ends soon" email went out. Its only job is to stop
+    # a second one going: the reminder job runs on a timer, so without this
+    # every pass through the window would send another.
+    trial_reminder_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "month" | "year"
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)

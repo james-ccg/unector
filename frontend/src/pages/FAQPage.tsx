@@ -31,7 +31,8 @@ export default function FAQPage() {
                 is on file the plan renews by itself - the price is charged on the day the trial
                 ends and every period after, until you cancel from Settings. While a plan or trial
                 is running, that last card can't be removed: replace it by adding another, or take
-                it off after cancelling.
+                it off after cancelling. We email you two days before a trial ends so the charge
+                is never a surprise.
               </p>
             </div>
 

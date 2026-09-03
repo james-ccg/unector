@@ -2419,3 +2419,53 @@ def dismiss_group_profile_proposal(
         row.resolved_at = models.now_utc()
         session.commit()
         return True, "ok"
+
+
+# ------------------------------------------------------------------
+# The "your trial ends soon" reminder
+# ------------------------------------------------------------------
+
+def companies_due_trial_reminder(hours_before: int) -> list[dict]:
+    """Companies whose trial ends within the next `hours_before` hours and
+    who have not been told yet.
+
+    Excludes trials that have already ended: a reminder that arrives after
+    the charge is not a reminder, it is a receipt nobody asked for. Also
+    excludes companies with no email on file, since there is nowhere to
+    send it."""
+    with get_session() as session:
+        cutoff = models.now_utc() + timedelta(hours=hours_before)
+        rows = (
+            session.query(models.Company)
+            .filter(
+                models.Company.subscription_status == "trialing",
+                models.Company.trial_ends_at.isnot(None),
+                models.Company.trial_ends_at > models.now_utc(),
+                models.Company.trial_ends_at <= cutoff,
+                models.Company.trial_reminder_sent_at.is_(None),
+                models.Company.email.isnot(None),
+            )
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "company_name": r.company_name,
+                "email": r.email,
+                "trial_ends_at": r.trial_ends_at,
+                "subscription_tier": r.subscription_tier,
+                "billing_interval": r.billing_interval,
+                "stripe_customer_id": r.stripe_customer_id,
+            }
+            for r in rows
+        ]
+
+
+def mark_trial_reminder_sent(company_id: int) -> None:
+    """Stamped only after the message is actually away, so a send that
+    raises is retried on the next pass rather than silently skipped."""
+    with get_session() as session:
+        row = session.get(models.Company, company_id)
+        if row:
+            row.trial_reminder_sent_at = models.now_utc()
+            session.commit()

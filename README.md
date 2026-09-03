@@ -159,6 +159,10 @@ uvicorn miniapp.api:app --reload
 cd frontend && npm run dev
 ```
 
+The bot process also runs two background jobs: the GPS location monitor, and an hourly pass
+that emails owners two days before their trial ends. Both live inside `bot.py`, so nothing is
+sent while only the API is running - worth knowing before wondering where a reminder went.
+
 ## Testing
 
 ```bash

@@ -55,6 +55,7 @@ from config import (
     SAMSARA_NEARBY_MILES,
     SAMSARA_POLL_INTERVAL_SECONDS,
     MINIAPP_URL,
+    PLAN_PRICES,
 )
 from db.database import init_db
 from db.repository import (
@@ -75,6 +76,8 @@ from db.repository import (
     get_pending_proposal_for_group,
     apply_group_profile_proposal,
     dismiss_group_profile_proposal,
+    companies_due_trial_reminder,
+    mark_trial_reminder_sent,
 )
 from services import gemini_service, email_service, samsara_service, geo_utils, group_profile
 
@@ -1409,6 +1412,102 @@ async def location_monitor_loop():
         await asyncio.sleep(SAMSARA_POLL_INTERVAL_SECONDS)
 
 
+# ------------------------------------------------------------------
+# "Your trial ends soon"
+#
+# A seven-day trial that turns into a charge is the kind of thing people
+# forget they started. Guidance on trial-expiry email agrees on giving at
+# least two days' notice and on saying the date, the amount and the way out,
+# so that is what goes out and when.
+#
+# Two days is also our own choice rather than a legal one: California only
+# requires the notice for free periods longer than 31 days, so a 7-day trial
+# is not covered. It is sent because a surprise charge is a bad way to meet
+# a customer, not because anyone made us.
+# ------------------------------------------------------------------
+
+TRIAL_REMINDER_HOURS_BEFORE = 48
+TRIAL_REMINDER_INTERVAL_SECONDS = 60 * 60
+
+
+def _trial_charge_label(tier: str, interval: str | None) -> str | None:
+    """"$20 a month", or None for a plan with no price on record - in which
+    case the email says "the price of your plan" rather than inventing one."""
+    amounts = PLAN_PRICES.get(tier)
+    if not amounts:
+        return None
+    period = "year" if interval == "year" else "month"
+    return f"${amounts[period]} a {period}"
+
+
+def _has_card_on_file(stripe_customer_id: str | None, company_id: int) -> bool | None:
+    """True, False, or None when Stripe could not be asked.
+
+    None matters: the email says something true either way rather than
+    warning about a charge that may not be coming."""
+    if not stripe_customer_id:
+        return False
+    try:
+        from services import stripe_service
+
+        return bool(stripe_service.list_payment_methods(company_id))
+    except Exception as e:  # noqa: BLE001 - reported, not swallowed
+        logger.warning(
+            "Couldn't check payment methods for company %s: %s: %s",
+            company_id, type(e).__name__, e,
+        )
+        return None
+
+
+async def _send_trial_reminders_once() -> None:
+    from services import email_otp_service
+
+    due = companies_due_trial_reminder(TRIAL_REMINDER_HOURS_BEFORE)
+    if not due:
+        return
+
+    if not email_otp_service.is_configured():
+        logger.warning(
+            "%s trial reminder(s) are due, but SMTP isn't configured - none sent.", len(due)
+        )
+        return
+
+    for company in due:
+        ends_on = company["trial_ends_at"].strftime("%d %B %Y")
+        try:
+            email_otp_service.send_trial_ending_email(
+                company["email"],
+                company_name=company["company_name"] or "",
+                ends_on=ends_on,
+                charge=_trial_charge_label(company["subscription_tier"], company["billing_interval"]),
+                has_card=_has_card_on_file(company["stripe_customer_id"], company["id"]),
+            )
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed
+            # Left unmarked on purpose, so the next pass tries again. There
+            # is time: the window is two days wide and this runs hourly.
+            logger.warning(
+                "Couldn't send the trial reminder to company %s: %s: %s",
+                company["id"], type(e).__name__, e,
+            )
+            continue
+
+        mark_trial_reminder_sent(company["id"])
+        logger.info("Trial reminder sent to company %s (trial ends %s).", company["id"], ends_on)
+
+
+async def trial_reminder_loop():
+    logger.info(
+        "Trial reminder started (checking hourly, %s hours before a trial ends).",
+        TRIAL_REMINDER_HOURS_BEFORE,
+    )
+    while True:
+        try:
+            await _send_trial_reminders_once()
+        except Exception:
+            logger.exception("Error during trial reminder pass - will retry next cycle.")
+        await asyncio.sleep(TRIAL_REMINDER_INTERVAL_SECONDS)
+
+
 # Built-in wording, used for a scenario until a company configures its own
 # rules for it (see LocationAlertRule / Settings > Alerts). Kept byte-for-byte
 # identical to what this used to say unconditionally, so a company that never
@@ -1541,6 +1640,7 @@ async def main():
         logger.info("Connecting to Telegram directly (no proxy configured).")
 
     asyncio.create_task(location_monitor_loop())
+    asyncio.create_task(trial_reminder_loop())
 
     retry_delay = 5
     max_retry_delay = 60

@@ -47,6 +47,30 @@ export default function UpdatesPage() {
 
             <div className="update-card card">
               <div className="update-date">3 September 2026</div>
+              <h3 className="update-title"><CreditCard size={20} /> What a trial costs, said out loud</h3>
+              <ul className="update-list">
+                <li>
+                  A trial that ends in a charge is now spelled out wherever the trial is
+                  mentioned: that it renews by itself, the exact date, the exact amount, and how
+                  to cancel. On the pricing page that sits in ordinary text above the fold rather
+                  than a grey footnote.
+                </li>
+                <li>
+                  You now get an email two days before a trial ends, saying what will happen and
+                  how to stop it. If there is no card on file it says that too - nothing is
+                  charged, the account simply pauses.
+                </li>
+                <li>
+                  While a plan or trial is running, the last card on file can&apos;t be removed -
+                  the next charge would fail and the account would lapse without warning. That was
+                  always true in the code; now the Remove button says so before you press it
+                  instead of failing afterwards, and Settings has stopped claiming the opposite.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">3 September 2026</div>
               <h3 className="update-title"><UserRound size={20} /> The truck&apos;s group already knows who is driving it</h3>
               <ul className="update-list">
                 <li>
