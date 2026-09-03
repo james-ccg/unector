@@ -2,7 +2,14 @@
 <html lang="en" prefix="og: https://ogp.me/ns#">
   <head>
     <meta charset="UTF-8" />
+    <!-- The SVG is the good one: sharp at any size, and it follows the
+         browser's theme through a prefers-color-scheme rule inside the file.
+         About 95% of browsers use it. Safari ignores it and falls back to
+         the .ico, and iOS wants the touch icon for the home screen - without
+         those two, that share of visitors gets no icon at all. -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard." />
     <title>Freight Pilot - Dispatch Management</title>

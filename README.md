@@ -194,6 +194,28 @@ it prints how to fetch it.
 Telegram caches a preview per URL and will keep showing an old one. Send the link to
 [@WebpageBot](https://t.me/WebpageBot) to make it re-read the page.
 
+
+### Icons
+
+`favicon.svg` is the one that matters: sharp at every size, and it flips between a dark and a
+light mark through a `prefers-color-scheme` rule inside the file, which no raster format can do.
+Roughly 95% of browsers use it. Safari ignores it and falls back to `favicon.ico`, and iOS wants
+an `apple-touch-icon` for the home screen - so the three raster files are what stop that share of
+visitors seeing no icon at all.
+
+```bash
+python scripts/make_icons.py
+```
+
+They are drawn on the brand's dark tile rather than left transparent. iOS fills transparency in a
+touch icon with black, and a raster icon cannot follow the browser theme the way the SVG does, so
+a transparent dark mark would vanish on a dark tab bar. Corners stay square because iOS and
+Android round them themselves.
+
+`icon-512.png` is generated for Android home screens and PWA installs but is not referenced yet -
+using it needs a web app manifest, which also changes whether browsers offer to install the site,
+so that is a deliberate decision rather than a side effect.
+
 ## Testing
 
 ```bash
