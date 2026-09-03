@@ -124,7 +124,3 @@ export function basemapsFor(mapboxToken: string | null | undefined): Record<Base
     dark: mapboxStyle('Dark', 'dark-v11', mapboxToken),
   }
 }
-
-/** Kept as the default export shape for anything that does not care which
- *  set it got. */
-export const BASEMAPS = KEYLESS

@@ -461,9 +461,18 @@ def verify_csrf(request: Request) -> None:
     # an attacker who can write cookies on the domain does. The token is an
     # HMAC over this session's id, so check it actually belongs to the
     # session being used - see csrf_token_for in miniapp/auth.py.
+    #
+    # A missing or unreadable session fails here rather than being waved
+    # through. Every endpoint that asks for CSRF also asks for a session,
+    # so this cannot reject a legitimate request - and skipping the binding
+    # whenever the session was absent left the weaker half of the check
+    # standing alone, which is a trap for whoever adds the first
+    # CSRF-without-auth endpoint.
     session = request.cookies.get(SESSION_COOKIE_NAME)
     claims = decode_token(session, purpose=SESSION_PURPOSE) if session else None
-    if claims and not csrf_token_matches(cookie_value, claims.get("sid", "")):
+    if not claims:
+        raise HTTPException(403, "You're not signed in. Log in and try again.")
+    if not csrf_token_matches(cookie_value, claims.get("sid", "")):
         raise HTTPException(403, "This page belongs to an earlier sign-in. Reload it and try again.")
 
 

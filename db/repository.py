@@ -979,7 +979,7 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
                     from datetime import datetime
                     parsed = datetime.fromisoformat(load.pu_date.replace('Z', '+00:00'))
                     pu_date_str = parsed.strftime('%d-%m-%Y')
-                except:
+                except ValueError:
                     pass  # Keep original if parsing fails
             
             del_date_str = load.del_date
@@ -988,7 +988,7 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
                     from datetime import datetime
                     parsed = datetime.fromisoformat(load.del_date.replace('Z', '+00:00'))
                     del_date_str = parsed.strftime('%d-%m-%Y')
-                except:
+                except ValueError:
                     pass
             
             load_list.append({

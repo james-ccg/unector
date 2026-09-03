@@ -152,3 +152,23 @@ class TestCsrfIsBoundToTheSession:
             headers=csrf_headers(client),
         )
         assert response.status_code == 200, response.text
+
+    def test_csrf_without_a_session_is_refused(self, client):
+        """The binding used to be skipped whenever there was no readable
+        session, leaving only the "both halves match" test - which anyone
+        who can write cookies passes. Nothing legitimate reaches a
+        CSRF-protected endpoint without a session, so this refuses."""
+        from miniapp.auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
+
+        self._register(client)
+        token = client.cookies.get(CSRF_COOKIE_NAME)
+
+        # Keep the CSRF pair, drop the session - the shape a cookie-writing
+        # attacker can produce.
+        client.cookies.delete(SESSION_COOKIE_NAME)
+        response = client.put(
+            "/api/me/status",
+            json={"emoji": None, "text": "on the road", "expires_at": None},
+            headers={"X-CSRF-Token": token},
+        )
+        assert response.status_code in (401, 403), response.text
