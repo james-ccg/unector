@@ -83,15 +83,7 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
     ):
         raise RuntimeError("This company already has a subscription - use Manage Billing instead")
 
-    customer_id = company["stripe_customer_id"]
-    if not customer_id:
-        customer = stripe.Customer.create(
-            email=company["email"],
-            name=company["company_name"],
-            metadata={"company_id": str(company_id), "mc_number": company["mc_number"] or ""},
-        )
-        customer_id = customer.id
-        set_company_stripe_customer(company_id, customer_id)
+    customer_id = _ensure_customer(company_id, company)
 
     subscription_data = {"metadata": {"company_id": str(company_id), "tier": tier}}
     if check_trial_eligibility(company["email"], company["mc_number"]):
@@ -135,6 +127,104 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
         managed_payments={"enabled": False},
     )
     return session.url
+
+
+def _ensure_customer(company_id: int, company: dict) -> str:
+    """The company's Stripe customer, created on first need.
+
+    Saving a card and starting a subscription both need one, and a company
+    on the free plan has never had a reason to have one."""
+    if company["stripe_customer_id"]:
+        return company["stripe_customer_id"]
+
+    customer = stripe.Customer.create(
+        email=company["email"],
+        name=company["company_name"],
+        metadata={"company_id": str(company_id), "mc_number": company["mc_number"] or ""},
+    )
+    set_company_stripe_customer(company_id, customer.id)
+    return customer.id
+
+
+def create_setup_session(company_id: int) -> str:
+    """A Stripe-hosted page for saving a payment method without charging.
+
+    Checkout in "setup" mode, so this works on the free plan and before any
+    subscription exists - somebody can put a card on file whenever they
+    like, rather than only being asked for one at the moment they upgrade.
+
+    Which methods appear is Stripe's decision, not ours: it offers whatever
+    the account has enabled and the customer's country supports. Naming
+    them here would go stale the first time that changes."""
+    _require_configured()
+    company = get_company_billing_info(company_id)
+    if not company:
+        raise ValueError(f"No company with id={company_id}")
+
+    session = stripe.checkout.Session.create(
+        mode="setup",
+        customer=_ensure_customer(company_id, company),
+        success_url=f"{FRONTEND_URL}/settings?billing=card_saved",
+        cancel_url=f"{FRONTEND_URL}/settings?billing=card_cancelled",
+        metadata={"company_id": str(company_id)},
+    )
+    return session.url
+
+
+def list_payment_methods(company_id: int) -> list[dict]:
+    """What is on file, in the little the UI needs to name each one.
+
+    Never the number. Stripe holds the instrument; this app only ever sees
+    a brand, four digits and an expiry, which is all anyone needs to tell
+    one card from another."""
+    _require_configured()
+    company = get_company_billing_info(company_id)
+    if not company or not company["stripe_customer_id"]:
+        return []
+
+    customer = stripe.Customer.retrieve(company["stripe_customer_id"])
+    default_id = (customer.get("invoice_settings") or {}).get("default_payment_method")
+
+    methods = stripe.PaymentMethod.list(customer=company["stripe_customer_id"])
+    saved = []
+    for method in methods.get("data", []):
+        card = method.get("card") or {}
+        saved.append({
+            "id": method["id"],
+            "type": method["type"],
+            "brand": card.get("brand"),
+            "last4": card.get("last4"),
+            "exp_month": card.get("exp_month"),
+            "exp_year": card.get("exp_year"),
+            "is_default": method["id"] == default_id,
+        })
+    return saved
+
+
+def detach_payment_method(company_id: int, payment_method_id: str) -> None:
+    """Takes a payment method off the company's Stripe customer.
+
+    Refuses to remove the last one while a subscription is still live -
+    not to trap anyone, but because the next invoice would fail and the
+    account would lapse without the person who did it understanding why.
+    Cancel the subscription first and this stops objecting."""
+    _require_configured()
+    company = get_company_billing_info(company_id)
+    if not company or not company["stripe_customer_id"]:
+        raise ValueError("This company has no payment methods saved.")
+
+    saved = list_payment_methods(company_id)
+    if not any(m["id"] == payment_method_id for m in saved):
+        raise ValueError("That payment method is not on this account.")
+
+    live = company["subscription_status"] in ("active", "trialing", "past_due", "unpaid", "paused")
+    if live and len(saved) == 1:
+        raise ValueError(
+            "This is the only payment method on a live subscription. "
+            "Add another first, or cancel the subscription from Manage billing."
+        )
+
+    stripe.PaymentMethod.detach(payment_method_id)
 
 
 def create_portal_session(company_id: int) -> str:

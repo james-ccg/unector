@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import Layout from '../components/Layout'
@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
-  type BillingStatus, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
+  type BillingStatus, type SavedPaymentMethod, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
   type Driver, type DriverLinkCode, type TeamMember, type Truck, type Trailer,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
@@ -222,6 +222,55 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Saved payment methods. Owner-only on the server, so a dispatcher never
+  // sees this section at all.
+  const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([])
+  const [cardBusy, setCardBusy] = useState(false)
+
+  const loadPaymentMethods = useCallback(async () => {
+    if (!isOwner) return
+    try {
+      const { payment_methods } = await billingApi.listPaymentMethods()
+      setPaymentMethods(payment_methods)
+    } catch {
+      // Nothing the owner can do about it, and it must not take the rest
+      // of the billing section down with it.
+    }
+  }, [isOwner])
+
+  useEffect(() => {
+    // The fetch resolves after the effect has run, so the setState inside
+    // it is not synchronous with the effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadPaymentMethods()
+  }, [loadPaymentMethods])
+
+  const handleAddPaymentMethod = async () => {
+    setCardBusy(true)
+    setBanner(null)
+    try {
+      const { url } = await billingApi.startPaymentMethodSetup()
+      window.location.href = url
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't open the payment form.") })
+      setCardBusy(false)
+    }
+  }
+
+  const handleRemovePaymentMethod = async (id: string) => {
+    setCardBusy(true)
+    setBanner(null)
+    try {
+      await billingApi.removePaymentMethod(id)
+      await loadPaymentMethods()
+      setBanner({ kind: 'success', text: 'Payment method removed.' })
+    } catch (err) {
+      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't remove that payment method.") })
+    } finally {
+      setCardBusy(false)
+    }
+  }
+
   // Handle the redirect back from Stripe Checkout (?billing=success)
   useEffect(() => {
     const billingStatus = searchParams.get('billing')
@@ -231,6 +280,15 @@ export default function SettingsPage() {
       queueMicrotask(() => {
         setBanner({ kind: 'success', text: 'Subscription started. It may take a few seconds to appear below.' })
         loadAll()
+      })
+    }
+
+    // Coming back from the save-a-card page. Stripe has already attached
+    // it; this just reloads the list and says so.
+    if (billingStatus === 'card_saved') {
+      queueMicrotask(() => {
+        setBanner({ kind: 'success', text: 'Payment method saved.' })
+        void loadPaymentMethods()
       })
     }
 
@@ -718,6 +776,73 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+
+            {/* Payment methods, separate from the plan on purpose. A card
+                can be put on file on the free plan and taken off again -
+                it is not something that only exists because a subscription
+                does. Owner only; the server enforces that too. */}
+            {isOwner && (
+              <div className="card billing-card">
+                <div className="billing-row">
+                  <span className="billing-label">Payment method</span>
+                </div>
+
+                {paymentMethods.length === 0 ? (
+                  <p className="billing-hint">
+                    Nothing saved. You don&apos;t need one to use the free plan - add a card
+                    whenever you like, and remove it whenever you like.
+                  </p>
+                ) : (
+                  <ul className="payment-methods">
+                    {paymentMethods.map((method) => (
+                      <li key={method.id}>
+                        <div>
+                          <span className="payment-method-name">
+                            {method.brand
+                              ? `${method.brand[0].toUpperCase()}${method.brand.slice(1)}`
+                              : method.type.replace(/_/g, ' ')}
+                            {method.last4 && (
+                              <span className="payment-method-digits"> •••• {method.last4}</span>
+                            )}
+                          </span>
+                          {method.exp_month && method.exp_year && (
+                            <span className="payment-method-expiry">
+                              Expires {String(method.exp_month).padStart(2, '0')}/{method.exp_year}
+                            </span>
+                          )}
+                        </div>
+                        <div className="payment-method-actions">
+                          {method.is_default && <span className="payment-method-tag">Default</span>}
+                          <button
+                            type="button"
+                            className="btn btn-danger-ghost btn-sm"
+                            onClick={() => handleRemovePaymentMethod(method.id)}
+                            disabled={cardBusy}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="integration-actions" style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleAddPaymentMethod}
+                    disabled={cardBusy}
+                  >
+                    {cardBusy ? 'Opening...' : 'Add payment method'}
+                  </button>
+                </div>
+
+                <p className="billing-hint">
+                  Card details go straight to Stripe and are never seen or stored by Freight Pilot.
+                </p>
+              </div>
+            )}
           </section>
         )}
 

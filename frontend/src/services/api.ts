@@ -755,8 +755,33 @@ export interface BillingStatus {
   active_drivers: number
 }
 
+/** What the app is ever told about a saved payment method. Stripe holds the
+ *  instrument; this is enough to tell one card from another and no more. */
+export interface SavedPaymentMethod {
+  id: string
+  type: string
+  brand: string | null
+  last4: string | null
+  exp_month: number | null
+  exp_year: number | null
+  is_default: boolean
+}
+
 export const billingApi = {
   getStatus: () => apiRequest<BillingStatus>('/api/billing'),
+
+  listPaymentMethods: () =>
+    apiRequest<{ payment_methods: SavedPaymentMethod[] }>('/api/billing/payment-methods'),
+
+  // Like checkout and portal below, returns a Stripe-hosted URL to send the
+  // browser to - card details never touch this app.
+  startPaymentMethodSetup: () =>
+    apiRequest<{ url: string }>('/api/billing/payment-methods/setup', { method: 'POST' }),
+
+  removePaymentMethod: (id: string) =>
+    apiRequest<{ success: boolean }>(`/api/billing/payment-methods/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
 
   // Both return a Stripe-hosted URL - the caller redirects the browser
   // there with `window.location.href = url` rather than navigating in-app.

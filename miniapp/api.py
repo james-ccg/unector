@@ -1867,6 +1867,67 @@ def create_billing_portal(user: dict = Depends(get_current_user), _csrf: None = 
         raise HTTPException(500, "Couldn't open the billing portal. Try again in a moment.")
 
 
+@app.get("/api/billing/payment-methods")
+def list_payment_methods(user: dict = Depends(require_owner)):
+    """What is on file for this company. Owner only - a dispatcher runs the
+    fleet, not the company's money."""
+    from services import stripe_service
+
+    try:
+        return {"payment_methods": stripe_service.list_payment_methods(user["company_id"])}
+    except RuntimeError:
+        # Stripe isn't configured on this server. Not an error the owner can
+        # act on, and not a reason to break the billing page.
+        return {"payment_methods": []}
+    except Exception:
+        import logging
+        logging.exception("Couldn't list payment methods for company %s", user["company_id"])
+        raise HTTPException(500, "Couldn't load your payment methods. Try again in a moment.")
+
+
+@app.post("/api/billing/payment-methods/setup")
+def start_payment_method_setup(
+    user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
+):
+    """A Stripe-hosted page for putting a card on file, no charge attached.
+    Works on the free plan: a card can be saved before there is anything to
+    bill it for."""
+    from services import stripe_service
+
+    try:
+        return {"url": stripe_service.create_setup_session(user["company_id"])}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception:
+        import logging
+        logging.exception("Couldn't start payment-method setup for company %s", user["company_id"])
+        raise HTTPException(500, "Couldn't open the payment form. Try again in a moment.")
+
+
+@app.delete("/api/billing/payment-methods/{payment_method_id}")
+def remove_payment_method(
+    payment_method_id: str,
+    user: dict = Depends(require_owner),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Takes a saved payment method off the account."""
+    from services import stripe_service
+
+    try:
+        stripe_service.detach_payment_method(user["company_id"], payment_method_id)
+        return {"success": True}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception:
+        import logging
+        logging.exception("Couldn't remove payment method for company %s", user["company_id"])
+        raise HTTPException(500, "Couldn't remove that payment method. Try again in a moment.")
+
+
 @app.post("/api/billing/webhook")
 async def stripe_webhook(request: Request):
     """Stripe calls this server-to-server - no session cookie, no CSRF,
