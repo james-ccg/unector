@@ -114,6 +114,18 @@ once logged in as the owner - it creates the driver record and shows a one-time
 there to complete the link (no group ID needed - unlike `/setvehicle`, this doesn't require
 `/myid` first).
 
+Once the group is linked, the bot reads its description. Carriers keep one group per truck and
+write the unit number, trailer, driver and phone numbers there, so the bot extracts those and
+posts them back with **Confirm** and **Not now**. The same reading appears in **Settings →
+Drivers** with every value editable; confirming from either side saves it, and whichever side is
+second is told it is already done. Nothing reaches the driver or truck record until someone
+confirms - a group description is a note a dispatcher typed, not a source of record, so anything
+that disagrees with what is on file is shown rather than applied.
+
+Send `/readbio` in the group to read the description again after editing it. The **Details**
+button on any driver in Settings opens the same fields for typing in by hand, which is the path
+for carriers who keep nothing in the description.
+
 `seed.py` still exists for quick local/test setup without going through the dashboard:
 
 ```bash

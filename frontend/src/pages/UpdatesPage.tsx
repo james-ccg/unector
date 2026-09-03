@@ -46,6 +46,35 @@ export default function UpdatesPage() {
             </div>
 
             <div className="update-card card">
+              <div className="update-date">3 September 2026</div>
+              <h3 className="update-title"><UserRound size={20} /> The truck&apos;s group already knows who is driving it</h3>
+              <ul className="update-list">
+                <li>
+                  Carriers run one Telegram group per truck and keep the unit number, trailer,
+                  driver and phone numbers in its description. Link the group and the bot reads
+                  that, then shows what it found for someone to confirm.
+                </li>
+                <li>
+                  Nothing is saved until a person says so - from the group or from Settings,
+                  whichever comes first. Every value is editable, so a misread digit is corrected
+                  rather than costing the whole reading.
+                </li>
+                <li>
+                  The description it was read from is shown alongside the values, and anything
+                  that disagrees with your records is said plainly instead of being applied quietly.
+                </li>
+                <li>
+                  /readbio re-reads a description after you edit it. Details can also be typed in
+                  by hand, for groups whose description says nothing useful.
+                </li>
+                <li>
+                  Every app email was going out with an empty From header, because the address was
+                  set to an empty value rather than left unset. Fixed.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
               <div className="update-date">2 September 2026</div>
               <h3 className="update-title"><ShieldCheck size={20} /> Security, and how errors read</h3>
               <ul className="update-list">
