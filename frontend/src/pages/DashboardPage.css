@@ -263,6 +263,21 @@
   font-style: italic;
 }
 
+/* A hint says something useful. This says money is about to be taken, or
+   that a card is held - so it drops the italics, takes full contrast and
+   sits in a panel. Same element, louder voice. */
+.billing-notice {
+  font-style: normal;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--amber);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+
 .billing-manage-link {
   display: inline-block;
   margin-top: 16px;

@@ -20,6 +20,7 @@ import {
   type TeamMember, type Truck, type Trailer,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
+import { CARD_HELD_NOTICE, chargeLabel, isSubscriptionLive } from '../lib/billing'
 import './DashboardPage.css'
 import './SettingsPage.css'
 import { gmailErrorMessage } from '../lib/gmailError'
@@ -240,6 +241,12 @@ export default function SettingsPage() {
   // Saved payment methods. Owner-only on the server, so a dispatcher never
   // sees this section at all.
   const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([])
+
+  // The last card cannot come off while a plan or trial is running - the
+  // next invoice would fail and the account would lapse without whoever
+  // pressed Remove understanding why. Worked out here so the button can
+  // say so up front instead of the server refusing after the click.
+  const cardIsHeld = paymentMethods.length === 1 && isSubscriptionLive(billing?.status)
   const [cardBusy, setCardBusy] = useState(false)
   // Shown inside the billing card, not in the page-top banner. This
   // section is far down a long page - an error announced at the top is
@@ -843,9 +850,13 @@ export default function SettingsPage() {
                 <span className="billing-value">{billing.active_drivers} / {billing.max_drivers}</span>
               </div>
               {billing.status === 'trialing' && billing.trial_ends_at && (
-                <p className="billing-hint">
-                  Trial ends {new Date(billing.trial_ends_at).toLocaleDateString()} - you'll then be
-                  charged automatically unless you cancel.
+                <p className="billing-hint billing-notice">
+                  <strong>Your trial ends {new Date(billing.trial_ends_at).toLocaleDateString()}.</strong>{' '}
+                  On that day {chargeLabel(billing.tier, billing.billing_interval) ?? 'your plan'} is
+                  charged automatically to the card on file, and again every{' '}
+                  {billing.billing_interval === 'year' ? 'year' : 'month'} after that, until you
+                  cancel. Cancel any time from Manage billing - before that date, nothing is charged.
+                  Until then the card stays on file: it can't be removed while the trial is running.
                 </p>
               )}
               {billing.status === 'past_due' && (
@@ -875,7 +886,8 @@ export default function SettingsPage() {
                 {paymentMethods.length === 0 ? (
                   <p className="billing-hint">
                     Nothing saved. You don&apos;t need one to use the free plan - add a card
-                    whenever you like, and remove it whenever you like.
+                    whenever you like, and remove it again any time, as long as no plan or trial
+                    is running on it.
                   </p>
                 ) : (
                   <ul className="payment-methods">
@@ -902,7 +914,10 @@ export default function SettingsPage() {
                             type="button"
                             className="btn btn-danger-ghost btn-sm"
                             onClick={() => handleRemovePaymentMethod(method.id)}
-                            disabled={cardBusy}
+                            /* The server refuses the last card under a live plan. Saying so
+                               here means finding out before the click, not after it. */
+                            disabled={cardBusy || cardIsHeld}
+                            title={cardIsHeld ? CARD_HELD_NOTICE : undefined}
                           >
                             Remove
                           </button>
@@ -928,6 +943,12 @@ export default function SettingsPage() {
                     {cardBusy ? 'Opening...' : 'Add payment method'}
                   </button>
                 </div>
+
+                {cardIsHeld && (
+                  <p className="billing-hint billing-notice" style={{ marginTop: 12 }}>
+                    {CARD_HELD_NOTICE}
+                  </p>
+                )}
 
                 <p className="billing-hint">
                   Card details go straight to Stripe and are never seen or stored by Freight Pilot.

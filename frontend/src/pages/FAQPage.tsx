@@ -27,7 +27,11 @@ export default function FAQPage() {
                 Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers.
                 Max plans are $100/mo for up to 25 drivers, or $200/mo for up to 100 drivers.
                 Every paid plan starts with a 7-day free trial, and the trial doesn't ask for a
-                card. Add one when you decide to stay; nothing is charged before that.
+                card. Add one when you decide to stay; nothing is charged before that. Once a card
+                is on file the plan renews by itself - the price is charged on the day the trial
+                ends and every period after, until you cancel from Settings. While a plan or trial
+                is running, that last card can't be removed: replace it by adding another, or take
+                it off after cancelling.
               </p>
             </div>
 
