@@ -845,8 +845,15 @@ export const billingApi = {
   startPaymentMethodSetup: () =>
     apiRequest<{ url: string }>('/api/billing/payment-methods/setup', { method: 'POST' }),
 
+  /** Removing the last method on a paid-up plan ends that plan when the
+   *  period already paid for runs out, and the response says when. It is
+   *  allowed, so this is information rather than an error. */
   removePaymentMethod: (id: string) =>
-    apiRequest<{ success: boolean }>(`/api/billing/payment-methods/${encodeURIComponent(id)}`, {
+    apiRequest<{
+      success: boolean
+      plan_ends_at: string | null
+      cancelled_at_period_end: boolean
+    }>(`/api/billing/payment-methods/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
 

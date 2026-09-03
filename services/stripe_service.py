@@ -88,7 +88,9 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
     subscription_data = {"metadata": {"company_id": str(company_id), "tier": tier}}
     if check_trial_eligibility(company["email"], company["mc_number"]):
         subscription_data["trial_period_days"] = 7
-        # What happens when the trial runs out and no card was ever given.
+        # A safety net now rather than the usual path: checkout takes a card
+        # up front, so a trial reaching its end with none means the card was
+        # removed or died in between.
         # Left to Stripe's default this creates an invoice nobody can pay
         # and parks the subscription in past_due - a debt on a customer who
         # never agreed to pay anything. Pausing keeps the subscription
@@ -102,11 +104,11 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
         mode="subscription",
         customer=customer_id,
         line_items=[{"price": price_id, "quantity": 1}],
-        # "if_required", not "always": with a trial attached, this means no
-        # card is asked for to start one. Someone evaluating a dispatch tool
-        # should be able to see it work before handing over a card, and the
-        # trial converts to paid only if they choose to add one.
-        payment_method_collection="if_required",
+        # "always", so a card is taken even when a trial is attached and
+        # nothing is owed today. Stripe saves it against the customer, which
+        # is what makes the trial able to convert on its own - and what the
+        # trial-ending notice is able to promise a definite date for.
+        payment_method_collection="always",
         subscription_data=subscription_data,
         success_url=f"{FRONTEND_URL}/settings?billing=success",
         cancel_url=f"{FRONTEND_URL}/pages/pricing?billing=cancelled",
@@ -211,13 +213,33 @@ def list_payment_methods(company_id: int) -> list[dict]:
     return saved
 
 
-def detach_payment_method(company_id: int, payment_method_id: str) -> None:
+# Statuses where the money for the current period has not actually been
+# taken: a trial that has not converted, a first payment that never
+# succeeded, a renewal that failed, or a subscription paused for want of a
+# card. The card stays put through all of them - it is the only way the
+# amount owed can ever be collected.
+UNPAID_STATUSES = ("trialing", "incomplete", "past_due", "unpaid", "paused")
+
+
+def detach_payment_method(company_id: int, payment_method_id: str) -> dict:
     """Takes a payment method off the company's Stripe customer.
 
-    Refuses to remove the last one while a subscription is still live -
-    not to trap anyone, but because the next invoice would fail and the
-    account would lapse without the person who did it understanding why.
-    Cancel the subscription first and this stops objecting."""
+    The rule turns on whether the current period has been paid for:
+
+      * Not yet - a trial still running, or a payment that failed - and this
+        is the only method: refused. Until the plan has actually been paid
+        for, removing the last one removes the only way to pay.
+      * Paid for, and this is the only method: allowed, and the subscription
+        is set to end when the period they already paid for runs out. They
+        keep what they bought; nothing is charged again.
+      * Not the only one: always allowed. Another can still be billed.
+
+    "Method", not "card", throughout: Stripe Checkout offers whatever the
+    account has enabled - PayPal, wallets, Link - and the rule is about the
+    last one of any kind.
+
+    Returns what happened, so the caller can say so rather than leaving
+    someone to discover their plan is ending from a later email."""
     _require_configured()
     company = get_company_billing_info(company_id)
     if not company or not company["stripe_customer_id"]:
@@ -227,14 +249,30 @@ def detach_payment_method(company_id: int, payment_method_id: str) -> None:
     if not any(m["id"] == payment_method_id for m in saved):
         raise ValueError("That payment method is not on this account.")
 
-    live = company["subscription_status"] in ("active", "trialing", "past_due", "unpaid", "paused")
-    if live and len(saved) == 1:
+    status = company["subscription_status"]
+    subscription_id = company["stripe_subscription_id"]
+    is_last = len(saved) == 1
+
+    if is_last and status in UNPAID_STATUSES:
         raise ValueError(
-            "This is the only payment method on a live subscription. "
-            "Add another first, or cancel the subscription from Manage billing."
+            "This is the only payment method on a plan that hasn't been paid for yet. "
+            "Add another one first, or cancel the plan from Manage billing."
         )
 
+    ends_on = None
+    if is_last and status == "active" and subscription_id:
+        # Without this the renewal would be attempted against a customer
+        # with no card, fail, and drop the account into past_due dunning -
+        # which is not "the next payment isn't taken", it is a debt and a
+        # sequence of failure emails. Ending it at the period boundary is
+        # what removing your only card actually means.
+        subscription = stripe.Subscription.modify(subscription_id, cancel_at_period_end=True)
+        period_end = subscription.get("current_period_end")
+        if period_end:
+            ends_on = _ts_to_datetime(period_end)
+
     stripe.PaymentMethod.detach(payment_method_id)
+    return {"plan_ends_at": ends_on, "cancelled_at_period_end": ends_on is not None}
 
 
 def create_portal_session(company_id: int) -> str:

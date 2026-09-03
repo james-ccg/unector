@@ -56,7 +56,8 @@ export default function TermsOfServicePage() {
               <ul>
                 <li>Freight Pilot offers a Free plan (one active driver) and paid plans (Pro, Max 5x, Max 20x) with higher driver limits, billed monthly or yearly through Stripe.</li>
                 <li>Paid plans include a 7-day free trial. Unless canceled before the trial ends, the subscription automatically converts to a paid, recurring plan and is billed to the payment method on file.</li>
-                <li>While a subscription or trial is active, the last remaining payment method on the account cannot be removed, because doing so would cause the next charge to fail. You may add another payment method and remove the first at any time, or remove it once the subscription is canceled.</li>
+                <li>Starting a paid plan requires a payment method, which Stripe stores against your account. Until the first payment for that plan has been taken, the last remaining payment method cannot be removed, as it is the only means by which the amount owed can be collected. You may add another and remove the first at any time.</li>
+                <li>Once a payment has been taken, you may remove your payment methods at any time. Removing the last one ends the subscription at the close of the period already paid for: access continues until that date, and no further charge is made.</li>
                 <li>Either the company owner or a dispatcher may manage or cancel the subscription - we treat both as authorized to act on the company's billing.</li>
                 <li>Subscriptions renew automatically until canceled. You can cancel anytime from the dashboard; cancellation takes effect at the end of the current billing period, and we don't provide refunds for the unused portion of a period except where required by law.</li>
                 <li>Adding drivers beyond your plan's limit isn't possible until you upgrade or remove an existing driver.</li>

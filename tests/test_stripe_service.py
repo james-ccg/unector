@@ -26,6 +26,7 @@ def _fake_company(status: str | None) -> dict:
         "subscription_tier": "pro",
         "subscription_status": status,
         "stripe_customer_id": "cus_existing",
+        "stripe_subscription_id": "sub_existing",
     }
 
 
@@ -65,15 +66,17 @@ def test_checkout_allowed_when_no_subscription_is_live(monkeypatch, status):
     create_session.assert_called_once()
 
 
-class TestTrialDoesNotDemandACard:
-    """A trial that asks for a card before it starts is not really a trial.
+class TestTrialTakesAPaymentMethodUpFront:
+    """Starting a plan takes a payment method even though nothing is owed
+    that day, so the trial can convert on its own and the trial-ending
+    notice can promise a definite date.
 
-    Stripe collects one anyway unless told otherwise, and if a trial then
-    runs out with no card on file its default is to raise an invoice and
-    park the subscription in past_due - a debt owed by someone who never
-    agreed to pay. Both are configured explicitly here."""
+    The pause behaviour is kept as a safety net rather than the usual path:
+    left to Stripe's default, a trial reaching its end with no method
+    raises an invoice nobody can pay and parks the subscription in
+    past_due - a debt owed by someone who never agreed to pay."""
 
-    def test_checkout_does_not_collect_a_card_up_front(self, monkeypatch):
+    def test_checkout_always_collects_a_payment_method(self, monkeypatch):
         monkeypatch.setattr(
             stripe_service, "get_company_billing_info", lambda company_id: _fake_company(None)
         )
@@ -85,7 +88,7 @@ class TestTrialDoesNotDemandACard:
         stripe_service.create_checkout_session(1, "pro", "month")
 
         kwargs = create_session.call_args.kwargs
-        assert kwargs["payment_method_collection"] == "if_required"
+        assert kwargs["payment_method_collection"] == "always"
 
     def test_a_trial_that_ends_without_a_card_pauses_rather_than_owing(self, monkeypatch):
         monkeypatch.setattr(
@@ -135,12 +138,11 @@ class TestPaymentMethodsOnTheirOwn:
         assert kwargs["mode"] == "setup"
         assert "line_items" not in kwargs
 
-    def test_the_last_card_cannot_be_removed_from_a_live_subscription(self, monkeypatch):
-        """Not to trap anyone - the next invoice would simply fail, and the
-        account would lapse without the person who did it understanding
-        why. The message says to cancel first."""
+    def test_the_last_method_cannot_go_while_the_period_is_unpaid(self, monkeypatch):
+        """A trial that has not converted yet. Removing the only payment
+        method removes the only way the first payment can be taken."""
         monkeypatch.setattr(
-            stripe_service, "get_company_billing_info", lambda company_id: _fake_company("active")
+            stripe_service, "get_company_billing_info", lambda company_id: _fake_company("trialing")
         )
         monkeypatch.setattr(stripe_service, "list_payment_methods", lambda company_id: self._methods(1))
         detach = MagicMock()
@@ -151,31 +153,74 @@ class TestPaymentMethodsOnTheirOwn:
 
         detach.assert_not_called()
 
-    def test_one_of_several_can_always_be_removed(self, monkeypatch):
+    def test_a_failed_payment_holds_the_last_method_too(self, monkeypatch):
+        """past_due means money is owed and was not taken. Same reason."""
+        monkeypatch.setattr(
+            stripe_service, "get_company_billing_info", lambda company_id: _fake_company("past_due")
+        )
+        monkeypatch.setattr(stripe_service, "list_payment_methods", lambda company_id: self._methods(1))
+        detach = MagicMock()
+        monkeypatch.setattr(stripe_service.stripe.PaymentMethod, "detach", detach)
+
+        with pytest.raises(ValueError, match="only payment method"):
+            stripe_service.detach_payment_method(1, "pm_0")
+
+        detach.assert_not_called()
+
+    def test_once_paid_the_last_method_can_go_and_the_plan_ends_at_the_period(self, monkeypatch):
+        """What removing your only payment method actually means: keep what
+        you bought, no further charge. Without cancel_at_period_end the
+        renewal would be attempted against nothing, fail, and start dunning
+        - which is a debt and a run of failure emails, not 'no next
+        payment'."""
+        monkeypatch.setattr(
+            stripe_service, "get_company_billing_info", lambda company_id: _fake_company("active")
+        )
+        monkeypatch.setattr(stripe_service, "list_payment_methods", lambda company_id: self._methods(1))
+        detach = MagicMock()
+        monkeypatch.setattr(stripe_service.stripe.PaymentMethod, "detach", detach)
+        modify = MagicMock(return_value={"current_period_end": 1788000000})
+        monkeypatch.setattr(stripe_service.stripe.Subscription, "modify", modify)
+
+        result = stripe_service.detach_payment_method(1, "pm_0")
+
+        modify.assert_called_once_with("sub_existing", cancel_at_period_end=True)
+        detach.assert_called_once_with("pm_0")
+        assert result["cancelled_at_period_end"] is True
+        assert result["plan_ends_at"] is not None
+
+    def test_one_of_several_goes_without_touching_the_plan(self, monkeypatch):
+        """Another method can still be billed, so nothing has to end."""
         monkeypatch.setattr(
             stripe_service, "get_company_billing_info", lambda company_id: _fake_company("active")
         )
         monkeypatch.setattr(stripe_service, "list_payment_methods", lambda company_id: self._methods(2))
         detach = MagicMock()
         monkeypatch.setattr(stripe_service.stripe.PaymentMethod, "detach", detach)
+        modify = MagicMock()
+        monkeypatch.setattr(stripe_service.stripe.Subscription, "modify", modify)
 
-        stripe_service.detach_payment_method(1, "pm_1")
+        result = stripe_service.detach_payment_method(1, "pm_1")
 
         detach.assert_called_once_with("pm_1")
+        modify.assert_not_called()
+        assert result["cancelled_at_period_end"] is False
 
-    def test_the_last_card_can_go_once_nothing_is_billing(self, monkeypatch):
-        """No live subscription, so nothing breaks by removing it - this is
-        the case that was impossible before."""
+    def test_the_last_method_can_go_once_nothing_is_billing(self, monkeypatch):
+        """No live subscription, so there is nothing to end either."""
         monkeypatch.setattr(
             stripe_service, "get_company_billing_info", lambda company_id: _fake_company("canceled")
         )
         monkeypatch.setattr(stripe_service, "list_payment_methods", lambda company_id: self._methods(1))
         detach = MagicMock()
         monkeypatch.setattr(stripe_service.stripe.PaymentMethod, "detach", detach)
+        modify = MagicMock()
+        monkeypatch.setattr(stripe_service.stripe.Subscription, "modify", modify)
 
         stripe_service.detach_payment_method(1, "pm_0")
 
         detach.assert_called_once_with("pm_0")
+        modify.assert_not_called()
 
     def test_a_card_belonging_to_someone_else_is_refused(self, monkeypatch):
         monkeypatch.setattr(

@@ -100,10 +100,10 @@ export default function PricingPage() {
           <div className="page-header">
             <h1 className="page-title">Simple, Transparent Pricing</h1>
             <p className="page-description">
-              Start free, no card required - and the 7-day trial on every paid plan doesn't ask
-              for one either. Add a card when you decide to keep it. Nothing is charged until you
-              do, and if you never do, the trial simply stops. Add one and the plan renews by
-              itself when the trial ends - the terms are spelled out below.
+              Start free, no payment details needed. Every paid plan opens with 7 free days, and
+              asks for a payment method up front - card, PayPal or a wallet - so it can carry on
+              by itself when the trial ends. Nothing is charged while the trial runs, and the
+              terms are spelled out below.
             </p>
           </div>
 
@@ -218,19 +218,24 @@ export default function PricingPage() {
             <h2 className="pricing-terms-title">Before you start a trial</h2>
             <ul className="pricing-terms-list">
               <li>
-                The trial runs 7 days and costs nothing. It does not ask for a card, and with no
-                card on file it simply stops at the end - you are not charged and nothing renews.
+                The trial runs 7 days and costs nothing. Starting one asks for a payment method
+                - a card, PayPal, or any wallet Stripe offers - which Stripe saves against your
+                account. Nothing is charged while the trial is running.
               </li>
               <li>
-                <strong>If you do put a card on file, the plan renews by itself.</strong> On the
-                day the trial ends, the price of the plan you chose is charged to that card
-                automatically, and again every month or year after that until you cancel.
+                <strong>The plan then renews by itself.</strong> On the day the trial ends, the
+                price of the plan you chose is charged to that payment method automatically, and
+                again every month or year after that until you cancel.
               </li>
               <li>
-                <strong>While a plan or trial is running, the last card on file can&apos;t be
-                removed.</strong> A card with nothing to pay for can be taken off at any time; one
-                that is holding up a live plan can be replaced by adding another, or removed once
-                the plan is cancelled.
+                <strong>Until that first payment goes through, your only payment method
+                can&apos;t be removed</strong> - it is the only way the amount owed can be taken.
+                Add a second one to replace it, or cancel the plan instead.
+              </li>
+              <li>
+                <strong>After the first payment, remove it whenever you like.</strong> Taking off
+                your only payment method ends the plan when the period you have already paid for
+                runs out: you keep everything until then, and nothing is charged again.
               </li>
               <li>
                 Cancel whenever you like, from Settings &rarr; Billing &rarr; Manage billing.
@@ -242,7 +247,7 @@ export default function PricingPage() {
               </li>
               <li>
                 Prices shown do not include tax. A trial isn&apos;t available twice for the same
-                email, company, card, or connected Gmail account.
+                email, company, payment method, or connected Gmail account.
               </li>
             </ul>
           </div>

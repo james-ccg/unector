@@ -9,14 +9,16 @@ laws - California's Business and Professions Code 17600-17606 being the
 strictest - want the same terms plus a plain way to cancel.
 
 Those material terms are four: that it renews by itself, when, how much,
-and how to stop it. This project adds a fifth of its own, because the code
-enforces it: while a plan or trial is live, the last card on file cannot be
-removed.
+and how to stop it. This project adds two of its own, because the code
+enforces them: a plan takes a payment method up front, that last method
+cannot be removed until the first payment has actually gone through, and
+removing it afterwards ends the plan when the paid period runs out.
 
 None of that is worth stating once. Copy gets rewritten, and the sentence
 that goes missing in a redesign is always the inconvenient one - so the
 surfaces that mention a trial are pinned here, and the two lists that have
-to agree about which statuses are "live" are checked against each other.
+to agree about which statuses are still unpaid are checked against each
+other.
 """
 import pathlib
 import re
@@ -37,29 +39,20 @@ def read(path: pathlib.Path) -> str:
 # The two lists that decide whether a card is held
 # ------------------------------------------------------------------
 
-def test_the_front_end_and_the_server_agree_on_what_live_means():
+def test_the_front_end_and_the_server_agree_on_what_is_unpaid():
     """The server refuses the removal; the dashboard greys out the button.
 
     They read from separate lists, so this is the one thing that can drift:
     a status added to the guard but not to the UI means a button that looks
     usable and is not."""
     server = read(STRIPE_SERVICE)
-    # Scoped to detach_payment_method on purpose. There is a second
-    # live-status list guarding checkout, and it deliberately differs - it
-    # counts "incomplete" too, because a half-finished checkout still holds
-    # a Stripe object. Only this one decides whether a card can come off.
-    start = server.index("def detach_payment_method(")
-    end = server.index(chr(10) + "def ", start)
-    body = server[start:end]
-    guard = re.search(r'subscription_status"\]\s+in\s+\(([^)]*)\)', body, re.DOTALL)
-    assert guard, "couldn't find the live-status guard in detach_payment_method"
-    server_statuses = set(re.findall(r'"([a-z_]+)"', guard.group(1)))
+    listed = re.search(r"UNPAID_STATUSES = \(([^)]*)\)", server, re.DOTALL)
+    assert listed, "couldn't find UNPAID_STATUSES in stripe_service"
+    server_statuses = set(re.findall(r'"([a-z_]+)"', listed.group(1)))
 
     client = read(BILLING_LIB)
-    listed = re.search(
-        r"LIVE_SUBSCRIPTION_STATUSES\s*=\s*\[([^\]]*)\]", client, re.DOTALL
-    )
-    assert listed, "couldn't find LIVE_SUBSCRIPTION_STATUSES in the billing lib"
+    listed = re.search(r"UNPAID_STATUSES = \[([^\]]*)\]", client, re.DOTALL)
+    assert listed, "couldn't find UNPAID_STATUSES in the billing lib"
     client_statuses = set(re.findall(r"'([a-z_]+)'", listed.group(1)))
 
     assert server_statuses == client_statuses, (
@@ -139,12 +132,27 @@ def test_the_bot_faq_carries_the_same_terms():
     collapsed = " ".join(read(ROOT / "bot.py").split())
     assert "7-day free trial" in collapsed
     assert "renews by itself" in collapsed
-    assert "cannot be removed" in collapsed
+    # The bot's text is one Python string split over several source lines,
+    # so a phrase can straddle the seam between two quoted chunks. Joining
+    # them back up is what makes searching for a sentence meaningful.
+    joined = collapsed.replace('" "', "")
+    assert "cannot be removed" in joined
+    assert "payment method" in joined
 
 
-def test_nothing_still_promises_the_card_can_come_off_whenever():
-    """The old Settings copy said a card could be removed whenever you
-    liked. That stopped being true the moment a plan could hold one."""
+def test_no_page_still_says_a_trial_skips_the_payment_details():
+    """Checkout takes a payment method up front now. Any page still saying
+    the trial does not ask for one is telling people the opposite of what
+    will happen when they click."""
     for page in FRONTEND.rglob("*.tsx"):
         collapsed = " ".join(read(page).split())
-        assert "remove it whenever you like" not in collapsed, page.name
+        # "no card required" on its own stays allowed: signing up on the
+        # Free plan genuinely asks for nothing. It is the claims tied to the
+        # trial that stopped being true.
+        for claim in (
+            "doesn't ask for a card",
+            "does not ask for a card",
+            "free trial - no card needed",
+            "trial doesn't ask",
+        ):
+            assert claim not in collapsed, f"{page.name}: {claim}"

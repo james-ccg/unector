@@ -125,21 +125,23 @@ def test_it_names_the_date_the_amount_and_the_way_out():
     assert "/settings" in body
 
 
-def test_it_says_the_card_is_held():
-    assert "can't be removed" in _sent_body()
+def test_it_says_the_payment_method_is_held_until_the_first_charge():
+    body = " ".join(_sent_body().split())
+    assert "until this first payment goes through" in body
+    assert "can't be removed" in body
 
 
 def test_someone_with_no_card_is_not_warned_about_a_charge():
     """They will not be charged, so telling them they will is a lie that
     costs a customer."""
-    body = _sent_body(has_card=False)
-    assert "nothing will be charged" in body
+    body = " ".join(_sent_body(has_card=False).split())
+    assert "no payment method on file, so nothing will be charged" in body
     assert "will be charged automatically" not in body
 
 
 def test_when_stripe_cannot_be_asked_the_wording_covers_both():
     body = _sent_body(has_card=None)
-    assert "depends on whether a card is on file" in body
+    assert "depends on whether a payment method is on file" in " ".join(body.split())
 
 
 def test_a_plan_with_no_price_does_not_get_one_invented():

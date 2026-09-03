@@ -330,8 +330,8 @@ export default function DashboardPage() {
               {dashboardData.billing.status === 'trialing' && dashboardData.billing.trial_ends_at && (
                 <p className="billing-hint billing-notice">
                   Trial ends {new Date(dashboardData.billing.trial_ends_at).toLocaleDateString()} -
-                  the card on file is charged automatically that day unless you cancel, and it
-                  can&apos;t be removed until then.
+                  your payment method is charged automatically that day unless you cancel, and it
+                  can&apos;t be removed before then.
                 </p>
               )}
               <Link to="/settings" className="billing-manage-link">Manage billing →</Link>

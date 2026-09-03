@@ -20,7 +20,9 @@ import {
   type TeamMember, type Truck, type Trailer,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
-import { CARD_HELD_NOTICE, chargeLabel, isSubscriptionLive } from '../lib/billing'
+import {
+  CARD_HELD_NOTICE, CARD_REMOVAL_ENDS_PLAN_NOTICE, chargeLabel, isAwaitingPayment, methodLabel,
+} from '../lib/billing'
 import './DashboardPage.css'
 import './SettingsPage.css'
 import { gmailErrorMessage } from '../lib/gmailError'
@@ -242,11 +244,15 @@ export default function SettingsPage() {
   // sees this section at all.
   const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([])
 
-  // The last card cannot come off while a plan or trial is running - the
-  // next invoice would fail and the account would lapse without whoever
-  // pressed Remove understanding why. Worked out here so the button can
-  // say so up front instead of the server refusing after the click.
-  const cardIsHeld = paymentMethods.length === 1 && isSubscriptionLive(billing?.status)
+  // Two different things can be true of the only card on file, and they
+  // need different words. While the current period is unpaid it cannot come
+  // off at all - it is the only way the amount owed can be collected. Once
+  // it has been paid, it can, and doing so ends the plan at the end of the
+  // period already bought. Both are worked out here so the button says so
+  // before it is pressed rather than the server answering afterwards.
+  const onlyCard = paymentMethods.length === 1
+  const cardIsHeld = onlyCard && isAwaitingPayment(billing?.status)
+  const removingEndsPlan = onlyCard && billing?.status === 'active'
   const [cardBusy, setCardBusy] = useState(false)
   // Shown inside the billing card, not in the page-top banner. This
   // section is far down a long page - an error announced at the top is
@@ -287,8 +293,23 @@ export default function SettingsPage() {
     setCardBusy(true)
     setCardError('')
     try {
-      await billingApi.removePaymentMethod(id)
+      const result = await billingApi.removePaymentMethod(id)
       await loadPaymentMethods()
+      await loadAll()
+      if (result.cancelled_at_period_end) {
+        // That was the only one left, so the plan now runs to the end of
+        // what was already paid for. Said here rather than left to be
+        // discovered from a later email.
+        const until = result.plan_ends_at
+          ? ` You keep your plan until ${new Date(result.plan_ends_at).toLocaleDateString()}.`
+          : ' You keep your plan until the period you have paid for runs out.'
+        setBanner({
+          kind: 'success',
+          text: `Payment method removed.${until} Nothing will be charged again.`,
+        })
+      } else {
+        setBanner({ kind: 'success', text: 'Payment method removed.' })
+      }
     } catch (err) {
       setCardError(errorMessage(err, "Couldn't remove that payment method."))
     } finally {
@@ -856,7 +877,8 @@ export default function SettingsPage() {
                   charged automatically to the card on file, and again every{' '}
                   {billing.billing_interval === 'year' ? 'year' : 'month'} after that, until you
                   cancel. Cancel any time from Manage billing - before that date, nothing is charged.
-                  Until then the card stays on file: it can't be removed while the trial is running.
+                  Until then your payment method stays on file: it can&apos;t be removed while the
+                  trial is running, because it is the only way the first payment can be taken.
                 </p>
               )}
               {billing.status === 'past_due' && (
@@ -885,9 +907,9 @@ export default function SettingsPage() {
 
                 {paymentMethods.length === 0 ? (
                   <p className="billing-hint">
-                    Nothing saved. You don&apos;t need one to use the free plan - add a card
-                    whenever you like, and remove it again any time, as long as no plan or trial
-                    is running on it.
+                    Nothing saved. You don&apos;t need one to use the free plan. Card, PayPal
+                    and the wallets Stripe offers all work here, and one can be added whenever
+                    you like - a paid plan asks for one when you start it.
                   </p>
                 ) : (
                   <ul className="payment-methods">
@@ -895,9 +917,7 @@ export default function SettingsPage() {
                       <li key={method.id}>
                         <div>
                           <span className="payment-method-name">
-                            {method.brand
-                              ? `${method.brand[0].toUpperCase()}${method.brand.slice(1)}`
-                              : method.type.replace(/_/g, ' ')}
+                            {methodLabel(method.type, method.brand)}
                             {method.last4 && (
                               <span className="payment-method-digits"> •••• {method.last4}</span>
                             )}
@@ -914,10 +934,17 @@ export default function SettingsPage() {
                             type="button"
                             className="btn btn-danger-ghost btn-sm"
                             onClick={() => handleRemovePaymentMethod(method.id)}
-                            /* The server refuses the last card under a live plan. Saying so
-                               here means finding out before the click, not after it. */
+                            /* Blocked only while the period is unpaid. When removal is
+                               allowed but ends the plan, the button works and the
+                               consequence is spelled out under the list instead. */
                             disabled={cardBusy || cardIsHeld}
-                            title={cardIsHeld ? CARD_HELD_NOTICE : undefined}
+                            title={
+                              cardIsHeld
+                                ? CARD_HELD_NOTICE
+                                : removingEndsPlan
+                                  ? CARD_REMOVAL_ENDS_PLAN_NOTICE
+                                  : undefined
+                            }
                           >
                             Remove
                           </button>
@@ -947,6 +974,12 @@ export default function SettingsPage() {
                 {cardIsHeld && (
                   <p className="billing-hint billing-notice" style={{ marginTop: 12 }}>
                     {CARD_HELD_NOTICE}
+                  </p>
+                )}
+
+                {removingEndsPlan && (
+                  <p className="billing-hint billing-notice" style={{ marginTop: 12 }}>
+                    {CARD_REMOVAL_ENDS_PLAN_NOTICE}
                   </p>
                 )}
 

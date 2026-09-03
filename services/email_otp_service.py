@@ -117,10 +117,14 @@ def send_trial_ending_email(
     in it, and the auto-renewal statutes ask for the same - so all three are
     here, above anything else.
 
-    `has_card` is what we know about a card being on file: True, False, or
-    None when Stripe could not be asked. None gets wording that is true
-    either way rather than a guess, because warning about a charge that will
-    not happen is its own kind of wrong.
+    `has_card` is what we know about a payment method being on file: True,
+    False, or None when Stripe could not be asked. None gets wording that is
+    true either way rather than a guess, because warning about a charge that
+    will not happen is its own kind of wrong.
+
+    The wording says "payment method" rather than "card" throughout, since
+    PayPal and the wallets are saved the same way and the rules apply to
+    them identically.
 
     `charge` is like "$20 a month", or None for a plan with no price, in
     which case the amount is left out rather than invented.
@@ -136,22 +140,23 @@ def send_trial_ending_email(
 
     if has_card is True:
         what_happens = (
-            f"On {ends_on}, {amount} will be charged automatically to the card on "
-            "file, and again every period after that until you cancel.\n\n"
+            f"On {ends_on}, {amount} will be charged automatically to the payment "
+            "method on file, and again every period after that until you cancel.\n\n"
             "If you'd rather not continue, cancel before that date and you won't be "
             "charged at all."
         )
     elif has_card is False:
         what_happens = (
-            f"There's no card on file, so nothing will be charged. On {ends_on} the "
-            "plan simply stops and your account pauses.\n\n"
-            "To keep it running, add a card in Settings before that date. Once one is "
+            f"There's no payment method on file, so nothing will be charged. On "
+            f"{ends_on} the plan simply stops and your account pauses.\n\n"
+            "To keep it running, add one in Settings before that date. Once one is "
             f"on file, {amount} is charged when the trial ends and every period after, "
             "until you cancel."
         )
     else:
         what_happens = (
-            f"What happens on {ends_on} depends on whether a card is on file.\n\n"
+            f"What happens on {ends_on} depends on whether a payment method is on "
+            "file.\n\n"
             f"If there is one, {amount} is charged automatically that day and every "
             "period after, until you cancel. If there isn't, nothing is charged and "
             "the account pauses instead."
@@ -162,10 +167,10 @@ def send_trial_ending_email(
         f"Your Freight Pilot trial ends on {ends_on}.\n\n"
         f"{what_happens}\n\n"
         f"Manage or cancel any time here: {settings_url}\n\n"
-        "One thing worth knowing: while a plan or trial is running, the last card on "
-        "file can't be removed - the next charge would fail and the account would "
-        "lapse without warning. Add a second card to replace it, or cancel the plan "
-        "and then remove it.\n\n"
+        "One thing worth knowing: until this first payment goes through, your only "
+        "payment method can't be removed - it is the only way it can be taken. Once "
+        "it has, you can remove it whenever you like, and doing so ends the plan when "
+        "the period you have already paid for runs out.\n\n"
         "Freight Pilot"
     )
 

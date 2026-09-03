@@ -50,6 +50,11 @@ export default function UpdatesPage() {
               <h3 className="update-title"><CreditCard size={20} /> What a trial costs, said out loud</h3>
               <ul className="update-list">
                 <li>
+                  Starting a paid plan now asks for a payment method up front - card, PayPal or a
+                  wallet - so the plan can carry on by itself when the trial ends. Nothing is
+                  charged while the trial runs.
+                </li>
+                <li>
                   A trial that ends in a charge is now spelled out wherever the trial is
                   mentioned: that it renews by itself, the exact date, the exact amount, and how
                   to cancel. On the pricing page that sits in ordinary text above the fold rather
@@ -61,10 +66,15 @@ export default function UpdatesPage() {
                   charged, the account simply pauses.
                 </li>
                 <li>
-                  While a plan or trial is running, the last card on file can&apos;t be removed -
-                  the next charge would fail and the account would lapse without warning. That was
-                  always true in the code; now the Remove button says so before you press it
-                  instead of failing afterwards, and Settings has stopped claiming the opposite.
+                  Until the first payment for a plan has actually gone through, your only payment
+                  method can&apos;t be removed - it is the only way that payment can be taken. The
+                  Remove button says so before you press it instead of failing afterwards.
+                </li>
+                <li>
+                  After that first payment, remove it whenever you like. Taking off your only
+                  payment method now ends the plan when the period you already paid for runs out:
+                  you keep everything until then and nothing is charged again, instead of a failed
+                  renewal dropping the account into a run of dunning emails.
                 </li>
               </ul>
             </div>

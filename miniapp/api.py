@@ -2018,8 +2018,8 @@ def remove_payment_method(
     from services import stripe_service
 
     try:
-        stripe_service.detach_payment_method(user["company_id"], payment_method_id)
-        return {"success": True}
+        result = stripe_service.detach_payment_method(user["company_id"], payment_method_id)
+        return {"success": True, **result}
     except ValueError as e:
         raise HTTPException(400, str(e))
     except RuntimeError as e:
