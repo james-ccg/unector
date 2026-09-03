@@ -903,6 +903,13 @@ def get_drivers_by_company(company_id: int) -> list[dict]:
                     "dispatcher_username": d.dispatcher.username if d.dispatcher else None,
                     "subscription_active": d.subscription_active,
                     "samsara_vehicle_id": d.truck.samsara_vehicle_id if d.truck else None,
+                    # Contact details, so the dashboard's edit form opens on
+                    # what is actually on file rather than on empty boxes.
+                    "phone": d.phone,
+                    "email": d.email,
+                    "co_driver_name": d.co_driver_name,
+                    "co_driver_phone": d.co_driver_phone,
+                    "vin": d.truck.vin if d.truck else None,
                     "truck": (
                         {"id": d.truck.id, "unit_number": d.truck.unit_number} if d.truck else None
                     ),

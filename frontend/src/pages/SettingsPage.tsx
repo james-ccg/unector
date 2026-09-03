@@ -10,12 +10,14 @@ import ThemeToggle from '../components/ThemeToggle'
 import FontToggle from '../components/FontToggle'
 import AvatarPicker from '../components/AvatarPicker'
 import Alert from '../components/Alert'
+import GroupProfileReview, { FieldGrid } from '../components/GroupProfileReview'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
   type BillingStatus, type SavedPaymentMethod, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
-  type Driver, type DriverLinkCode, type TeamMember, type Truck, type Trailer,
+  type Driver, type DriverLinkCode, type GroupProfileField, type GroupProfileProposal,
+  type TeamMember, type Truck, type Trailer,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import './DashboardPage.css'
@@ -76,6 +78,18 @@ export default function SettingsPage() {
 
   // Drivers - self-service creation + Telegram group linking
   const [drivers, setDrivers] = useState<Driver[]>([])
+  // Truck/driver details the bot read out of a group description and
+  // nobody has confirmed yet. The same readings are sitting in Telegram
+  // with Confirm on them, so this list can go stale while the page is
+  // open - a 409 on confirm is how we find out, and it is not an error.
+  const [groupProfiles, setGroupProfiles] = useState<GroupProfileProposal[]>([])
+  // The by-hand path, for carriers who keep nothing in the group description
+  // and for fixing a detail later. Writes through the same endpoint that
+  // confirming a reading does.
+  const [detailsDriverId, setDetailsDriverId] = useState<number | null>(null)
+  const [detailsValues, setDetailsValues] = useState<Partial<Record<GroupProfileField, string>>>({})
+  const [detailsBusy, setDetailsBusy] = useState(false)
+  const [detailsError, setDetailsError] = useState('')
   const [newDriverName, setNewDriverName] = useState('')
   const [addDriverError, setAddDriverError] = useState('')
   const [addDriverBusy, setAddDriverBusy] = useState(false)
@@ -175,6 +189,7 @@ export default function SettingsPage() {
       setTrucks(await dashboardApi.listTrucks())
       setTrailers(await dashboardApi.listTrailers())
       setDrivers(await dashboardApi.listDrivers())
+      setGroupProfiles(await dashboardApi.listGroupProfiles())
       if (user.role === 'owner') {
         const dispatcherData = await dashboardApi.listDispatchers()
         setDispatchers(dispatcherData)
@@ -510,6 +525,12 @@ export default function SettingsPage() {
         samsara_vehicle_id: null,
         truck: null,
         trailer: null,
+        // Filled in later, either from the group's description or by hand.
+        phone: null,
+        email: null,
+        co_driver_name: null,
+        co_driver_phone: null,
+        vin: null,
         load_count: 0,
         weekly_gross: 0,
         weekly_loads: 0,
@@ -520,6 +541,67 @@ export default function SettingsPage() {
       setAddDriverError(errorMessage(err, "Couldn't add that driver."))
     } finally {
       setAddDriverBusy(false)
+    }
+  }
+
+  const handleGroupProfileResolved = async (id: number, message: string) => {
+    setGroupProfiles((prev) => prev.filter((p) => p.id !== id))
+    setBanner({ kind: 'success', text: message })
+    try {
+      setDrivers(await dashboardApi.listDrivers())
+      setTrucks(await dashboardApi.listTrucks())
+      setTrailers(await dashboardApi.listTrailers())
+    } catch (err) {
+      // The save itself went through; only the refresh failed, so say that
+      // rather than implying the details were lost.
+      setBanner({ kind: 'error', text: errorMessage(err, "Saved, but the page couldn't refresh.") })
+    }
+  }
+
+  const openDriverDetails = (driver: Driver) => {
+    if (detailsDriverId === driver.id) {
+      setDetailsDriverId(null)
+      return
+    }
+    setDetailsError('')
+    setDetailsDriverId(driver.id)
+    setDetailsValues({
+      truck_number: driver.truck?.unit_number ?? '',
+      trailer_number: driver.trailer?.unit_number ?? '',
+      driver_name: driver.full_name ?? '',
+      driver_phone: driver.phone ?? '',
+      co_driver_name: driver.co_driver_name ?? '',
+      co_driver_phone: driver.co_driver_phone ?? '',
+      vin: driver.vin ?? '',
+      driver_email: driver.email ?? '',
+    })
+  }
+
+  const handleSaveDriverDetails = async (driverId: number) => {
+    // Only send what has something in it. An empty box means "not known",
+    // not "clear what is on file" - clearing is not what this form is for.
+    const filled = Object.fromEntries(
+      Object.entries(detailsValues).filter(([, v]) => (v ?? '').trim() !== '')
+    ) as Partial<Record<GroupProfileField, string>>
+
+    if (Object.keys(filled).length === 0) {
+      setDetailsError('Fill in at least one detail before saving.')
+      return
+    }
+
+    setDetailsBusy(true)
+    setDetailsError('')
+    try {
+      await dashboardApi.saveDriverDetails(driverId, filled)
+      setDrivers(await dashboardApi.listDrivers())
+      setTrucks(await dashboardApi.listTrucks())
+      setTrailers(await dashboardApi.listTrailers())
+      setDetailsDriverId(null)
+      setBanner({ kind: 'success', text: 'Details saved.' })
+    } catch (err) {
+      setDetailsError(errorMessage(err, "Couldn't save these details."))
+    } finally {
+      setDetailsBusy(false)
     }
   }
 
@@ -1163,6 +1245,9 @@ export default function SettingsPage() {
         {/* ---------------- Drivers ---------------- */}
         <section className={sectionClass('drivers')}>
             <h2 className="section-title">Drivers</h2>
+
+            <GroupProfileReview proposals={groupProfiles} onResolved={handleGroupProfileResolved} />
+
             <div className="card">
               {drivers.length > 0 ? (
                 <div className="dispatcher-list">
@@ -1185,6 +1270,12 @@ export default function SettingsPage() {
                           </button>
                         )}
                         <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openDriverDetails(d)}
+                        >
+                          {detailsDriverId === d.id ? 'Close' : 'Details'}
+                        </button>
+                        <button
                           className="btn btn-danger-ghost btn-sm"
                           onClick={() => handleDeleteDriver(d)}
                           disabled={fleetBusy}
@@ -1192,6 +1283,31 @@ export default function SettingsPage() {
                           Remove
                         </button>
                       </div>
+                      {detailsDriverId === d.id && (
+                        <div className="twofa-enroll">
+                          <p className="method-hint">
+                            Truck and driver details. The bot fills these in from the group's
+                            description when there is one - this is for typing them in yourself,
+                            or fixing one afterwards.
+                          </p>
+                          <FieldGrid
+                            values={detailsValues}
+                            disabled={detailsBusy}
+                            onChange={(field, value) =>
+                              setDetailsValues((prev) => ({ ...prev, [field]: value }))
+                            }
+                          />
+                          {detailsError && <ErrorMessage className="form-error" text={detailsError} />}
+                          <button
+                            className="btn btn-primary btn-sm"
+                            style={{ marginTop: 12 }}
+                            onClick={() => handleSaveDriverDetails(d.id)}
+                            disabled={detailsBusy}
+                          >
+                            {detailsBusy ? 'Saving...' : 'Save details'}
+                          </button>
+                        </div>
+                      )}
                       {linkDriverId === d.id && linkCode && (
                         <div className="twofa-enroll">
                           <p className="method-hint">

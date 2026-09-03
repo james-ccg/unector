@@ -465,10 +465,50 @@ export interface Driver {
   samsara_vehicle_id: string | null
   truck: Unit | null
   trailer: Unit | null
+  // Contact details, so the edit form opens on what is on file. Usually
+  // read from the truck's Telegram group description and confirmed, or
+  // typed in by hand - see GroupProfileProposal.
+  phone: string | null
+  email: string | null
+  co_driver_name: string | null
+  co_driver_phone: string | null
+  vin: string | null
   load_count: number
   weekly_gross: number
   weekly_loads: number
 }
+
+/** Truck and driver details read out of a dispatch group's description,
+ *  waiting for someone to confirm them. Nothing has been saved yet: the
+ *  same reading is also sitting in the group with Confirm buttons on it,
+ *  and whichever side confirms first is the one that writes. */
+export interface GroupProfileProposal {
+  id: number
+  driver_id: number
+  driver_name: string | null
+  telegram_group_id: number
+  /** The exact text it was read from, so whoever confirms can check it
+   *  against the values rather than taking them on trust. */
+  source_title: string | null
+  source_description: string | null
+  fields: Partial<Record<GroupProfileField, string>>
+  /** Fields the reader got a value for but was not confident about. */
+  unclear: GroupProfileField[]
+  /** What the bio disagrees with, in words - e.g. it names a different
+   *  truck than the one this driver is assigned to. Never blocks saving. */
+  conflicts: string[]
+  created_at: string | null
+}
+
+export type GroupProfileField =
+  | 'truck_number'
+  | 'trailer_number'
+  | 'driver_name'
+  | 'driver_phone'
+  | 'co_driver_name'
+  | 'co_driver_phone'
+  | 'vin'
+  | 'driver_email'
 
 export interface DriverLinkCode {
   code: string
@@ -635,6 +675,33 @@ export const dashboardApi = {
     apiRequest<NewDriver>('/api/drivers', {
       method: 'POST',
       body: JSON.stringify({ full_name: fullName }),
+    }),
+
+  /** Readings from a group description that nobody has confirmed yet. */
+  listGroupProfiles: () =>
+    apiRequest<GroupProfileProposal[]>('/api/group-profiles'),
+
+  /** Pass `fields` to save something other than what was read - the form is
+   *  editable so a misread digit gets corrected instead of the whole
+   *  reading being thrown away. Fails with 409 when Telegram got there
+   *  first, which is not an error worth alarming anyone about. */
+  confirmGroupProfile: (proposalId: number, fields?: Partial<Record<GroupProfileField, string>>) =>
+    apiRequest<{ success: boolean }>(`/api/group-profiles/${proposalId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(fields ? { fields } : {}),
+    }),
+
+  dismissGroupProfile: (proposalId: number) =>
+    apiRequest<{ success: boolean }>(`/api/group-profiles/${proposalId}/dismiss`, {
+      method: 'POST',
+    }),
+
+  /** Details typed in by hand, for carriers who keep nothing in the group
+   *  description. Writes through the same path confirming a reading does. */
+  saveDriverDetails: (driverId: number, fields: Partial<Record<GroupProfileField, string>>) =>
+    apiRequest<{ success: boolean }>(`/api/drivers/${driverId}/details`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
     }),
 
   createDriverLinkToken: (driverId: number | string) =>

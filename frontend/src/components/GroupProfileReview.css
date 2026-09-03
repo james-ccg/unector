@@ -1,0 +1,147 @@
+/* What the bot read out of a truck group's description, laid out for
+   checking rather than for reading: every value is an input, because the
+   point of this screen is to correct what is wrong before saving it. */
+
+.gp-review {
+  margin-top: 12px;
+}
+
+.gp-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 12px;
+  background: var(--bg);
+}
+
+.gp-card:first-of-type {
+  margin-top: 8px;
+}
+
+.gp-head {
+  margin-bottom: 12px;
+}
+
+.gp-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gp-title .mono {
+  font-family: var(--font-mono);
+}
+
+.gp-sub {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+/* Disagreements with what is already on file. Shown, never acted on - the
+   bio is often the thing that is right and the records the thing that is
+   stale, so this informs the person confirming rather than blocking them. */
+.gp-conflicts {
+  margin: 0 0 12px;
+  padding: 10px 12px 10px 28px;
+  border-radius: 8px;
+  border: 1px solid var(--amber);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.gp-conflicts li + li {
+  margin-top: 4px;
+}
+
+.gp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.gp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.gp-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* A value that was read but not confidently. Worth a glance, not a warning. */
+.gp-flag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+
+.gp-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+}
+
+.gp-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.gp-input.is-unclear {
+  border-color: var(--amber);
+}
+
+.gp-source {
+  margin-top: 12px;
+}
+
+.gp-source-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* The bio exactly as it was written, so the values above can be checked
+   against their source. Preserves the line breaks the dispatcher typed. */
+.gp-source-text {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.gp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
