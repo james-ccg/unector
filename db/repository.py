@@ -2169,6 +2169,21 @@ def get_driver_identity(driver_id: int, company_id: int) -> dict | None:
         }
 
 
+# The fields a bio can carry, and the only ones either write path accepts.
+# Anything else Gemini or a dashboard form sends is dropped rather than
+# trusted onto a column it happens to share a name with.
+GROUP_PROFILE_FIELDS = (
+    "truck_number",
+    "trailer_number",
+    "driver_name",
+    "driver_phone",
+    "co_driver_name",
+    "co_driver_phone",
+    "vin",
+    "driver_email",
+)
+
+
 def _proposal_dict(row: models.GroupProfileProposal) -> dict:
     return {
         "id": row.id,
@@ -2253,20 +2268,92 @@ def list_pending_proposals(company_id: int) -> list[dict]:
         return [_proposal_dict(r) for r in rows]
 
 
+def _write_profile_fields(session, company_id: int, driver, fields: dict) -> None:
+    """Copies confirmed details onto the driver and their truck.
+
+    Shared by the two ways details arrive - confirming what a group bio said,
+    and typing them in on the dashboard - so both behave identically.
+
+    A field that is not mentioned is left alone: a bio that names no trailer
+    must not blank out the trailer already on file. A truck or trailer number
+    the company does not have yet is created, because naming it is the
+    company telling us it exists."""
+
+    def value(key: str) -> str | None:
+        raw = fields.get(key)
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        return text or None
+
+    for column, key in (
+        ("full_name", "driver_name"),
+        ("phone", "driver_phone"),
+        ("email", "driver_email"),
+        ("co_driver_name", "co_driver_name"),
+        ("co_driver_phone", "co_driver_phone"),
+    ):
+        found = value(key)
+        if found:
+            setattr(driver, column, found)
+
+    truck = None
+    unit = value("truck_number")
+    if unit:
+        truck = (
+            session.query(models.Truck)
+            .filter(models.Truck.company_id == company_id, models.Truck.unit_number == unit)
+            .first()
+        )
+        if not truck:
+            truck = models.Truck(company_id=company_id, unit_number=unit)
+            session.add(truck)
+            session.flush()
+        driver.truck_id = truck.id
+    elif driver.truck_id:
+        truck = session.get(models.Truck, driver.truck_id)
+
+    if not truck:
+        return
+
+    vin = value("vin")
+    if vin:
+        truck.vin = vin
+
+    trailer_unit = value("trailer_number")
+    if trailer_unit:
+        trailer = (
+            session.query(models.Trailer)
+            .filter(
+                models.Trailer.company_id == company_id,
+                models.Trailer.unit_number == trailer_unit,
+            )
+            .first()
+        )
+        if not trailer:
+            trailer = models.Trailer(company_id=company_id, unit_number=trailer_unit)
+            session.add(trailer)
+            session.flush()
+        truck.trailer_id = trailer.id
+
+
 def apply_group_profile_proposal(
-    proposal_id: int, via: str, *, company_id: int | None = None
+    proposal_id: int,
+    via: str,
+    *,
+    company_id: int | None = None,
+    edits: dict | None = None,
 ) -> tuple[bool, str]:
-    """Copies a confirmed reading onto the driver and their truck.
+    """Saves a confirmed reading against the driver and their truck.
+
+    `edits` is what the person changed before confirming - the dashboard
+    shows the reading in an editable form, so a misread digit is corrected
+    rather than dismissed. What they confirmed is stored back onto the
+    proposal, so the record shows what was saved and not what was read.
 
     Returns (ok, reason). "already_resolved" is the ordinary case rather
     than an error: the same proposal is confirmable from two places, and
-    whoever gets there second should be told it is already done, not shown
-    a failure.
-
-    Missing fields are left alone - a bio that names no trailer must not
-    blank out the trailer already on file. A truck or trailer number that
-    the company does not have yet is created, because the bio naming it is
-    the company telling us it exists."""
+    whoever gets there second should be told it is already done."""
     with get_session() as session:
         row = session.get(models.GroupProfileProposal, proposal_id)
         if not row or (company_id is not None and row.company_id != company_id):
@@ -2278,66 +2365,35 @@ def apply_group_profile_proposal(
         if not driver:
             return False, "driver_gone"
 
-        fields = row.fields or {}
+        fields = dict(row.fields or {})
+        if edits:
+            fields.update({k: v for k, v in edits.items() if k in GROUP_PROFILE_FIELDS})
+            row.fields = fields
 
-        def value(key: str) -> str | None:
-            raw = fields.get(key)
-            if raw is None:
-                return None
-            text = str(raw).strip()
-            return text or None
-
-        for column, key in (
-            ("full_name", "driver_name"),
-            ("phone", "driver_phone"),
-            ("email", "driver_email"),
-            ("co_driver_name", "co_driver_name"),
-            ("co_driver_phone", "co_driver_phone"),
-        ):
-            found = value(key)
-            if found:
-                setattr(driver, column, found)
-
-        truck = None
-        unit = value("truck_number")
-        if unit:
-            truck = (
-                session.query(models.Truck)
-                .filter(models.Truck.company_id == row.company_id, models.Truck.unit_number == unit)
-                .first()
-            )
-            if not truck:
-                truck = models.Truck(company_id=row.company_id, unit_number=unit)
-                session.add(truck)
-                session.flush()
-            driver.truck_id = truck.id
-        elif driver.truck_id:
-            truck = session.get(models.Truck, driver.truck_id)
-
-        if truck:
-            vin = value("vin")
-            if vin:
-                truck.vin = vin
-
-            trailer_unit = value("trailer_number")
-            if trailer_unit:
-                trailer = (
-                    session.query(models.Trailer)
-                    .filter(
-                        models.Trailer.company_id == row.company_id,
-                        models.Trailer.unit_number == trailer_unit,
-                    )
-                    .first()
-                )
-                if not trailer:
-                    trailer = models.Trailer(company_id=row.company_id, unit_number=trailer_unit)
-                    session.add(trailer)
-                    session.flush()
-                truck.trailer_id = trailer.id
+        _write_profile_fields(session, row.company_id, driver, fields)
 
         row.status = "applied"
         row.resolved_via = via
         row.resolved_at = models.now_utc()
+        session.commit()
+        return True, "ok"
+
+
+def update_driver_details(driver_id: int, company_id: int, fields: dict) -> tuple[bool, str]:
+    """Typed in on the dashboard, with no group bio involved.
+
+    Some carriers do not keep details in the group description at all, and
+    some groups are linked before anyone writes one. This is that path, and
+    it writes exactly what confirming a proposal writes."""
+    clean = {k: v for k, v in (fields or {}).items() if k in GROUP_PROFILE_FIELDS}
+    if not clean:
+        return False, "nothing_to_save"
+
+    with get_session() as session:
+        driver = session.get(models.Driver, driver_id)
+        if not driver or driver.company_id != company_id:
+            return False, "not_found"
+        _write_profile_fields(session, company_id, driver, clean)
         session.commit()
         return True, "ok"
 

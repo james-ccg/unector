@@ -1203,6 +1203,99 @@ def remove_driver(
     return {"success": True}
 
 
+# ------------------------------------------------------------------
+# Truck and driver details read from a group's description.
+#
+# The bot proposes what the bio says; these endpoints are the dashboard half
+# of confirming it. The same proposal is confirmable from Telegram, so a
+# proposal that has already been handled comes back as 409 rather than 404 -
+# nothing is wrong, the office was simply second.
+# ------------------------------------------------------------------
+class GroupProfileConfirmRequest(BaseModel):
+    # What the person changed before confirming. The dashboard shows the
+    # reading in an editable form, so a misread digit gets corrected instead
+    # of the whole proposal being thrown away.
+    fields: dict[str, str] | None = None
+
+
+class DriverDetailsRequest(BaseModel):
+    truck_number: str | None = None
+    trailer_number: str | None = None
+    driver_name: str | None = None
+    driver_phone: str | None = None
+    co_driver_name: str | None = None
+    co_driver_phone: str | None = None
+    vin: str | None = None
+    driver_email: str | None = None
+
+
+@app.get("/api/group-profiles")
+def list_group_profiles(user: dict = Depends(get_current_user)):
+    """Everything read from a group bio and still waiting on someone."""
+    from db.repository import list_pending_proposals
+
+    return list_pending_proposals(user["company_id"])
+
+
+@app.post("/api/group-profiles/{proposal_id}/confirm")
+def confirm_group_profile(
+    proposal_id: int,
+    body: GroupProfileConfirmRequest,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import apply_group_profile_proposal
+
+    ok, reason = apply_group_profile_proposal(
+        proposal_id, "dashboard", company_id=user["company_id"], edits=body.fields
+    )
+    if ok:
+        return {"success": True}
+    if reason == "already_resolved":
+        raise HTTPException(409, "This was already confirmed - from Telegram, or from another tab.")
+    if reason == "driver_gone":
+        raise HTTPException(410, "That driver has been deleted, so there is nothing to save it to.")
+    raise HTTPException(404, "That reading no longer exists.")
+
+
+@app.post("/api/group-profiles/{proposal_id}/dismiss")
+def dismiss_group_profile(
+    proposal_id: int,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import dismiss_group_profile_proposal
+
+    ok, reason = dismiss_group_profile_proposal(
+        proposal_id, "dashboard", company_id=user["company_id"]
+    )
+    if ok:
+        return {"success": True}
+    if reason == "already_resolved":
+        raise HTTPException(409, "This was already handled - from Telegram, or from another tab.")
+    raise HTTPException(404, "That reading no longer exists.")
+
+
+@app.patch("/api/drivers/{driver_id}/details")
+def save_driver_details(
+    driver_id: int,
+    body: DriverDetailsRequest,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Typed in by hand, for a driver whose group bio says nothing useful."""
+    from db.repository import update_driver_details
+
+    ok, reason = update_driver_details(
+        driver_id, user["company_id"], body.model_dump(exclude_none=True)
+    )
+    if ok:
+        return {"success": True}
+    if reason == "nothing_to_save":
+        raise HTTPException(400, "No details were sent.")
+    raise HTTPException(404, "Driver not found.")
+
+
 @app.get("/api/trailers")
 def list_company_trailers(user: dict = Depends(get_current_user)):
     from db.repository import list_trailers

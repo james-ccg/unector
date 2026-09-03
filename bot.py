@@ -45,7 +45,9 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramNetworkError
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand
+from aiogram.types import (
+    Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand, CallbackQuery,
+)
 
 from config import (
     TELEGRAM_BOT_TOKEN,
@@ -70,8 +72,11 @@ from db.repository import (
     consume_telegram_link_token,
     set_telegram_otp,
     link_driver_group,
+    get_pending_proposal_for_group,
+    apply_group_profile_proposal,
+    dismiss_group_profile_proposal,
 )
-from services import gemini_service, email_service, samsara_service, geo_utils
+from services import gemini_service, email_service, samsara_service, geo_utils, group_profile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -310,6 +315,123 @@ async def handle_linkdriver(message: Message):
     await message.reply(
         "✅ This group is now linked! /dispatch, /loadpics, /bol, /pod, /detention, and /setvehicle all work here now."
     )
+
+    # Most carriers already keep the truck and driver details in this group's
+    # description. Offer to save what it says rather than making someone type
+    # it all again on the dashboard.
+    driver = get_driver_by_group(message.chat.id)
+    if driver:
+        await offer_group_profile(message.chat.id, driver.id, driver.company_id)
+
+
+# ------------------------------------------------------------------
+# Truck and driver details from the group's description
+#
+# Carriers keep one group per truck and write the unit number, the trailer
+# and the driver's details into its bio. The bot reads that, shows what it
+# found, and saves it only once someone says yes - here or on the dashboard,
+# whichever comes first.
+# ------------------------------------------------------------------
+
+async def offer_group_profile(chat_id: int, driver_id: int, company_id: int) -> None:
+    """Reads the group's bio and asks the group to confirm what it says.
+
+    Silent when there is nothing to read: an empty description, or a bio
+    that carries no truck or driver details, is the ordinary case for a
+    group somebody just created, and is not worth a message."""
+    proposal = await group_profile.read_and_propose(
+        bot, company_id=company_id, driver_id=driver_id, chat_id=chat_id
+    )
+    if not proposal:
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Confirm", callback_data=f"gp:apply:{proposal['id']}"),
+            InlineKeyboardButton(text="✖️ Not now", callback_data=f"gp:skip:{proposal['id']}"),
+        ]]
+    )
+    await bot.send_message(
+        chat_id, group_profile.describe(proposal), parse_mode="HTML", reply_markup=keyboard
+    )
+
+
+@dp.message(Command("readbio"))
+async def handle_readbio(message: Message):
+    """Re-reads this group's description, for after it has been edited."""
+    if message.chat.type not in ("group", "supergroup"):
+        await message.reply("⚠️ Run this inside the truck's own Telegram group, not in a private chat.")
+        return
+
+    driver = get_driver_by_group(message.chat.id)
+    if not driver:
+        await message.reply(
+            "⚠️ This group isn't linked to a driver yet. Link it first with /linkdriver <code>, "
+            "using a code from the dashboard's Settings → Drivers page."
+        )
+        return
+
+    notice = await message.reply("📖 Reading this group's description...")
+    proposal = await group_profile.read_and_propose(
+        bot, company_id=driver.company_id, driver_id=driver.id, chat_id=message.chat.id
+    )
+    if not proposal:
+        await notice.edit_text(
+            "This group's description doesn't carry any truck or driver details I can read. "
+            "Add them there and run /readbio again, or enter them on the dashboard's Drivers page."
+        )
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Confirm", callback_data=f"gp:apply:{proposal['id']}"),
+            InlineKeyboardButton(text="✖️ Not now", callback_data=f"gp:skip:{proposal['id']}"),
+        ]]
+    )
+    await notice.edit_text(
+        group_profile.describe(proposal), parse_mode="HTML", reply_markup=keyboard
+    )
+
+
+@dp.callback_query(F.data.startswith("gp:"))
+async def handle_group_profile_button(callback: CallbackQuery):
+    """Confirm or dismiss, pressed in the group.
+
+    The same proposal is also confirmable from the dashboard, so "already
+    resolved" is a normal outcome here rather than a failure - it means the
+    office got there first, and the buttons on this message are stale."""
+    try:
+        _, action, raw_id = (callback.data or "").split(":", 2)
+        proposal_id = int(raw_id)
+    except ValueError:
+        await callback.answer("That button is no longer valid.", show_alert=True)
+        return
+
+    if action == "apply":
+        ok, reason = apply_group_profile_proposal(proposal_id, "telegram")
+        done_text = "✅ Saved to the dashboard."
+    elif action == "skip":
+        ok, reason = dismiss_group_profile_proposal(proposal_id, "telegram")
+        done_text = "Left as it is. Run /readbio when you want to try again."
+    else:
+        await callback.answer("That button is no longer valid.", show_alert=True)
+        return
+
+    if ok:
+        await callback.answer(done_text.split(".")[0].lstrip("✅ "))
+        await callback.message.edit_text(
+            f"{callback.message.html_text}\n\n<i>{done_text}</i>", parse_mode="HTML"
+        )
+        return
+
+    if reason == "already_resolved":
+        await callback.answer("This was already handled - from the dashboard, or here.")
+        await callback.message.edit_reply_markup(reply_markup=None)
+        return
+    if reason == "driver_gone":
+        await callback.answer("That driver has been deleted from the dashboard.", show_alert=True)
+        return
+    await callback.answer(f"Couldn't save it ({reason}).", show_alert=True)
 
 
 @dp.message(Command("dashboard"))
@@ -1405,6 +1527,7 @@ async def main():
         BotCommand(command="pod", description="Forward the POD to the broker (driver group)"),
         BotCommand(command="detention", description="Request detention/layover pay (driver group)"),
         BotCommand(command="setvehicle", description="Link this group to a Samsara vehicle"),
+        BotCommand(command="readbio", description="Re-read this group's description (driver group)"),
         BotCommand(command="myid", description="Print the current chat/group ID"),
     ])
 
