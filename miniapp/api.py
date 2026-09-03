@@ -2692,9 +2692,26 @@ if react_build_path.exists():
     def serve_icons():
         return FileResponse("frontend/dist/icons.svg")
     
-    # SPA fallback - serve index.html for all other routes (React Router handles routing)
+    # The social-preview tags are written relative in index.html and made
+    # absolute here, against whatever host the request actually arrived on.
+    #
+    # They have to be absolute: Open Graph requires it, and Telegram will
+    # not fetch a relative og:image at all. They cannot be hardcoded either
+    # - during development the host is a tunnel whose name changes every
+    # time it restarts, and in production it will be a real domain. Reading
+    # it off the request is the only version that is right in both.
+    _ABSOLUTE_META = ("og:url", "og:image", "twitter:image")
+
+    def _with_absolute_preview_urls(html: str, base: str) -> str:
+        for key in _ABSOLUTE_META:
+            attr = "property" if key.startswith("og:") else "name"
+            for quote in ('"', "'"):
+                needle = f'{attr}={quote}{key}{quote} content={quote}/'
+                html = html.replace(needle, f'{attr}={quote}{key}{quote} content={quote}{base}/')
+        return html
+
     @app.get("/{full_path:path}", response_class=FileResponse)
-    def serve_react_app(full_path: str):
+    def serve_react_app(request: Request, full_path: str):
         """Serve React app for all non-API routes (SPA fallback)"""
         # An /api path that got this far matched no route above, so it does
         # not exist. Falling through to index.html would answer it 200 with
@@ -2708,8 +2725,11 @@ if react_build_path.exists():
         file_path = react_build_path / full_path
         if file_path.is_file():
             return FileResponse(file_path)
-        # Otherwise serve index.html (React Router handles the route)
-        return FileResponse("frontend/dist/index.html")
+        # Otherwise serve index.html (React Router handles the route), with
+        # the preview URLs resolved against this request's own host.
+        index = (react_build_path / "index.html").read_text(encoding="utf-8")
+        base = str(request.base_url).rstrip("/")
+        return HTMLResponse(_with_absolute_preview_urls(index, base))
 else:
     # frontend/dist doesn't exist yet (fresh clone, npm run build not run
     # yet) - miniapp/static/public/ (the old pre-React marketing site) was

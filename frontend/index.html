@@ -1,11 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" prefix="og: https://ogp.me/ns#">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Freight Pilot - Telegram bot for trucking dispatch management" />
+    <meta name="description" content="Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard." />
     <title>Freight Pilot - Dispatch Management</title>
+
+    <!-- What Telegram, X, WhatsApp and the rest show when someone pastes a
+         link. None of it is read from the rendered page: these crawlers do
+         not run JavaScript, so everything has to be here in the HTML the
+         server sends.
+
+         og:image and og:url are written relative and rewritten to absolute
+         per request by miniapp/api.py's serve_react_app - the host changes
+         with every dev tunnel, and a hardcoded absolute URL would go stale
+         the moment it did.
+
+         twitter:card is what decides between a large image and a small
+         square thumbnail. Telegram honours it, and without it the preview
+         is a thumbnail no matter how large the image is. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Freight Pilot" />
+    <meta property="og:title" content="Freight Pilot - Dispatch Management" />
+    <meta property="og:description" content="Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard." />
+    <meta property="og:url" content="/" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Freight Pilot - dispatch management for trucking companies, run through Telegram" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Freight Pilot - Dispatch Management" />
+    <meta name="twitter:description" content="Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard." />
+    <meta name="twitter:image" content="/og-image.png" />
     <script>
       // Applies the saved theme/font/motion prefs before React (or even the
       // CSS) loads, so there's no flash of the wrong appearance on first

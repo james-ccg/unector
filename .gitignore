@@ -61,3 +61,8 @@ frontend/dist
 *.sw?
 
 test_account.py
+
+# Fonts fetched for scripts/make_og_image.py. DM Sans is the brand face
+# and is loaded from Google Fonts at runtime by frontend/src/index.css;
+# these are the same files, kept out of the tree as a build input.
+.ogbuild/

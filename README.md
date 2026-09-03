@@ -163,6 +163,37 @@ The bot process also runs two background jobs: the GPS location monitor, and an 
 that emails owners two days before their trial ends. Both live inside `bot.py`, so nothing is
 sent while only the API is running - worth knowing before wondering where a reminder went.
 
+## Link previews
+
+The card Telegram, X and WhatsApp show when someone pastes a link comes from Open Graph tags in
+`frontend/index.html`. Those crawlers do not run JavaScript, so nothing React renders can reach
+them - the tags have to be in the HTML the server sends.
+
+`og:image` and `og:url` are written relative there and rewritten to absolute per request by
+`serve_react_app` in `miniapp/api.py`, against whatever host the request arrived on. A relative
+`og:image` is never fetched, and a hardcoded absolute one goes stale every time a dev tunnel
+restarts, so neither alternative works.
+
+Two details are easy to lose and invisible until a link is shared. `og:site_name` is what stops
+the card naming the host instead of the product - without it a tunnel made it read
+"Trycloudflare". And `twitter:card` set to `summary_large_image` is what chooses a large image
+over a small square thumbnail; Telegram honours it, and without it the picture is a thumbnail
+however big the file is.
+
+The image itself is built rather than exported by hand, so it stays in step with the logo and
+the brand colours:
+
+```bash
+python scripts/make_og_image.py
+```
+
+It writes `frontend/public/og-image.png` at 1200x630, the size every platform documents. The
+script needs DM Sans, which is a build input rather than something committed - run it once and
+it prints how to fetch it.
+
+Telegram caches a preview per URL and will keep showing an old one. Send the link to
+[@WebpageBot](https://t.me/WebpageBot) to make it re-read the page.
+
 ## Testing
 
 ```bash
