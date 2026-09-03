@@ -214,7 +214,7 @@ def run() -> None:
 
     # ---------------------------------------------------------------
     section("6. Drivers, and the data behind the dashboard")
-    r = a.post("/api/drivers", json={"full_name": "Dave Wheeler", "phone": "+15551234567"},
+    r = a.post("/api/drivers", json={"full_name": "Test Driver", "phone": "+15551234567"},
                headers=csrf(a))
     check("a driver can be added", r.status_code == 200, r.text[:200])
     driver_id = r.json().get("id") or r.json().get("driver_id")
@@ -222,7 +222,7 @@ def run() -> None:
     r = a.get("/api/drivers")
     check("the driver list loads", r.status_code == 200, r.text[:200])
     names = [d.get("full_name") for d in (r.json() if isinstance(r.json(), list) else r.json().get("drivers", []))]
-    check("the new driver is in it", "Dave Wheeler" in names, str(names)[:200])
+    check("the new driver is in it", "Test Driver" in names, str(names)[:200])
 
     r = a.post(f"/api/drivers/{driver_id}/link-token", headers=csrf(a))
     check("a linking code can be issued", r.status_code == 200, r.text[:200])

@@ -1327,7 +1327,7 @@ class TestFleetAssets:
         self._register_owner(client, "766003")
         truck = client.post("/api/trucks", json={"unit_number": "5002"}, headers=_csrf_headers(client)).json()
         trailer = client.post("/api/trailers", json={"unit_number": "9002"}, headers=_csrf_headers(client)).json()
-        driver = client.post("/api/drivers", json={"full_name": "Jasur"}, headers=_csrf_headers(client)).json()
+        driver = client.post("/api/drivers", json={"full_name": "Test Driver"}, headers=_csrf_headers(client)).json()
         client.patch(
             f"/api/trucks/{truck['id']}",
             json={"driver_id": driver["id"], "trailer_id": trailer["id"]},
@@ -1340,7 +1340,7 @@ class TestFleetAssets:
         )
         row = client.get("/api/trucks").json()[0]
         assert row["trailer"] is None
-        assert row["driver"]["full_name"] == "Jasur"
+        assert row["driver"]["full_name"] == "Test Driver"
 
     def test_dispatcher_can_manage_the_fleet(self, client):
         self._register_owner(client, "766004")
@@ -1750,10 +1750,10 @@ class TestDriverCreation:
     def test_create_driver_returns_link_code_and_appears_in_list(self, client):
         self._register_owner(client, "911111")
 
-        created = client.post("/api/drivers", json={"full_name": "Jasur"}, headers=_csrf_headers(client))
+        created = client.post("/api/drivers", json={"full_name": "Test Driver"}, headers=_csrf_headers(client))
         assert created.status_code == 200, created.text
         body = created.json()
-        assert body["full_name"] == "Jasur"
+        assert body["full_name"] == "Test Driver"
         assert body["driver_bot_id"] == "D001"
         assert body["telegram_group_id"] is None
         assert body["link_code"]
@@ -1761,7 +1761,7 @@ class TestDriverCreation:
 
         listed = client.get("/api/drivers").json()
         assert len(listed) == 1
-        assert listed[0]["full_name"] == "Jasur"
+        assert listed[0]["full_name"] == "Test Driver"
 
     def test_blank_name_rejected(self, client):
         self._register_owner(client, "921111")

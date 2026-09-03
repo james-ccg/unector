@@ -13,7 +13,7 @@ import pytest
 import bot
 
 
-def _make_message(text=None, chat_type="supergroup", chat_id=-100123456, chat_title="Jasur's Truck"):
+def _make_message(text=None, chat_type="supergroup", chat_id=-100123456, chat_title="Unit 12 Dispatch"):
     message = MagicMock()
     message.chat.type = chat_type
     message.chat.id = chat_id

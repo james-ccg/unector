@@ -1187,7 +1187,7 @@ export default function SettingsPage() {
                 type="text"
                 value={newTruckUnit}
                 onChange={(e) => setNewTruckUnit(e.target.value)}
-                placeholder="Unit number, e.g. 3001"
+                placeholder="Unit number, e.g. 1001"
                 maxLength={30}
                 required
               />
@@ -1346,7 +1346,7 @@ export default function SettingsPage() {
                     type="text"
                     value={newDriverName}
                     onChange={(e) => setNewDriverName(e.target.value)}
-                    placeholder="e.g. Jasur Karimov"
+                    placeholder="Full name"
                     maxLength={150}
                     required
                   />

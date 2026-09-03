@@ -3,7 +3,7 @@ Seed script - creates one company and one driver for testing, and links
 the driver to a given Telegram group ID.
 
 Usage:
-    python seed.py --group-id -1001234567890 --mc 123456 --company "Axle Logistics" --driver-name "Jasur"
+    python seed.py --group-id -1001234567890 --mc 123456 --company "Test Carrier LLC" --driver-name "Test Driver"
 
 How to find the group ID: send /myid to the bot, it will print the group ID.
 """

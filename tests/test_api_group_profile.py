@@ -33,11 +33,11 @@ def owner(client):
 
 
 def _propose(owner, **overrides):
-    fields = {"truck_number": "3001", "driver_name": "Fareedullah", "driver_phone": "410-800-3954"}
+    fields = {"truck_number": "1001", "driver_name": "Test Driver", "driver_phone": "410-555-0142"}
     fields.update(overrides)
     return repository.save_group_profile_proposal(
         owner["company_id"], owner["driver_id"], -100700001,
-        title="ODM 3001", description="Driver: Fareedullah", fields=fields,
+        title="UNIT 1001", description="Driver: Test Driver", fields=fields,
     )
 
 
@@ -49,8 +49,8 @@ class TestListing:
 
         rows = response.json()
         assert len(rows) == 1
-        assert rows[0]["fields"]["truck_number"] == "3001"
-        assert rows[0]["source_description"] == "Driver: Fareedullah"
+        assert rows[0]["fields"]["truck_number"] == "1001"
+        assert rows[0]["source_description"] == "Driver: Test Driver"
 
     def test_a_confirmed_reading_drops_off_the_list(self, owner):
         proposal = _propose(owner)
@@ -72,8 +72,8 @@ class TestConfirming:
         assert response.status_code == 200
 
         identity = repository.get_driver_identity(owner["driver_id"], owner["company_id"])
-        assert identity["full_name"] == "Fareedullah"
-        assert identity["truck_unit_number"] == "3001"
+        assert identity["full_name"] == "Test Driver"
+        assert identity["truck_unit_number"] == "1001"
 
     def test_a_corrected_value_is_what_gets_saved(self, owner):
         """A misread digit should be fixed in the form, not thrown away."""
@@ -81,14 +81,14 @@ class TestConfirming:
         client = owner["client"]
         response = client.post(
             f"/api/group-profiles/{proposal['id']}/confirm",
-            json={"fields": {"truck_number": "3004"}},
+            json={"fields": {"truck_number": "1004"}},
             headers=csrf_headers(client),
         )
         assert response.status_code == 200
 
         identity = repository.get_driver_identity(owner["driver_id"], owner["company_id"])
-        assert identity["truck_unit_number"] == "3004"
-        assert identity["full_name"] == "Fareedullah"  # untouched fields survive
+        assert identity["truck_unit_number"] == "1004"
+        assert identity["full_name"] == "Test Driver"  # untouched fields survive
 
     def test_a_field_the_app_has_nowhere_to_put_is_ignored(self, owner):
         proposal = _propose(owner)
@@ -151,15 +151,15 @@ class TestTypingItInByHand:
         client = owner["client"]
         response = client.patch(
             f"/api/drivers/{owner['driver_id']}/details",
-            json={"driver_name": "Khalid Mandozai", "driver_phone": "619-635-1092",
-                  "truck_number": "3010", "trailer_number": "A016756"},
+            json={"driver_name": "Co Driver", "driver_phone": "619-555-0175",
+                  "truck_number": "1010", "trailer_number": "A000123"},
             headers=csrf_headers(client),
         )
         assert response.status_code == 200
 
         identity = repository.get_driver_identity(owner["driver_id"], owner["company_id"])
-        assert identity["full_name"] == "Khalid Mandozai"
-        assert identity["truck_unit_number"] == "3010"
+        assert identity["full_name"] == "Co Driver"
+        assert identity["truck_unit_number"] == "1010"
 
     def test_an_empty_body_is_a_400(self, owner):
         client = owner["client"]

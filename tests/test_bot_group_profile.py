@@ -18,7 +18,7 @@ def _make_message(text=None, chat_type="supergroup", chat_id=-100123456):
     message = MagicMock()
     message.chat.type = chat_type
     message.chat.id = chat_id
-    message.chat.title = "ODM 3001"
+    message.chat.title = "UNIT 1001"
     message.text = text
     message.reply = AsyncMock(return_value=MagicMock(edit_text=AsyncMock()))
     return message
@@ -36,7 +36,7 @@ def _make_callback(data):
 
 PROPOSAL = {
     "id": 7,
-    "fields": {"truck_number": "3001", "driver_name": "Fareedullah"},
+    "fields": {"truck_number": "1001", "driver_name": "Test Driver"},
     "unclear": [],
     "conflicts": [],
 }
@@ -51,7 +51,7 @@ class TestOfferAfterLinking:
             await bot.offer_group_profile(-100123456, driver_id=1, company_id=1)
 
         text, kwargs = fake_bot.send_message.await_args.args[1], fake_bot.send_message.await_args.kwargs
-        assert "3001" in text
+        assert "1001" in text
         buttons = kwargs["reply_markup"].inline_keyboard[0]
         assert [b.callback_data for b in buttons] == ["gp:apply:7", "gp:skip:7"]
 

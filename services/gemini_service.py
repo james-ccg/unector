@@ -225,8 +225,8 @@ title and description, in whatever shape the dispatcher happened to type them.
 Return ONLY JSON:
 
 {
-  "truck_number": "the truck/unit number, digits only where possible (e.g. '3001')",
-  "trailer_number": "the trailer number, e.g. '170146' or 'A016756'",
+  "truck_number": "the truck/unit number, digits only where possible (e.g. '1001')",
+  "trailer_number": "the trailer number, e.g. '580123' or 'B012345'",
   "driver_name": "the main driver's name",
   "driver_phone": "the main driver's phone, digits and separators exactly as written",
   "co_driver_name": "the second driver's name if the text names one, else null",

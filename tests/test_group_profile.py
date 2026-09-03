@@ -36,14 +36,14 @@ def company_and_driver(request):
 
 def test_empty_and_placeholder_values_are_dropped():
     fields = group_profile.clean_fields({
-        "truck_number": " 3001 ",
+        "truck_number": " 1001 ",
         "trailer_number": "",
-        "driver_name": "Fareedullah",
+        "driver_name": "Test Driver",
         "vin": "N/A",
         "driver_email": None,
         "co_driver_name": "  ",
     })
-    assert fields == {"truck_number": "3001", "driver_name": "Fareedullah"}
+    assert fields == {"truck_number": "1001", "driver_name": "Test Driver"}
 
 
 def test_unknown_keys_never_survive():
@@ -53,42 +53,42 @@ def test_unknown_keys_never_survive():
 
 def test_a_bio_that_disagrees_with_the_records_says_so():
     conflicts = group_profile.find_conflicts(
-        {"truck_number": "3001", "driver_name": "Hamza"},
-        {"truck_unit_number": "3004", "full_name": "Fareedullah"},
+        {"truck_number": "1001", "driver_name": "Sample Driver"},
+        {"truck_unit_number": "1004", "full_name": "Test Driver"},
     )
-    assert any("3001" in c and "3004" in c for c in conflicts)
-    assert any("Hamza" in c and "Fareedullah" in c for c in conflicts)
+    assert any("1001" in c and "1004" in c for c in conflicts)
+    assert any("Sample Driver" in c and "Test Driver" in c for c in conflicts)
 
 
 def test_a_bio_that_agrees_reports_nothing():
     assert group_profile.find_conflicts(
-        {"truck_number": "3001", "driver_name": "hamza"},
-        {"truck_unit_number": "3001", "full_name": "Hamza"},
+        {"truck_number": "1001", "driver_name": "sample driver"},
+        {"truck_unit_number": "1001", "full_name": "Sample Driver"},
     ) == []
 
 
 def test_a_driver_with_no_name_on_file_is_not_a_conflict():
     assert group_profile.find_conflicts(
-        {"driver_name": "Hamza"}, {"full_name": None, "truck_unit_number": None}
+        {"driver_name": "Sample Driver"}, {"full_name": None, "truck_unit_number": None}
     ) == []
 
 
 def test_a_vin_that_is_not_a_vin_is_flagged():
-    conflicts = group_profile.find_conflicts({"vin": "3AKJHHDR1PSLK340"}, {})  # 16 characters
+    conflicts = group_profile.find_conflicts({"vin": "1XPTEST000000000"}, {})  # 16 characters
     assert conflicts and "VIN" in conflicts[0]
 
 
 def test_a_real_vin_passes():
-    assert group_profile.find_conflicts({"vin": "3AKJHHDR1PSLK3404"}, {}) == []
+    assert group_profile.find_conflicts({"vin": "1XPTEST0000000001"}, {}) == []
 
 
 def test_a_short_phone_is_flagged():
-    conflicts = group_profile.find_conflicts({"driver_phone": "8384338"}, {})
+    conflicts = group_profile.find_conflicts({"driver_phone": "8385550"}, {})
     assert conflicts and "short" in conflicts[0]
 
 
 def test_a_formatted_phone_passes():
-    assert group_profile.find_conflicts({"driver_phone": "410-800-3954"}, {}) == []
+    assert group_profile.find_conflicts({"driver_phone": "410-555-0142"}, {}) == []
 
 
 # ------------------------------------------------------------------
@@ -99,8 +99,8 @@ def test_a_proposal_writes_nothing_until_it_is_confirmed(company_and_driver):
     company_id, driver_id = company_and_driver
     repository.save_group_profile_proposal(
         company_id, driver_id, -100900001,
-        title="ODM 3001", description="Driver: Fareedullah",
-        fields={"truck_number": "3001", "driver_name": "Fareedullah"},
+        title="UNIT 1001", description="Driver: Test Driver",
+        fields={"truck_number": "1001", "driver_name": "Test Driver"},
     )
     assert repository.get_driver_identity(driver_id, company_id)["full_name"] is None
 
@@ -109,47 +109,47 @@ def test_confirming_saves_the_driver_the_truck_and_the_trailer(company_and_drive
     company_id, driver_id = company_and_driver
     proposal = repository.save_group_profile_proposal(
         company_id, driver_id, -100900002,
-        title="ODM 3004 | HAMZA TRL# A016756",
-        description="Driver: HAMZA / Phone# 8384338554",
+        title="UNIT 1004 | SAMPLE DRIVER TRL# A000123",
+        description="Driver: SAMPLE DRIVER / Phone# 8385550118",
         fields={
-            "truck_number": "3004",
-            "trailer_number": "A016756",
-            "driver_name": "HAMZA",
-            "driver_phone": "8384338554",
-            "vin": "3AKJHHDR1PSLK3404",
-            "driver_email": "Hamzazani@hotmail.com",
+            "truck_number": "1004",
+            "trailer_number": "A000123",
+            "driver_name": "SAMPLE DRIVER",
+            "driver_phone": "8385550118",
+            "vin": "1XPTEST0000000001",
+            "driver_email": "driver@example.com",
         },
     )
     ok, reason = repository.apply_group_profile_proposal(proposal["id"], "telegram")
     assert (ok, reason) == (True, "ok")
 
     identity = repository.get_driver_identity(driver_id, company_id)
-    assert identity["full_name"] == "HAMZA"
-    assert identity["phone"] == "8384338554"
-    assert identity["email"] == "Hamzazani@hotmail.com"
-    assert identity["truck_unit_number"] == "3004"
+    assert identity["full_name"] == "SAMPLE DRIVER"
+    assert identity["phone"] == "8385550118"
+    assert identity["email"] == "driver@example.com"
+    assert identity["truck_unit_number"] == "1004"
 
     with get_session() as session:
         driver = session.get(models.Driver, driver_id)
-        assert driver.truck.vin == "3AKJHHDR1PSLK3404"
-        assert driver.truck.trailer.unit_number == "A016756"
+        assert driver.truck.vin == "1XPTEST0000000001"
+        assert driver.truck.trailer.unit_number == "A000123"
 
 
 def test_a_team_truck_keeps_both_drivers(company_and_driver):
     company_id, driver_id = company_and_driver
     proposal = repository.save_group_profile_proposal(
         company_id, driver_id, -100900003,
-        title="ODM 3001", description="CO-driver:Khalid Mandozai / 619-635-1092",
+        title="UNIT 1001", description="CO-driver:Co Driver / 619-555-0175",
         fields={
-            "driver_name": "Fareedullah",
-            "co_driver_name": "Khalid Mandozai",
-            "co_driver_phone": "619-635-1092",
+            "driver_name": "Test Driver",
+            "co_driver_name": "Co Driver",
+            "co_driver_phone": "619-555-0175",
         },
     )
     repository.apply_group_profile_proposal(proposal["id"], "dashboard")
     identity = repository.get_driver_identity(driver_id, company_id)
-    assert identity["co_driver_name"] == "Khalid Mandozai"
-    assert identity["co_driver_phone"] == "619-635-1092"
+    assert identity["co_driver_name"] == "Co Driver"
+    assert identity["co_driver_phone"] == "619-555-0175"
 
 
 def test_a_field_the_bio_does_not_mention_is_left_alone(company_and_driver):
@@ -157,19 +157,19 @@ def test_a_field_the_bio_does_not_mention_is_left_alone(company_and_driver):
     company_id, driver_id = company_and_driver
     first = repository.save_group_profile_proposal(
         company_id, driver_id, -100900004, title="t", description="d",
-        fields={"truck_number": "5000", "trailer_number": "TR-1", "driver_phone": "410-800-3954"},
+        fields={"truck_number": "5000", "trailer_number": "TR-1", "driver_phone": "410-555-0142"},
     )
     repository.apply_group_profile_proposal(first["id"], "dashboard")
 
     second = repository.save_group_profile_proposal(
         company_id, driver_id, -100900004, title="t", description="d",
-        fields={"driver_name": "Fareedullah"},
+        fields={"driver_name": "Test Driver"},
     )
     repository.apply_group_profile_proposal(second["id"], "dashboard")
 
     identity = repository.get_driver_identity(driver_id, company_id)
-    assert identity["full_name"] == "Fareedullah"
-    assert identity["phone"] == "410-800-3954"
+    assert identity["full_name"] == "Test Driver"
+    assert identity["phone"] == "410-555-0142"
     with get_session() as session:
         driver = session.get(models.Driver, driver_id)
         assert driver.truck.trailer.unit_number == "TR-1"
@@ -180,7 +180,7 @@ def test_confirming_twice_says_it_is_already_done(company_and_driver):
     company_id, driver_id = company_and_driver
     proposal = repository.save_group_profile_proposal(
         company_id, driver_id, -100900005, title="t", description="d",
-        fields={"driver_name": "Hamza"},
+        fields={"driver_name": "Sample Driver"},
     )
     assert repository.apply_group_profile_proposal(proposal["id"], "telegram") == (True, "ok")
     assert repository.apply_group_profile_proposal(proposal["id"], "dashboard") == (
@@ -210,7 +210,7 @@ def test_a_proposal_belongs_to_its_company(company_and_driver):
     company_id, driver_id = company_and_driver
     proposal = repository.save_group_profile_proposal(
         company_id, driver_id, -100900007, title="t", description="d",
-        fields={"driver_name": "Hamza"},
+        fields={"driver_name": "Sample Driver"},
     )
     assert repository.apply_group_profile_proposal(
         proposal["id"], "dashboard", company_id=company_id + 999
@@ -221,7 +221,7 @@ def test_dismissing_leaves_the_records_untouched(company_and_driver):
     company_id, driver_id = company_and_driver
     proposal = repository.save_group_profile_proposal(
         company_id, driver_id, -100900008, title="t", description="d",
-        fields={"driver_name": "Hamza", "truck_number": "9999"},
+        fields={"driver_name": "Sample Driver", "truck_number": "9999"},
     )
     assert repository.dismiss_group_profile_proposal(proposal["id"], "telegram") == (True, "ok")
     identity = repository.get_driver_identity(driver_id, company_id)
