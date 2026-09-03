@@ -212,9 +212,13 @@ touch icon with black, and a raster icon cannot follow the browser theme the way
 a transparent dark mark would vanish on a dark tab bar. Corners stay square because iOS and
 Android round them themselves.
 
-`icon-512.png` is generated for Android home screens and PWA installs but is not referenced yet -
-using it needs a web app manifest, which also changes whether browsers offer to install the site,
-so that is a deliberate decision rather than a side effect.
+`manifest.webmanifest` makes the site installable - an icon on the home screen that opens without
+browser chrome. Its icons are separate files from the ones above: Android may crop a maskable icon
+to any shape and only promises to keep a circle of radius 40% of the width, so that one is padded
+to fit. The mark is landscape, and at the ordinary inset its corners fall outside that circle. It
+is a separate file rather than the same one declared `"any maskable"`, because that combination
+makes a browser use the padded version everywhere, and padding meant for a crop looks like a
+mistake when nothing is cropping it.
 
 ## Testing
 

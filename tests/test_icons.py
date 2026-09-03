@@ -98,3 +98,80 @@ def test_the_page_offers_all_three_to_the_browser():
     assert 'href="/favicon.ico"' in html
     assert 'href="/favicon.svg"' in html
     assert 'rel="apple-touch-icon"' in html
+
+
+# ------------------------------------------------------------------
+# The manifest
+# ------------------------------------------------------------------
+
+def manifest() -> dict:
+    import json
+
+    return json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+
+
+def test_the_manifest_says_what_installing_gives_you():
+    data = manifest()
+    assert data["name"] == "Freight Pilot"
+    assert data["start_url"] == "/"
+    assert data["display"] == "standalone"
+    assert data["description"]
+
+
+def test_the_manifest_colours_are_the_ones_the_site_actually_uses():
+    """The splash screen and the browser chrome should not be a different
+    dark than the app they are wrapping."""
+    css = (ROOT / "frontend" / "src" / "index.css").read_text(encoding="utf-8")
+    data = manifest()
+    assert f"--bg: {data['background_color']}" in css
+    assert data["theme_color"] == data["background_color"]
+
+
+def test_every_icon_the_manifest_promises_exists_at_the_size_it_claims():
+    for icon in manifest()["icons"]:
+        path = PUBLIC / icon["src"].lstrip("/")
+        assert path.exists(), f"{icon['src']} is declared but not on disk"
+        width, height = (int(n) for n in icon["sizes"].split("x"))
+        with Image.open(path) as img:
+            assert (img.width, img.height) == (width, height), icon["src"]
+
+
+def test_the_maskable_icon_is_a_file_of_its_own():
+    """Declaring one file as "any maskable" makes a browser use the padded
+    version everywhere, and padding meant for a crop looks like a mistake
+    when nothing is cropping it."""
+    purposes = [icon.get("purpose") for icon in manifest()["icons"]]
+    assert "maskable" in purposes
+    assert "any" in purposes
+    assert not any(p and len(p.split()) > 1 for p in purposes), "an icon serves two purposes"
+
+    sources = [icon["src"] for icon in manifest()["icons"]]
+    assert len(sources) == len(set(sources)), "the same file is declared twice"
+
+
+def test_the_maskable_mark_survives_a_round_crop():
+    """Android may crop to any shape and only promises to keep a circle of
+    radius 40% of the width. The mark is landscape, so its corners are what
+    run out of room - at the ordinary inset they fall outside."""
+    import math
+
+    from PIL import ImageChops
+
+    icon = next(i for i in manifest()["icons"] if i.get("purpose") == "maskable")
+    with Image.open(PUBLIC / icon["src"].lstrip("/")) as img:
+        tile = img.convert("RGB")
+
+    background = Image.new("RGB", tile.size, tile.getpixel((0, 0)))
+    left, top, right, bottom = ImageChops.difference(tile, background).convert("L").getbbox()
+
+    half_diagonal = math.hypot((right - left) / 2, (bottom - top) / 2)
+    safe_radius = 0.40 * tile.width
+    assert half_diagonal <= safe_radius, (
+        f"corners sit {half_diagonal:.0f}px from centre, safe radius is {safe_radius:.0f}px"
+    )
+
+
+def test_the_page_links_the_manifest():
+    html = INDEX.read_text(encoding="utf-8")
+    assert 'rel="manifest"' in html
+    assert "theme-color" in html

@@ -10,6 +10,20 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Makes the site installable: an icon on the home screen that opens
+         without browser chrome. The manifest's own icons are separate files
+         from the ones above - Android may crop a maskable icon to any shape
+         and only promises to keep the middle 80%, so that one is padded for
+         it, and a padded icon looks small everywhere it is not masked. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- The colour the browser paints its own chrome. Follows the device
+         rather than the in-app theme toggle, which lives in localStorage and
+         is not readable from a meta tag - these are the same two values as
+         --bg in frontend/src/index.css. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8f8f6" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#161616" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard." />
     <title>Freight Pilot - Dispatch Management</title>

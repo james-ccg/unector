@@ -47,6 +47,17 @@ MARK = "#ffffff"
 # a mark run to the edge looks cramped once the corners are rounded.
 INSET = 0.76
 
+# Android may crop a maskable icon to any shape it likes, and only promises
+# to keep a circle of radius 40% of the width. The mark is landscape, so at
+# 76% its corners land 237px from the centre of a 512px tile against a safe
+# radius of 205 - outside, and clipped on a round mask. 58% brings the whole
+# thing inside with room to spare.
+#
+# It is a separate file rather than the same one declared "any maskable":
+# that combination makes a browser use one image for both, and an icon
+# padded for the mask looks small everywhere it is not being masked.
+MASKABLE_INSET = 0.58
+
 
 def mark(size: int) -> Image.Image:
     """favicon.svg rasterised with the light-on-dark colours.
@@ -82,12 +93,12 @@ def trimmed(size: int) -> Image.Image:
     return drawn.crop(box) if box else drawn
 
 
-def tile(size: int) -> Image.Image:
+def tile(size: int, inset: float = INSET) -> Image.Image:
     """One square icon: the mark, inset, centred on the brand background."""
     canvas = Image.new("RGB", (size, size), BG)
 
     inner = trimmed(size)
-    room = round(size * INSET)
+    room = round(size * inset)
     scale = min(room / inner.width, room / inner.height)
     inner = inner.resize(
         (max(1, round(inner.width * scale)), max(1, round(inner.height * scale))),
@@ -111,7 +122,15 @@ def main() -> int:
     large = PUBLIC / "icon-512.png"
     master.save(large, "PNG", optimize=True)
 
-    for path in (ico, touch, large):
+    # The manifest wants a 192 as well as a 512, and Android picks whichever
+    # is closest rather than scaling the big one well.
+    small = PUBLIC / "icon-192.png"
+    master.resize((192, 192), Image.LANCZOS).save(small, "PNG", optimize=True)
+
+    maskable = PUBLIC / "icon-maskable-512.png"
+    tile(512, MASKABLE_INSET).save(maskable, "PNG", optimize=True)
+
+    for path in (ico, touch, large, small, maskable):
         print(f"Wrote {path.relative_to(ROOT)}  {path.stat().st_size / 1024:.0f} KB")
     return 0
 
