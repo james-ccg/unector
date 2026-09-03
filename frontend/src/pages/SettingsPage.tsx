@@ -226,6 +226,10 @@ export default function SettingsPage() {
   // sees this section at all.
   const [paymentMethods, setPaymentMethods] = useState<SavedPaymentMethod[]>([])
   const [cardBusy, setCardBusy] = useState(false)
+  // Shown inside the billing card, not in the page-top banner. This
+  // section is far down a long page - an error announced at the top is
+  // an error nobody standing here can see.
+  const [cardError, setCardError] = useState('')
 
   const loadPaymentMethods = useCallback(async () => {
     if (!isOwner) return
@@ -247,25 +251,24 @@ export default function SettingsPage() {
 
   const handleAddPaymentMethod = async () => {
     setCardBusy(true)
-    setBanner(null)
+    setCardError('')
     try {
       const { url } = await billingApi.startPaymentMethodSetup()
       window.location.href = url
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't open the payment form.") })
+      setCardError(errorMessage(err, "Couldn't open the payment form."))
       setCardBusy(false)
     }
   }
 
   const handleRemovePaymentMethod = async (id: string) => {
     setCardBusy(true)
-    setBanner(null)
+    setCardError('')
     try {
       await billingApi.removePaymentMethod(id)
       await loadPaymentMethods()
-      setBanner({ kind: 'success', text: 'Payment method removed.' })
     } catch (err) {
-      setBanner({ kind: 'error', text: errorMessage(err, "Couldn't remove that payment method.") })
+      setCardError(errorMessage(err, "Couldn't remove that payment method."))
     } finally {
       setCardBusy(false)
     }
@@ -825,6 +828,12 @@ export default function SettingsPage() {
                       </li>
                     ))}
                   </ul>
+                )}
+
+                {cardError && (
+                  <Alert kind="error" onDismiss={() => setCardError('')}>
+                    {cardError}
+                  </Alert>
                 )}
 
                 <div className="integration-actions" style={{ marginTop: 16 }}>

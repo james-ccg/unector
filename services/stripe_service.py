@@ -164,9 +164,19 @@ def create_setup_session(company_id: int) -> str:
     session = stripe.checkout.Session.create(
         mode="setup",
         customer=_ensure_customer(company_id, company),
+        # Required in setup mode. A subscription session infers it from the
+        # price; there is no price here, so it has to be stated - and it
+        # decides which payment methods Stripe offers. USD, matching the
+        # prices stripe_setup.py creates.
+        currency="usd",
         success_url=f"{FRONTEND_URL}/settings?billing=card_saved",
         cancel_url=f"{FRONTEND_URL}/settings?billing=card_cancelled",
         metadata={"company_id": str(company_id)},
+        # Same reason as create_checkout_session above, and it bites harder
+        # here: Managed Payments is on by default and supports only
+        # "subscription" and "payment", so a setup session is refused
+        # outright rather than merely failing on an API version.
+        managed_payments={"enabled": False},
     )
     return session.url
 
