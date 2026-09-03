@@ -107,3 +107,31 @@ class TestProductionSecretCheck:
         })
         assert result.returncode != 0
         assert "SAMSARA_TEST_MODE" in result.stderr
+
+
+class TestSmtpFromAddress:
+    """Mail has to say who sent it.
+
+    os.getenv's default only applies when the variable is absent. .env
+    ships with a bare "SMTP_FROM_EMAIL=", which is set-but-empty, so the
+    default never fired and every message went out with From: "" - which
+    mail servers treat as a spam signal when they accept it at all."""
+
+    def _reload(self, monkeypatch, value):
+        import importlib
+        import config
+        if value is None:
+            monkeypatch.delenv("SMTP_FROM_EMAIL", raising=False)
+        else:
+            monkeypatch.setenv("SMTP_FROM_EMAIL", value)
+        monkeypatch.setenv("SMTP_USERNAME", "sender@example.com")
+        return importlib.reload(config)
+
+    def test_falls_back_to_the_username_when_set_but_empty(self, monkeypatch):
+        assert self._reload(monkeypatch, "").SMTP_FROM_EMAIL == "sender@example.com"
+
+    def test_falls_back_when_absent(self, monkeypatch):
+        assert self._reload(monkeypatch, None).SMTP_FROM_EMAIL == "sender@example.com"
+
+    def test_an_explicit_value_still_wins(self, monkeypatch):
+        assert self._reload(monkeypatch, "noreply@example.com").SMTP_FROM_EMAIL == "noreply@example.com"

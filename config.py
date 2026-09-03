@@ -102,7 +102,11 @@ SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME)
+# os.getenv's default only applies when the variable is absent. Set but
+# empty - "SMTP_FROM_EMAIL=" in .env, which is how it ships - returns "",
+# and every message then went out with an empty From header. Mail servers
+# treat that as a strong spam signal when they accept it at all.
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip() or SMTP_USERNAME
 
 # Cloudflare Turnstile (bot protection on register/login) - free tier,
 # sign up at dash.cloudflare.com/?to=/:account/turnstile. Leave both empty
