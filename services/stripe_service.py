@@ -290,6 +290,51 @@ def _get_card_fingerprint(sub: dict) -> str | None:
         return None
 
 
+def sync_from_stripe(company_id: int) -> dict:
+    """Re-reads a company's subscription from Stripe and applies it locally.
+
+    Webhooks are how this app normally learns that a subscription started,
+    changed or ended - and a webhook that never arrives leaves the database
+    describing a company as free while Stripe bills it. That happens in
+    local development every time (Stripe cannot reach localhost without
+    `stripe listen`), and in production any time a delivery is lost for
+    longer than Stripe retries.
+
+    Deliberately routed through the same handlers the webhook uses, so
+    there is one description of what a subscription means to this app
+    rather than two that drift apart.
+
+    Returns what it found, for a caller that wants to report it."""
+    _require_configured()
+    company = get_company_billing_info(company_id)
+    if not company:
+        raise ValueError(f"No company with id={company_id}")
+    if not company["stripe_customer_id"]:
+        return {"company_id": company_id, "found": None, "applied": False}
+
+    subs = stripe.Subscription.list(
+        customer=company["stripe_customer_id"], status="all", limit=10
+    )
+    # Newest first, and anything still live wins over anything finished.
+    live = [s for s in subs.data if s["status"] not in ("canceled", "incomplete_expired")]
+    chosen = live[0] if live else (subs.data[0] if subs.data else None)
+
+    if chosen is None:
+        return {"company_id": company_id, "found": None, "applied": False}
+
+    if chosen["status"] in ("canceled", "incomplete_expired"):
+        _handle_subscription_deleted(chosen)
+    else:
+        _handle_subscription_created(chosen)
+
+    return {
+        "company_id": company_id,
+        "found": chosen["id"],
+        "status": chosen["status"],
+        "applied": True,
+    }
+
+
 def _handle_subscription_created(sub: dict) -> None:
     company_id = _company_id_from_subscription(sub)
     if not company_id:
