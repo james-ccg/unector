@@ -2138,3 +2138,221 @@ def get_game_leaderboard(period: str, limit: int = 20) -> list[dict]:
                 "recorded_at": detail.recorded_at.isoformat() if detail else None,
             })
         return board
+
+
+# ------------------------------------------------------------------
+# Truck/driver details read out of a dispatch group's bio
+#
+# The bot proposes, a person disposes: nothing below writes to Driver or
+# Truck until apply_group_profile_proposal is called, and that only happens
+# when someone confirms - from the dashboard or from Telegram.
+# ------------------------------------------------------------------
+
+def get_driver_identity(driver_id: int, company_id: int) -> dict | None:
+    """The driver's own details, with nothing filled in for them.
+
+    get_driver_details falls back to the bot-assigned ID when a driver has
+    no name, which is right for display and wrong here: comparing a bio
+    against "D001" would report a conflict with a name nobody ever set."""
+    with get_session() as session:
+        driver = session.get(models.Driver, driver_id)
+        if not driver or driver.company_id != company_id:
+            return None
+        return {
+            "id": driver.id,
+            "full_name": driver.full_name,
+            "phone": driver.phone,
+            "email": driver.email,
+            "co_driver_name": driver.co_driver_name,
+            "co_driver_phone": driver.co_driver_phone,
+            "truck_unit_number": driver.truck.unit_number if driver.truck else None,
+        }
+
+
+def _proposal_dict(row: models.GroupProfileProposal) -> dict:
+    return {
+        "id": row.id,
+        "driver_id": row.driver_id,
+        "driver_name": row.driver.full_name if row.driver else None,
+        "telegram_group_id": row.telegram_group_id,
+        "source_title": row.source_title,
+        "source_description": row.source_description,
+        "fields": row.fields or {},
+        "unclear": row.unclear or [],
+        "conflicts": row.conflicts or [],
+        "status": row.status,
+        "resolved_via": row.resolved_via,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def save_group_profile_proposal(
+    company_id: int,
+    driver_id: int,
+    telegram_group_id: int,
+    *,
+    title: str | None,
+    description: str | None,
+    fields: dict,
+    unclear: list | None = None,
+    conflicts: list | None = None,
+) -> dict:
+    """Records what the bio said, for someone to confirm.
+
+    A re-read supersedes whatever was pending for the same driver rather
+    than queueing behind it - the bio was edited, so the older reading is
+    simply out of date and confirming it would write stale details."""
+    with get_session() as session:
+        session.query(models.GroupProfileProposal).filter(
+            models.GroupProfileProposal.driver_id == driver_id,
+            models.GroupProfileProposal.status == "pending",
+        ).update({"status": "dismissed", "resolved_via": "superseded",
+                  "resolved_at": models.now_utc()}, synchronize_session=False)
+
+        row = models.GroupProfileProposal(
+            company_id=company_id,
+            driver_id=driver_id,
+            telegram_group_id=telegram_group_id,
+            source_title=title,
+            source_description=description,
+            fields=fields,
+            unclear=unclear or [],
+            conflicts=conflicts or [],
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _proposal_dict(row)
+
+
+def get_pending_proposal_for_group(telegram_group_id: int) -> dict | None:
+    with get_session() as session:
+        row = (
+            session.query(models.GroupProfileProposal)
+            .filter(
+                models.GroupProfileProposal.telegram_group_id == telegram_group_id,
+                models.GroupProfileProposal.status == "pending",
+            )
+            .order_by(models.GroupProfileProposal.id.desc())
+            .first()
+        )
+        return _proposal_dict(row) if row else None
+
+
+def list_pending_proposals(company_id: int) -> list[dict]:
+    with get_session() as session:
+        rows = (
+            session.query(models.GroupProfileProposal)
+            .filter(
+                models.GroupProfileProposal.company_id == company_id,
+                models.GroupProfileProposal.status == "pending",
+            )
+            .order_by(models.GroupProfileProposal.id.desc())
+            .all()
+        )
+        return [_proposal_dict(r) for r in rows]
+
+
+def apply_group_profile_proposal(
+    proposal_id: int, via: str, *, company_id: int | None = None
+) -> tuple[bool, str]:
+    """Copies a confirmed reading onto the driver and their truck.
+
+    Returns (ok, reason). "already_resolved" is the ordinary case rather
+    than an error: the same proposal is confirmable from two places, and
+    whoever gets there second should be told it is already done, not shown
+    a failure.
+
+    Missing fields are left alone - a bio that names no trailer must not
+    blank out the trailer already on file. A truck or trailer number that
+    the company does not have yet is created, because the bio naming it is
+    the company telling us it exists."""
+    with get_session() as session:
+        row = session.get(models.GroupProfileProposal, proposal_id)
+        if not row or (company_id is not None and row.company_id != company_id):
+            return False, "not_found"
+        if row.status != "pending":
+            return False, "already_resolved"
+
+        driver = session.get(models.Driver, row.driver_id)
+        if not driver:
+            return False, "driver_gone"
+
+        fields = row.fields or {}
+
+        def value(key: str) -> str | None:
+            raw = fields.get(key)
+            if raw is None:
+                return None
+            text = str(raw).strip()
+            return text or None
+
+        for column, key in (
+            ("full_name", "driver_name"),
+            ("phone", "driver_phone"),
+            ("email", "driver_email"),
+            ("co_driver_name", "co_driver_name"),
+            ("co_driver_phone", "co_driver_phone"),
+        ):
+            found = value(key)
+            if found:
+                setattr(driver, column, found)
+
+        truck = None
+        unit = value("truck_number")
+        if unit:
+            truck = (
+                session.query(models.Truck)
+                .filter(models.Truck.company_id == row.company_id, models.Truck.unit_number == unit)
+                .first()
+            )
+            if not truck:
+                truck = models.Truck(company_id=row.company_id, unit_number=unit)
+                session.add(truck)
+                session.flush()
+            driver.truck_id = truck.id
+        elif driver.truck_id:
+            truck = session.get(models.Truck, driver.truck_id)
+
+        if truck:
+            vin = value("vin")
+            if vin:
+                truck.vin = vin
+
+            trailer_unit = value("trailer_number")
+            if trailer_unit:
+                trailer = (
+                    session.query(models.Trailer)
+                    .filter(
+                        models.Trailer.company_id == row.company_id,
+                        models.Trailer.unit_number == trailer_unit,
+                    )
+                    .first()
+                )
+                if not trailer:
+                    trailer = models.Trailer(company_id=row.company_id, unit_number=trailer_unit)
+                    session.add(trailer)
+                    session.flush()
+                truck.trailer_id = trailer.id
+
+        row.status = "applied"
+        row.resolved_via = via
+        row.resolved_at = models.now_utc()
+        session.commit()
+        return True, "ok"
+
+
+def dismiss_group_profile_proposal(
+    proposal_id: int, via: str, *, company_id: int | None = None
+) -> tuple[bool, str]:
+    with get_session() as session:
+        row = session.get(models.GroupProfileProposal, proposal_id)
+        if not row or (company_id is not None and row.company_id != company_id):
+            return False, "not_found"
+        if row.status != "pending":
+            return False, "already_resolved"
+        row.status = "dismissed"
+        row.resolved_via = via
+        row.resolved_at = models.now_utc()
+        session.commit()
+        return True, "ok"

@@ -92,6 +92,9 @@ class Truck(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
     unit_number: Mapped[str] = mapped_column(String(30))
     samsara_vehicle_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Read off the group bio where dispatchers write it. Recorded for
+    # identification only - nothing in the app looks it up.
+    vin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     trailer_id: Mapped[int | None] = mapped_column(ForeignKey("trailers.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
@@ -106,6 +109,16 @@ class Driver(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
     driver_bot_id: Mapped[str] = mapped_column(String(20))       # bot-assigned ID# (e.g. "D001")
     full_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Contact details. Usually read out of the truck's Telegram group bio
+    # (see GroupProfileProposal) and confirmed by a person, or typed in by
+    # hand. Nullable throughout: a dispatch group's bio is free text and
+    # often carries only some of this.
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Team trucks run two drivers. The second one shares the group and the
+    # truck, so they are recorded here rather than as a Driver of their own.
+    co_driver_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    co_driver_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     telegram_group_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     telegram_group_title: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Guruh nomi
     telegram_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -461,3 +474,44 @@ class GameScore(Base):
     # month a score belongs to, rather than any timestamp the client sent -
     # a device clock is not evidence.
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)
+
+
+class GroupProfileProposal(Base):
+    """Truck and driver details read out of a dispatch group's bio, waiting
+    for a person to say yes.
+
+    Carriers run one Telegram group per truck and write the unit number,
+    trailer, driver and phone numbers into the group's description. The bot
+    reads that when the group is linked and proposes it here. Nothing is
+    copied onto the Driver or Truck record until someone confirms - from the
+    dashboard or from Telegram, whichever comes first - because a bio is
+    something a dispatcher typed in a hurry, not a source of record.
+
+    The text it was read from is kept alongside the fields so whoever
+    confirms can see where each value came from instead of trusting it."""
+    __tablename__ = "group_profile_proposals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id"), index=True)
+    telegram_group_id: Mapped[int] = mapped_column(BigInteger)
+
+    # What was read, kept verbatim.
+    source_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # What was made of it: the fields, and the ones the reader was unsure of.
+    fields: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    unclear: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Anything that disagrees with what is already on file, e.g. the bio says
+    # truck 3001 but the driver is assigned to 3004. Shown, never auto-fixed.
+    conflicts: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # pending -> applied | dismissed. One row per group at a time: a new read
+    # supersedes any pending one rather than stacking up.
+    status: Mapped[str] = mapped_column(String(12), default="pending", index=True)
+    resolved_via: Mapped[str | None] = mapped_column(String(12), nullable=True)  # telegram | dashboard
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+    driver: Mapped["Driver"] = relationship(lazy="joined")

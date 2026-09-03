@@ -218,6 +218,58 @@ def compare_bol_with_rc(rc_json: dict, files: list[tuple[bytes, str]]) -> dict:
     return _parse_json_response(response)
 
 
+GROUP_PROFILE_PROMPT = """You are reading a Telegram group that a trucking company uses
+as one truck's dispatch chat. Companies keep the truck and driver details in the group's
+title and description, in whatever shape the dispatcher happened to type them.
+
+Return ONLY JSON:
+
+{
+  "truck_number": "the truck/unit number, digits only where possible (e.g. '3001')",
+  "trailer_number": "the trailer number, e.g. '170146' or 'A016756'",
+  "driver_name": "the main driver's name",
+  "driver_phone": "the main driver's phone, digits and separators exactly as written",
+  "co_driver_name": "the second driver's name if the text names one, else null",
+  "co_driver_phone": "the second driver's phone if shown, else null",
+  "vin": "the truck's VIN if shown, else null",
+  "driver_email": "an email address for the driver if shown, else null",
+  "unclear": ["names of any fields above you are NOT confident about"]
+}
+
+Rules:
+
+- The title and the description often repeat each other. Where they disagree, prefer the
+  description, and add that field to "unclear".
+- Labels vary: "Truck#", "TRK", "Unit", "TRL#", "Trailer#", "Driver:", "CO-driver:",
+  "mail#", "Tablet#". Match on meaning, not on the exact label.
+- A label with nothing after it (e.g. "Tablet#" alone) means the value is absent - return
+  null, do not guess.
+- Never invent a value. A field you cannot find is null, and null fields do NOT go in
+  "unclear" - that list is for values you did read but are unsure about.
+- Phone numbers keep their original formatting. Do not normalise them.
+"""
+
+
+def extract_group_profile(title: str | None, description: str | None) -> dict:
+    """Reads truck and driver details out of a dispatch group's title and bio.
+
+    Carriers run one Telegram group per truck and keep the unit number,
+    trailer, driver and phone numbers in the group's description - typed by
+    hand, so no two are laid out the same way. That rules out a regex and
+    makes this a reading job.
+
+    Returns the fields it found plus "unclear", the ones it read but is not
+    confident about. Nothing here writes to the database: the caller shows
+    this to a person and applies it only once they say so."""
+    text = f"TITLE: {title or '(none)'}\n\nDESCRIPTION:\n{description or '(empty)'}"
+    response = _generate_with_retry(
+        model=MODEL,
+        contents=[GROUP_PROFILE_PROMPT, text],
+        config=JSON_CONFIG,
+    )
+    return _parse_json_response(response)
+
+
 def _parse_json_response(response) -> dict:
     """Converts Gemini's response into JSON (comes back clean with
     response_mime_type=json, but code fences are stripped as a safety net anyway)."""
