@@ -36,12 +36,6 @@ export default function UpdatesPage() {
                   for apps whose consent screen is still under review, and ours is. Settings warns
                   two days ahead; the limit disappears once the review clears.
                 </li>
-                <li>
-                  Notifications currently fire for three things: a driver&apos;s group finishing
-                  linking, a group description waiting to be checked, and detention being
-                  requested. The rest of the list in Settings is real and switchable, but nothing
-                  triggers those events yet.
-                </li>
                 <li>The offline game only works offline from your second visit, once the browser has cached it.</li>
                 <li>No public status page or uptime figure - we will not publish one we cannot measure.</li>
                 <li>
@@ -74,6 +68,12 @@ export default function UpdatesPage() {
                 <li>
                   The bot has been telling drivers &ldquo;your dispatcher has been
                   notified&rdquo; when detention is requested. Until now nothing was.
+                </li>
+                <li>
+                  All eleven kinds of news are now wired: loads dispatched and moved along,
+                  drivers and groups, billing, and account security. The sign-in notice only
+                  fires for an address you haven&apos;t signed in from before - one that went off
+                  every time you logged in would just teach you to ignore it.
                 </li>
               </ul>
             </div>

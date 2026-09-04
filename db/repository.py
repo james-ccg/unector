@@ -2638,3 +2638,26 @@ def mark_notifications_read(
         count = query.update({"read_at": models.now_utc()}, synchronize_session=False)
         session.commit()
         return count
+
+
+def login_already_seen_from(account_type: str, account_id: int, ip: str) -> bool:
+    """Whether this account has been told about a sign-in from this address.
+
+    A sign-in notice that fires every time somebody logs in is noise, and
+    this one cannot be switched off - so it only fires for an address the
+    account has not signed in from before. The notification rows are the
+    record: there is no separate login log, and adding one to answer a
+    question this can already answer would be a table nobody reads."""
+    if not ip:
+        return True  # Nothing to compare, so nothing worth alarming anyone about.
+    with get_session() as session:
+        return session.query(
+            session.query(models.Notification)
+            .filter(
+                models.Notification.account_type == account_type,
+                models.Notification.account_id == account_id,
+                models.Notification.event == "security.new_login",
+                models.Notification.body.like(f"%{ip}%"),
+            )
+            .exists()
+        ).scalar()

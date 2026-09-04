@@ -607,7 +607,7 @@ def login_owner(request: Request, body: OwnerLoginRequest, response: Response):
         raise HTTPException(401, "That MC number and password don't match an account. Check both and try again.")
 
     return _finish_password_step(
-        response, "owner", company.id, {"company_name": company.company_name, "company_id": company.id}
+        request, response, "owner", company.id, {"company_name": company.company_name, "company_id": company.id}
     )
 
 
@@ -620,12 +620,37 @@ def login_dispatcher(request: Request, body: DispatcherLoginRequest, response: R
         raise HTTPException(401, "That username and password don't match an account. Check both and try again.")
 
     return _finish_password_step(
-        response, "dispatcher", dispatcher.id,
+        request, response, "dispatcher", dispatcher.id,
         {"company_id": dispatcher.company_id, "dispatcher_id": dispatcher.id, "username": dispatcher.username},
     )
 
 
-def _finish_password_step(response: Response, account_type: str, account_id: int, extra_claims: dict):
+def _notify_sign_in(request: Request, claims: dict) -> None:
+    """Tells an account about a sign-in from an address it has not used.
+
+    Not every sign-in: this notice cannot be switched off, and one that
+    fires whenever somebody logs in normally is noise that teaches people
+    to ignore the one that mattered. A first sight of an address is the
+    signal worth sending."""
+    from db.repository import login_already_seen_from
+    from services import notification_service
+
+    account_type, account_id = _notification_account(claims)
+    ip = _rate_limit_key(request)
+    if login_already_seen_from(account_type, account_id, ip):
+        return
+
+    notification_service.notify(
+        claims["company_id"], "security.new_login",
+        title="A new sign-in to your account",
+        body=f"Signed in from {ip}. If that was not you, change the password "
+             f"and turn on two-factor authentication in Settings.",
+        link="/settings#security",
+        account_types=(account_type,),
+    )
+
+
+def _finish_password_step(request: Request, response: Response, account_type: str, account_id: int, extra_claims: dict):
     """Shared by both login endpoints: once the password checks out, either
     issue a real session (cookie) when no 2FA is enabled, or a short-lived
     "pending" token the frontend must complete a second factor with. The
@@ -640,6 +665,7 @@ def _finish_password_step(response: Response, account_type: str, account_id: int
     if not status["any_enabled"]:
         token = create_session_token(base_claims)
         set_session_cookies(response, token)
+        _notify_sign_in(request, base_claims)
         return {"role": account_type, **extra_claims, **_gmail_connected_field(account_type, extra_claims["company_id"])}
 
     available_methods = [
@@ -931,6 +957,16 @@ def reset_password(request: Request, body: ResetPasswordRequest):
         raise HTTPException(400, "This reset link has expired. Request a new one from the login page.")
 
     set_company_password(company_id, hash_password(body.new_password))
+
+    from services import notification_service
+
+    notification_service.notify(
+        company_id, "security.password_changed",
+        title="Your password was changed",
+        body="If that was not you, reset it again straight away and turn on "
+             "two-factor authentication in Settings.",
+        link="/settings#security", account_types=("owner",),
+    )
     return {"success": True}
 
 
@@ -1762,6 +1798,7 @@ def google_login_start(request: Request, switch_account: bool = False):
 
 @app.get("/api/auth/google/callback")
 def google_login_callback(
+    request: Request,
     response: Response, code: str | None = None, state: str | None = None, error: str | None = None,
 ):
     """Google redirects the browser back here. On success this either sets a
@@ -1800,7 +1837,7 @@ def google_login_callback(
 
     company = companies[0]
     result = _finish_password_step(
-        response, "owner", company.id,
+        request, response, "owner", company.id,
         {"company_id": company.id, "company_name": company.company_name},
     )
 
@@ -2778,6 +2815,7 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_session_token(session_claims)
     set_session_cookies(response, token)
+    _notify_sign_in(request, session_claims)
     return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
 
@@ -2817,6 +2855,7 @@ async def login_2fa_webauthn_verify(
     session_claims = {k: v for k, v in claims.items() if k not in ("purpose", "exp")}
     token = create_session_token(session_claims)
     set_session_cookies(response, token)
+    _notify_sign_in(request, session_claims)
     return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
 
 

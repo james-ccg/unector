@@ -414,13 +414,49 @@ def _handle_subscription_updated(sub: dict) -> None:
     company_id = _company_id_from_subscription(sub)
     if not company_id:
         return
+
+    before = get_company_billing_info(company_id) or {}
+    was = before.get("subscription_status")
+
     interval = sub["items"]["data"][0]["price"]["recurring"]["interval"]
+    status = sub["status"]
     update_company_subscription(
         company_id,
-        status=sub["status"],
+        status=status,
         billing_interval=interval,
         trial_ends_at=_ts_to_datetime(sub.get("trial_end")),
     )
+
+    # Told once per change, not once per webhook: Stripe re-sends, and an
+    # unchanged status is not news.
+    if status == was:
+        return
+
+    from services import notification_service
+
+    if status in ("past_due", "unpaid"):
+        notification_service.notify(
+            company_id, "billing.payment_failed",
+            title="A payment did not go through",
+            body="The plan stops at the end of this period unless it is paid. "
+                 "Check the payment method in Settings.",
+            link="/settings", account_types=("owner",),
+        )
+    elif status == "active" and was in ("trialing", "past_due", "unpaid", "incomplete"):
+        notification_service.notify(
+            company_id, "billing.plan_changed",
+            title="Your plan is active",
+            body="The payment went through and the subscription is running.",
+            link="/settings", account_types=("owner",),
+        )
+    elif status == "paused":
+        notification_service.notify(
+            company_id, "billing.plan_changed",
+            title="Your plan is paused",
+            body="The trial ended with no payment method on file. Add one in "
+                 "Settings to pick up where you left off.",
+            link="/settings", account_types=("owner",),
+        )
 
 
 def _handle_subscription_deleted(sub: dict) -> None:
@@ -431,3 +467,12 @@ def _handle_subscription_deleted(sub: dict) -> None:
     # subscription-toggle endpoint already blocks new activations past
     # PLAN_LIMITS; existing ones ride until the owner adjusts them.
     update_company_subscription(company_id, tier="free", status="canceled", trial_ends_at=None)
+
+    from services import notification_service
+
+    notification_service.notify(
+        company_id, "billing.plan_changed",
+        title="Your plan has ended",
+        body="The account is back on the free plan. Nothing further will be charged.",
+        link="/settings", account_types=("owner",),
+    )

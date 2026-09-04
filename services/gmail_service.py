@@ -114,7 +114,25 @@ def connection_status(company_id: int) -> dict:
 def mark_token_invalid(company_id: int) -> None:
     from datetime import datetime, timezone
 
+    # Only news the first time. This is called on every failed refresh, and
+    # a connection that stays broken would otherwise notify on every attempt.
+    already = get_company_credential(company_id, _TOKEN_INVALID_CRED)
     save_company_credential(company_id, _TOKEN_INVALID_CRED, datetime.now(timezone.utc).isoformat())
+    if already:
+        return
+
+    # Dispatch quietly stops working when this happens - rate confirmations
+    # are no longer read - and the owner otherwise finds out from a driver
+    # asking where their load is. Hence a notice that cannot be muted.
+    from services import notification_service
+
+    notification_service.notify(
+        company_id, "security.integration_lost",
+        title="Gmail disconnected",
+        body="Rate confirmations aren't being read until it is reconnected. "
+             "Reconnect from Settings, Integrations.",
+        link="/settings#gmail", account_types=("owner",),
+    )
 
 
 def clear_token_invalid(company_id: int) -> None:

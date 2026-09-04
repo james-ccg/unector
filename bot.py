@@ -78,6 +78,7 @@ from db.repository import (
     dismiss_group_profile_proposal,
     companies_due_trial_reminder,
     mark_trial_reminder_sent,
+    create_notification,
 )
 from services import (
     gemini_service, email_service, samsara_service, geo_utils, group_profile,
@@ -632,6 +633,12 @@ async def _post_load_template(message: Message, driver, company, load_id: str, d
             data["del_lat"], data["del_lng"] = del_coords
 
         save_load(company.id, driver.id, load_id, data)
+        await notification_service.notify_async(
+            company.id, "load.dispatched",
+            title=f"Load {load_id} sent to {driver.driver_bot_id}",
+            body=(data.get("broker_name") or "").strip() or None,
+            link="/dashboard",
+        )
     except Exception:
         logger.exception("Failed to save RC data for load %s", load_id)
         await message.reply(
@@ -1089,6 +1096,12 @@ async def _run_loadpics(chat_id: int, trigger_message: Message, files: list[tupl
 
     if result.get("loading_ok") and load:
         update_load_status(load.id, "loaded")
+        await notification_service.notify_async(
+            load.company_id, "load.status_changed",
+            title=f"Load {load.load_id} is loaded",
+            body="Marked from the driver's group.",
+            link="/dashboard",
+        )
 
     formatted_message = _format_loadpics_response(result)
     await bot.send_message(chat_id, formatted_message, parse_mode="HTML")
@@ -1529,6 +1542,23 @@ async def _send_trial_reminders_once() -> None:
             continue
 
         mark_trial_reminder_sent(company["id"])
+
+        # Recorded on the bell as well, so the notice is findable after the
+        # email is buried. Written directly rather than through notify():
+        # this event defaults to email too, and the message above is the
+        # better-written one - routing it through notify() would send a
+        # second, blunter copy of the same news.
+        try:
+            create_notification(
+                company["id"], "owner", company["id"],
+                event="billing.trial_ending",
+                title=f"Your trial ends on {ends_on}",
+                body="After that the plan renews by itself. Manage it in Settings.",
+                link="/settings",
+            )
+        except Exception:  # noqa: BLE001 - the email is what matters here
+            logger.exception("Couldn't record the trial reminder for company %s", company["id"])
+
         logger.info("Trial reminder sent to company %s (trial ends %s).", company["id"], ends_on)
 
 

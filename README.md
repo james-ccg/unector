@@ -129,7 +129,7 @@ for carriers who keep nothing in the description.
 `seed.py` still exists for quick local/test setup without going through the dashboard:
 
 ```bash
-python seed.py --group-id -1001234567890 --mc 123456 --company "Test Carrier LLC" --driver-name "Test Driver"
+python seed.py --group-id -1001234567890 --mc 123456 --company "Carrier LLC" --driver-name "Driver One"
 ```
 
 To find a group's ID for `seed.py`: add the bot to the driver+dispatch group and send `/myid` there.

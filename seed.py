@@ -3,7 +3,7 @@ Seed script - creates one company and one driver for testing, and links
 the driver to a given Telegram group ID.
 
 Usage:
-    python seed.py --group-id -1001234567890 --mc 123456 --company "Test Carrier LLC" --driver-name "Test Driver"
+    python seed.py --group-id -1001234567890 --mc 123456 --company "Carrier LLC" --driver-name "Driver One"
 
 How to find the group ID: send /myid to the bot, it will print the group ID.
 """
@@ -65,9 +65,9 @@ def seed(group_id: int, mc_number: str, company_name: str, driver_name: str, dri
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Add test data for Unector")
     parser.add_argument("--group-id", type=int, required=True, help="Telegram group ID (e.g. -1001234567890)")
-    parser.add_argument("--mc", default="TEST001", help="MC number (optional for testing)")
-    parser.add_argument("--company", default="Test Company", help="Company name")
-    parser.add_argument("--driver-name", default="Test Driver", help="Driver's full name")
+    parser.add_argument("--mc", default="000001", help="MC number (optional for testing)")
+    parser.add_argument("--company", default="Carrier LLC", help="Company name")
+    parser.add_argument("--driver-name", default="Driver One", help="Driver's full name")
     parser.add_argument("--driver-id", default="D001", help="Driver's bot ID#")
     parser.add_argument(
         "--owner-password", default=None,
