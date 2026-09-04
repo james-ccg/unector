@@ -19,9 +19,9 @@ import stripe
 from config import PLAN_PRICES, STRIPE_SECRET_KEY
 
 PRODUCT_NAMES = {
-    "pro": "Freight Pilot Pro",
-    "max_5x": "Freight Pilot Max 5x",
-    "max_20x": "Freight Pilot Max 20x",
+    "pro": "Unector Pro",
+    "max_5x": "Unector Max 5x",
+    "max_20x": "Unector Max 20x",
 }
 
 ENV_VAR_NAMES = {
@@ -34,7 +34,7 @@ ENV_VAR_NAMES = {
 }
 
 
-# "Software as a Service (SaaS) - Business Use". Freight Pilot is sold to
+# "Software as a Service (SaaS) - Business Use". Unector is sold to
 # trucking companies, not consumers, so the business-use code is the right
 # one - the consumer variant is taxed differently in several US states.
 #

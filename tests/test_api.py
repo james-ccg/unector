@@ -1,5 +1,5 @@
 """
-Test suite for Freight Pilot API endpoints.
+Test suite for Unector API endpoints.
 Run: pytest tests/ -v
 
 The session lives in an httpOnly cookie now (not a bearer token in the

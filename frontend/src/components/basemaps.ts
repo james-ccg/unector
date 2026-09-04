@@ -30,7 +30,7 @@ const OSM_CREDIT =
 // The licence is the reason it is this one and not a sharper alternative:
 //
 //   * EOX publish several years of this layer. Everything from 2018 on is
-//     CC BY-NC-SA - non-commercial. Freight Pilot is a paid product, so
+//     CC BY-NC-SA - non-commercial. Unector is a paid product, so
 //     those are not available to it however good they look. The 2016 layer
 //     is plain CC BY 4.0, which is.
 //   * Esri's World Imagery is sharper and still answers on its legacy

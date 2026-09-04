@@ -29,12 +29,12 @@ def send_otp_email(to_address: str, code: str) -> None:
         )
 
     body = (
-        f"Your Freight Pilot verification code is: {code}\n\n"
+        f"Your Unector verification code is: {code}\n\n"
         "This code expires in 10 minutes. If you didn't request this, you can "
         "safely ignore this email."
     )
     message = MIMEText(body)
-    message["Subject"] = f"{code} is your Freight Pilot verification code"
+    message["Subject"] = f"{code} is your Unector verification code"
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_address
 
@@ -56,15 +56,15 @@ def send_registration_verification_email(to_address: str, code: str, verify_url:
         )
 
     body = (
-        "Thanks for signing up for Freight Pilot! Confirm this is your inbox to finish "
+        "Thanks for signing up for Unector! Confirm this is your inbox to finish "
         "creating your account.\n\n"
         f"Click here to confirm: {verify_url}\n\n"
         f"Or enter this code on the registration page: {code}\n\n"
-        "This expires in 1 hour. If you didn't start signing up for Freight Pilot, you can "
+        "This expires in 1 hour. If you didn't start signing up for Unector, you can "
         "safely ignore this email."
     )
     message = MIMEText(body)
-    message["Subject"] = f"{code} - Confirm your email for Freight Pilot"
+    message["Subject"] = f"{code} - Confirm your email for Unector"
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_address
 
@@ -85,13 +85,13 @@ def send_password_reset_email(to_address: str, reset_url: str) -> None:
         )
 
     body = (
-        "Someone (hopefully you) requested a password reset for your Freight Pilot account.\n\n"
+        "Someone (hopefully you) requested a password reset for your Unector account.\n\n"
         f"Set a new password here: {reset_url}\n\n"
         "This link expires in 1 hour and can only be used once. If you didn't request this, "
         "you can safely ignore this email - your password won't change unless you click the link above."
     )
     message = MIMEText(body)
-    message["Subject"] = "Reset your Freight Pilot password"
+    message["Subject"] = "Reset your Unector password"
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_address
 
@@ -125,11 +125,11 @@ def send_notification_email(to_address: str, title: str, body: str | None, link:
     lines += [
         "You can choose which of these reach you, and how, in Settings > Notifications.",
         "",
-        "Freight Pilot",
+        "Unector",
     ]
 
     message = MIMEText("\n".join(lines))
-    message["Subject"] = f"Freight Pilot: {title}"
+    message["Subject"] = f"Unector: {title}"
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_address
 
@@ -202,18 +202,18 @@ def send_trial_ending_email(
 
     body = (
         f"Hello{' ' + company_name if company_name else ''},\n\n"
-        f"Your Freight Pilot trial ends on {ends_on}.\n\n"
+        f"Your Unector trial ends on {ends_on}.\n\n"
         f"{what_happens}\n\n"
         f"Manage or cancel any time here: {settings_url}\n\n"
         "One thing worth knowing: until this first payment goes through, your only "
         "payment method can't be removed - it is the only way it can be taken. Once "
         "it has, you can remove it whenever you like, and doing so ends the plan when "
         "the period you have already paid for runs out.\n\n"
-        "Freight Pilot"
+        "Unector"
     )
 
     message = MIMEText(body)
-    message["Subject"] = f"Your Freight Pilot trial ends on {ends_on}"
+    message["Subject"] = f"Your Unector trial ends on {ends_on}"
     message["From"] = SMTP_FROM_EMAIL
     message["To"] = to_address
 

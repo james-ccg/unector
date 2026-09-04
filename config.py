@@ -13,7 +13,7 @@ load_dotenv()
 # --- Global (single) settings ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///dispatch_bot.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///unector.db")
 
 # Optional: if a direct connection to api.telegram.org is blocked/unstable,
 # set a proxy address here, e.g. http://user:pass@host:port or socks5://host:port
@@ -90,9 +90,9 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 # ------------------------------------------------------------------
 # WebAuthn (security keys / Touch ID / Windows Hello). RP_ID must be the
 # bare domain the frontend is served from (e.g. "localhost" in dev,
-# "app.freightpilot.com" in production) - no scheme, no port.
+# "app.unector.com" in production) - no scheme, no port.
 WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "localhost")
-WEBAUTHN_RP_NAME = os.getenv("WEBAUTHN_RP_NAME", "Freight Pilot")
+WEBAUTHN_RP_NAME = os.getenv("WEBAUTHN_RP_NAME", "Unector")
 WEBAUTHN_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:5173")
 
 # Email OTP - sent via plain SMTP (separate from the per-company Gmail OAuth

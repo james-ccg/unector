@@ -14,7 +14,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # Nominatim's usage policy requires a descriptive User-Agent identifying the
 # application - requests without one get blocked. Also: max ~1 request/second,
 # which is fine here since we only geocode once per load (at /dispatch time).
-HEADERS = {"User-Agent": "FreightPilotBot/1.0 (dispatch automation)"}
+HEADERS = {"User-Agent": "UnectorBot/1.0 (dispatch automation)"}
 
 
 async def geocode_address(address_text: str) -> tuple[float, float] | None:

@@ -1,4 +1,4 @@
-# Freight Pilot
+# Unector
 
 A Telegram dispatch bot for trucking companies: pulls Rate Confirmations from email, extracts
 load details with AI, checks load pictures and BOLs, forwards PODs, tracks GPS proximity to
@@ -6,7 +6,7 @@ pickup/delivery, and gives owners a web dashboard (Mini App) to manage drivers a
 
 ## Status
 
-Freight Pilot is new. The first commit is dated 19 August 2026, and the whole history is
+Unector is new. The first commit is dated 19 August 2026, and the whole history is
 visible in `git log` - there is no earlier version. Everything described below works, but read
 this before assuming it is a finished product:
 
@@ -101,7 +101,7 @@ bot or the API - both call `init_db()` on startup. Nothing to do manually here.
 The root-level `migrate_db*.py` scripts (`migrate_db.py`, `migrate_db_add_billing.py`, etc.)
 are one-off, additive migrations for a database created *before* a given feature existed -
 skip all of them on a brand-new database. Only run one if you're upgrading an existing
-`freight_pilot.db` and a feature added after your last update isn't working.
+`unector.db` and a feature added after your last update isn't working.
 
 ### 5. Add a company and driver
 
@@ -261,7 +261,7 @@ Frontend type-checking/build: `cd frontend && npm run build`.
 against a real uvicorn over real HTTP - registration, 2FA, tenant isolation,
 CSRF, rate limits, the error copy - there is an end-to-end script. It starts
 its own server on port 8099 with a throwaway database, so it touches neither
-`freight_pilot.db` nor anything you already have running:
+`unector.db` nor anything you already have running:
 
 ```bash
 python scripts/e2e.py

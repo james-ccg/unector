@@ -1,5 +1,5 @@
 """
-Freight Pilot Bot - main entry point.
+Unector Bot - main entry point.
 
 Getting started:
     pip install -r requirements.txt
@@ -136,7 +136,7 @@ async def update_group_title(group_id: int, title: str):
 async def handle_start(message: Message):
     """Welcome message + command list - the first thing most users see."""
     await message.reply(
-        "👋 **Welcome to Freight Pilot!**\n\n"
+        "👋 **Welcome to Unector!**\n\n"
         "I help trucking companies automate dispatch: I pull rate confirmations from email, "
         "extract load details with AI, check your BOL/POD photos, and track GPS proximity to "
         "pickup/delivery.\n\n"
@@ -161,7 +161,7 @@ async def handle_faq(message: Message):
     """Frequently asked questions - mirrors the web dashboard's FAQ page."""
     await message.reply(
         "**Frequently Asked Questions**\n\n"
-        "**What is Freight Pilot?**\n"
+        "**What is Unector?**\n"
         "An AI-powered dispatch management system that automates load management through "
         "Telegram - connects Gmail, extracts load details with AI, tracks GPS, and gives "
         "owners/dispatchers a real-time web dashboard.\n\n"
@@ -250,7 +250,7 @@ async def handle_link(message: Message):
         return
     
     await message.reply(
-        f"🔗 **Freight Pilot Dashboard Link**\n\n"
+        f"🔗 **Unector Dashboard Link**\n\n"
         f"{MINIAPP_URL}\n\n"
         f"📱 **How to use:**\n"
         f"• Copy the link above\n"
@@ -267,14 +267,14 @@ async def handle_link(message: Message):
 
 @dp.message(Command("verify2fa"))
 async def handle_verify2fa(message: Message):
-    """Links this Telegram account to a Freight Pilot login, so it can be
+    """Links this Telegram account to a Unector login, so it can be
     used to receive 2FA codes. Usage: /verify2fa <code shown on the
     Settings > Security page>"""
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         await message.reply(
             "Usage: /verify2fa <code>\n\n"
-            "Get a code from Settings → Security → Telegram in the Freight Pilot dashboard."
+            "Get a code from Settings → Security → Telegram in the Unector dashboard."
         )
         return
 
@@ -487,7 +487,7 @@ async def handle_dashboard(message: Message):
     # Web App buttons only work in private chats with the bot
     if message.chat.type != "private":
         await message.reply(
-            f"📊 **Freight Pilot Dashboard**\n\n"
+            f"📊 **Unector Dashboard**\n\n"
             f"To access the dashboard from any device:\n\n"
             f"**Option 1 (Telegram):**\n"
             f"Open a private chat with me and send /dashboard\n\n"
@@ -501,12 +501,12 @@ async def handle_dashboard(message: Message):
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="📊 Open Freight Pilot Dashboard", web_app=WebAppInfo(url=MINIAPP_URL))],
+            [InlineKeyboardButton(text="📊 Open Unector Dashboard", web_app=WebAppInfo(url=MINIAPP_URL))],
             [InlineKeyboardButton(text="🔗 Direct Link", url=MINIAPP_URL)]
         ]
     )
     await message.reply(
-        "**📊 Freight Pilot Dashboard**\n\n"
+        "**📊 Unector Dashboard**\n\n"
         "Choose how to open:\n"
         "• **Web App button** - opens inside Telegram\n"
         "• **Direct Link** - opens in your browser\n\n"

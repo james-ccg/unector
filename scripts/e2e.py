@@ -7,7 +7,7 @@ production does and talks to it over the network, so anything that only
 breaks outside the test harness has somewhere to show up.
 
 It brings its own database on a temporary file and its own port, so it never
-touches freight_pilot.db or a server you already have running.
+touches unector.db or a server you already have running.
 
     python scripts/e2e.py            # run it
     python scripts/e2e.py --keep     # leave the temp server up afterwards

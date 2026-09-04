@@ -9,7 +9,7 @@
  */
 
 const REVOKE_STEPS =
-  "Go to myaccount.google.com/permissions, remove Freight Pilot's access there, then try again."
+  "Go to myaccount.google.com/permissions, remove Unector's access there, then try again."
 
 const MESSAGES: Record<string, string> = {
   error_no_refresh_token:

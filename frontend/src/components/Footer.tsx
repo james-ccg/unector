@@ -10,7 +10,7 @@ export default function Footer() {
           <div className="footer-column footer-brand">
             <Link to="/" className="footer-logo">
               <span className="logo-icon" role="presentation" />
-              <span className="logo-text">Freight Pilot</span>
+              <span className="logo-text">Unector</span>
             </Link>
             <p className="footer-description">
               Smart dispatch management for modern trucking companies. Automate your operations
@@ -79,7 +79,7 @@ export default function Footer() {
         </div>
 
         <div className="footer-bottom">
-          <p className="copyright">© 2026 Freight Pilot. All rights reserved.</p>
+          <p className="copyright">© 2026 Unector. All rights reserved.</p>
         </div>
       </div>
     </footer>

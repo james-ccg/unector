@@ -11,7 +11,7 @@
  * touches /api. Caching API responses would mean showing stale dispatch data
  * as though it were current, which is worse than showing nothing.
  */
-const CACHE = 'freight-pilot-shell-v1'
+const CACHE = 'unector-shell-v1'
 const SHELL = '/index.html'
 
 self.addEventListener('install', (event) => {

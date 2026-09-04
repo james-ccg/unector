@@ -1,7 +1,7 @@
 /**
  * Consent for the browser storage this app uses.
  *
- * Freight Pilot has no analytics, no advertising, and no third-party
+ * Unector has no analytics, no advertising, and no third-party
  * trackers, so the usual cookie-banner categories mostly don't apply. What it
  * does store is listed honestly below, and the two optional groups genuinely
  * do nothing until someone opts in - the switches are not decorative.

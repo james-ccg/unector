@@ -44,7 +44,7 @@ export default function OfflineGate({ children }: { children: React.ReactNode })
         </p>
         <h1 className="offline-title">You&apos;re offline</h1>
         <p className="offline-text">
-          Freight Pilot needs a connection to load dispatches. We&apos;ll pick up where you left
+          Unector needs a connection to load dispatches. We&apos;ll pick up where you left
           off as soon as you&apos;re back &mdash; the page returns on its own.
         </p>
 
@@ -53,7 +53,7 @@ export default function OfflineGate({ children }: { children: React.ReactNode })
         </Suspense>
 
         <p className="offline-back">
-          Connection back already? <Link to="/">Reload Freight Pilot</Link>
+          Connection back already? <Link to="/">Reload Unector</Link>
         </p>
       </div>
     </div>

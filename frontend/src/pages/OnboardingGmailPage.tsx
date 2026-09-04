@@ -67,7 +67,7 @@ export default function OnboardingGmailPage() {
             </p>
             <h1 className="page-hero-title">Connect Gmail to Finish Setup</h1>
             <p className="page-hero-description">
-              Freight Pilot reads rate confirmations straight from your inbox, so dispatch runs
+              Unector reads rate confirmations straight from your inbox, so dispatch runs
               automatically - without this, that's still manual. It's a one-time step and takes
               under a minute.
             </p>
@@ -85,7 +85,7 @@ export default function OnboardingGmailPage() {
                   Secure OAuth connection
                 </p>
                 <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>
-                  You'll approve access on Google's own consent screen - Freight Pilot never
+                  You'll approve access on Google's own consent screen - Unector never
                   sees your password, and you can revoke access any time from Settings.
                 </p>
               </div>

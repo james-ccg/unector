@@ -1,5 +1,5 @@
 """Builds the social preview image - the picture Telegram, X and the rest
-show when someone pastes a link to Freight Pilot.
+show when someone pastes a link to Unector.
 
 Why this exists as a script rather than a file somebody exported once: the
 image has to stay in step with the logo and the brand colours, and it is
@@ -41,7 +41,7 @@ TEXT = "#f5f4f0"
 MUTED = "#8f8d86"
 ACCENT = "#c3f832"
 
-TITLE = "Freight Pilot"
+TITLE = "Unector"
 TAGLINE = [
     "Dispatch management for trucking companies,",
     "run through Telegram.",
@@ -129,10 +129,10 @@ def main() -> int:
     # Ownership stamped into the file itself, the way the logo SVG carries
     # it, so the image can be identified wherever it ends up.
     meta = PngImagePlugin.PngInfo()
-    meta.add_text("Title", "Freight Pilot")
-    meta.add_text("Author", "Freight Pilot LLC")
-    meta.add_text("Copyright", "Freight Pilot LLC")
-    meta.add_text("Description", "Social preview card for Freight Pilot")
+    meta.add_text("Title", "Unector")
+    meta.add_text("Author", "Unector LLC")
+    meta.add_text("Copyright", "Unector LLC")
+    meta.add_text("Description", "Social preview card for Unector")
     meta.add_text("Software", "scripts/make_og_image.py")
 
     OUT.parent.mkdir(parents=True, exist_ok=True)

@@ -63,7 +63,7 @@ def seed(group_id: int, mc_number: str, company_name: str, driver_name: str, dri
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Add test data for Freight Pilot")
+    parser = argparse.ArgumentParser(description="Add test data for Unector")
     parser.add_argument("--group-id", type=int, required=True, help="Telegram group ID (e.g. -1001234567890)")
     parser.add_argument("--mc", default="TEST001", help="MC number (optional for testing)")
     parser.add_argument("--company", default="Test Company", help="Company name")

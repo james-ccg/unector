@@ -43,9 +43,9 @@ def describe(session, company) -> tuple[int, int, int]:
 def main() -> int:
     delete = "--delete" in sys.argv
 
-    if delete and not list(ROOT.glob("freight_pilot.db.bak-*")):
-        print("No freight_pilot.db.bak-* alongside the database. Back it up first:")
-        print("  cp freight_pilot.db freight_pilot.db.bak-$(date +%Y%m%d-%H%M%S)")
+    if delete and not list(ROOT.glob("unector.db.bak-*")):
+        print("No unector.db.bak-* alongside the database. Back it up first:")
+        print("  cp unector.db unector.db.bak-$(date +%Y%m%d-%H%M%S)")
         return 1
 
     with get_session() as session:

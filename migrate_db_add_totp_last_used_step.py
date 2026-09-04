@@ -12,7 +12,7 @@ import sqlite3
 
 
 def migrate():
-    conn = sqlite3.connect('freight_pilot.db')
+    conn = sqlite3.connect('unector.db')
     cursor = conn.cursor()
 
     cursor.execute('PRAGMA table_info(two_factor_secrets)')

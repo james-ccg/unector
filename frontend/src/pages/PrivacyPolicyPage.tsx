@@ -17,14 +17,14 @@ export default function PrivacyPolicyPage() {
           <div className="legal-content">
             <section>
               <p>
-                Freight Pilot ("Freight Pilot," "we," "us") is a dispatch-automation service for trucking companies,
-                operated by Freight Pilot LLC. This policy explains what
+                Unector ("Unector," "we," "us") is a dispatch-automation service for trucking companies,
+                operated by Unector LLC. This policy explains what
                 information we collect through our Telegram bot, web dashboard, and related services (together, the
                 "Service"), how we use it, and the choices you have. It applies to the company owners and dispatchers
                 who use the Service, and to the drivers whose information an owner or dispatcher adds to it.
               </p>
               <p>
-                We built Freight Pilot to automate dispatch paperwork, not to build a profile on anyone. We don't
+                We built Unector to automate dispatch paperwork, not to build a profile on anyone. We don't
                 sell data, and we don't use your business's information for advertising.
               </p>
             </section>
@@ -113,7 +113,7 @@ export default function PrivacyPolicyPage() {
 
             <section>
               <h2>3. Who we share it with</h2>
-              <p>We share data only with the service providers needed to run Freight Pilot, and only what each one needs to do its job:</p>
+              <p>We share data only with the service providers needed to run Unector, and only what each one needs to do its job:</p>
               <ul>
                 <li><strong>Google</strong> - Gemini API (document/photo extraction) and, only if you connect your inbox, the Gmail API (reads emails to find RCs, sends emails to deliver PODs - nothing else in your inbox is accessed).</li>
                 <li><strong>Stripe</strong> - payment processing and subscription management.</li>
@@ -124,7 +124,7 @@ export default function PrivacyPolicyPage() {
               </ul>
               <p>
                 We may also disclose information if required by law, or to protect the rights, property, or safety
-                of Freight Pilot, our users, or the public.
+                of Unector, our users, or the public.
               </p>
             </section>
 
@@ -160,7 +160,7 @@ export default function PrivacyPolicyPage() {
             <section>
               <h2>7. Children's privacy</h2>
               <p>
-                Freight Pilot is a business tool for trucking companies and is not directed at, or knowingly used
+                Unector is a business tool for trucking companies and is not directed at, or knowingly used
                 by, anyone under 18.
               </p>
             </section>

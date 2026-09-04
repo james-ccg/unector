@@ -44,7 +44,7 @@ def _send_via_twilio(to_phone_number: str, code: str) -> None:
 
     client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
     client.messages.create(
-        body=f"Your Freight Pilot verification code is: {code}",
+        body=f"Your Unector verification code is: {code}",
         from_=TWILIO_FROM_NUMBER,
         to=to_phone_number,
     )

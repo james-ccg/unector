@@ -1,5 +1,5 @@
 """
-One-time setup script: authorizes a company's Gmail account for Freight Pilot
+One-time setup script: authorizes a company's Gmail account for Unector
 and stores the resulting refresh token (encrypted) in the database.
 
 Run this once per company. It opens a browser window where you log into the
@@ -72,7 +72,7 @@ def run_setup(company_id: int):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Authorize a company's Gmail account for Freight Pilot")
+    parser = argparse.ArgumentParser(description="Authorize a company's Gmail account for Unector")
     parser.add_argument("--company-id", type=int, required=True, help="The company's internal DB id")
     args = parser.parse_args()
     run_setup(args.company_id)

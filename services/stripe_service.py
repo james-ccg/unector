@@ -121,7 +121,7 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
         # as a bare 500 on the upgrade button.
         #
         # Opting out explicitly rather than upgrading the SDK: whether Stripe
-        # or Freight Pilot is the merchant of record decides who is liable for
+        # or Unector is the merchant of record decides who is liable for
         # collecting and remitting sales tax, which is a business decision, not
         # something to adopt silently as a side effect of a version bump. Turn
         # this on deliberately (and upgrade the SDK with it) when that call is

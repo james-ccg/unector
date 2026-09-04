@@ -1,4 +1,4 @@
-// Freight Pilot Mini App — frontend logic.
+// Unector Mini App — frontend logic.
 // Talks to the FastAPI backend (miniapp/api.py) served from the same origin.
 
 const API = ""; // same-origin, so relative paths work directly

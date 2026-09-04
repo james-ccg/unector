@@ -1,4 +1,4 @@
-# Freight Pilot Website - Status
+# Unector Website - Status
 
 Supersedes the original plan for a separate hand-written static marketing
 site (`miniapp/static/public/*` - HTML/CSS/JS, described in an earlier
@@ -54,5 +54,5 @@ owner is routed to onboarding until that's done.
 - Footer social links (Twitter/LinkedIn) are still placeholder "Coming
   soon" - no real profile URLs exist yet to link to. Privacy Policy and
   Terms of Service are real pages now (`/pages/privacy`, `/pages/terms`),
-  naming Freight Pilot LLC (Delaware) as the operating entity - the
+  naming Unector LLC (Delaware) as the operating entity - the
   content hasn't been reviewed by a lawyer, though.

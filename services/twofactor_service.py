@@ -33,7 +33,7 @@ def generate_totp_secret() -> str:
     return pyotp.random_base32()
 
 
-def totp_provisioning_qr_png(secret: str, account_label: str, issuer: str = "Freight Pilot") -> bytes:
+def totp_provisioning_qr_png(secret: str, account_label: str, issuer: str = "Unector") -> bytes:
     """Builds the otpauth:// URI for this secret and renders it as a PNG QR
     code, so the owner can scan it straight into their authenticator app."""
     uri = pyotp.TOTP(secret).provisioning_uri(name=account_label, issuer_name=issuer)
@@ -43,7 +43,7 @@ def totp_provisioning_qr_png(secret: str, account_label: str, issuer: str = "Fre
     return buffer.getvalue()
 
 
-def totp_provisioning_qr_data_url(secret: str, account_label: str, issuer: str = "Freight Pilot") -> str:
+def totp_provisioning_qr_data_url(secret: str, account_label: str, issuer: str = "Unector") -> str:
     """Same as above, but returns a data: URL the frontend can drop
     straight into an <img src="..."> with no extra request."""
     png_bytes = totp_provisioning_qr_png(secret, account_label, issuer)

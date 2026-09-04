@@ -1,4 +1,4 @@
-"""The card people see when a Freight Pilot link is pasted somewhere.
+"""The card people see when a Unector link is pasted somewhere.
 
 Telegram, X and the rest fetch the page with a crawler that does not run
 JavaScript, so none of this can come from React - it has to be in the HTML
@@ -59,7 +59,7 @@ def test_the_preview_image_carries_its_ownership():
     from PIL import Image
 
     with Image.open(OG_IMAGE) as img:
-        assert img.text.get("Author") == "Freight Pilot LLC"
+        assert img.text.get("Author") == "Unector LLC"
 
 
 # ------------------------------------------------------------------
@@ -71,7 +71,7 @@ def test_the_card_names_the_product_not_the_host(client):
     """Without og:site_name the crawler falls back to the domain, so a
     tunnel made the card say "Trycloudflare" above the title."""
     html = client.get("/").text
-    assert meta(html, "og:site_name") == "Freight Pilot"
+    assert meta(html, "og:site_name") == "Unector"
 
 
 @needs_build
@@ -117,7 +117,7 @@ def test_a_deep_link_still_gets_the_tags(client):
     """People share /pages/pricing, not just the root. React Router serves
     those from the same index.html, so the card has to survive the path."""
     html = client.get("/pages/pricing").text
-    assert meta(html, "og:site_name") == "Freight Pilot"
+    assert meta(html, "og:site_name") == "Unector"
     assert meta(html, "og:image").startswith("http")
 
 

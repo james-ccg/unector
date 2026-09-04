@@ -85,7 +85,7 @@ export default function LoginPage() {
           .filter(Boolean) as TwoFaChallenge['methods']
         setChallenge({ requires_2fa: true, pending_token: pending, methods })
       } else if (reason === 'no_account') {
-        setError("No Freight Pilot account is linked to that Google address. Log in with your MC number, then connect Gmail from Settings.")
+        setError("No Unector account is linked to that Google address. Log in with your MC number, then connect Gmail from Settings.")
       } else if (reason === 'ambiguous') {
         setError('More than one account uses that Google address. Please log in with your MC number instead.')
       } else {
@@ -242,7 +242,7 @@ export default function LoginPage() {
           <div className="page-hero-content">
             <Link to="/" className="nav-logo" style={{ display: 'inline-flex', marginBottom: '32px' }}>
               <div className="logo-icon">FP</div>
-              <span className="logo-text">Freight Pilot</span>
+              <span className="logo-text">Unector</span>
             </Link>
             <h1 className="page-hero-title">Welcome Back</h1>
             <p className="page-hero-description">

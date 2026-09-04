@@ -68,7 +68,7 @@ class TestCommandArg:
         assert bot._command_arg("/dispatch   ", "dispatch") == ""
 
     def test_works_with_botname_suffix(self):
-        assert bot._command_arg("/dispatch@FreightPilot_bot 22222", "dispatch") == "22222"
+        assert bot._command_arg("/dispatch@Unector_bot 22222", "dispatch") == "22222"
 
 
 class TestDispatchTextWithNumber:

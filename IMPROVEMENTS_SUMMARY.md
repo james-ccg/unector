@@ -1,4 +1,4 @@
-# Freight Pilot Bot - Recent Improvements
+# Unector Bot - Recent Improvements
 
 ## Summary of Changes
 
@@ -76,12 +76,12 @@ Open the dashboard to manage drivers and dispatchers:
 
 ### After:
 ```
-Welcome! Please use the button below to access your Freight Pilot dashboard:
+Welcome! Please use the button below to access your Unector dashboard:
 ```
 
 ### Button Text:
-- Changed from: "📊 Open Freight Pilot"
-- Changed to: "📊 Open Freight Pilot Dashboard"
+- Changed from: "📊 Open Unector"
+- Changed to: "📊 Open Unector Dashboard"
 
 ---
 
@@ -151,7 +151,7 @@ Alternate path - no load number:
 1. Send: /dashboard
 2. Bot should respond with:
    - "Welcome! Please use the button below..."
-   - Button: "📊 Open Freight Pilot Dashboard"
+   - Button: "📊 Open Unector Dashboard"
 3. Click button to open Mini App
 ```
 

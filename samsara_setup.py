@@ -32,7 +32,7 @@ def run_setup(company_id: int, api_key: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Connect a company's Samsara API key for Freight Pilot")
+    parser = argparse.ArgumentParser(description="Connect a company's Samsara API key for Unector")
     parser.add_argument("--company-id", type=int, required=True, help="The company's internal DB id")
     parser.add_argument("--api-key", required=True, help="Samsara API token")
     args = parser.parse_args()

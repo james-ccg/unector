@@ -4,7 +4,7 @@ import './FontToggle.css'
 // Every option resolves to a face already available to the page - the brand
 // webfont, or a system stack - so switching costs no extra download.
 const OPTIONS: { value: FontChoice; label: string; sample: string }[] = [
-  { value: 'default', label: 'Freight Pilot', sample: 'Aa' },
+  { value: 'default', label: 'Unector', sample: 'Aa' },
   { value: 'system', label: 'System', sample: 'Aa' },
   { value: 'serif', label: 'Serif', sample: 'Aa' },
 ]

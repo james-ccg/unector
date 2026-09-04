@@ -15,7 +15,7 @@ const STEPS: { command: string; title: string; description: string }[] = [
     command: '/dispatch 4471',
     title: 'The load lands in the group',
     description:
-      'Freight Pilot finds that rate confirmation in your connected inbox, reads the PDF, and posts the pickup, delivery, times, rate and notes into the driver’s Telegram group — formatted the same way every time.',
+      'Unector finds that rate confirmation in your connected inbox, reads the PDF, and posts the pickup, delivery, times, rate and notes into the driver’s Telegram group — formatted the same way every time.',
   },
   {
     command: '/loadpics',
@@ -100,7 +100,7 @@ export default function HomePage() {
             </h1>
             <p className="hero-description">
               Automate load management, track drivers in real-time, and streamline communication
-              with brokers. Freight Pilot brings intelligence to your dispatch operations through
+              with brokers. Unector brings intelligence to your dispatch operations through
               Telegram.
             </p>
             {/* Router links, not <a href>: a plain anchor to /register tore

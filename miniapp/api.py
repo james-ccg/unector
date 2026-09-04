@@ -1,5 +1,5 @@
 """
-Freight Pilot Mini App - backend API.
+Unector Mini App - backend API.
 
 Serves two things:
 1. A JSON API for login (owner via MC#+password, dispatcher via username+password)
@@ -90,7 +90,7 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Freight Pilot Mini App API", lifespan=_lifespan)
+app = FastAPI(title="Unector Mini App API", lifespan=_lifespan)
 
 # Brute-force / abuse protection on auth and OTP endpoints. In-memory storage
 # is fine for this single-process deployment - no Redis needed.
@@ -2886,7 +2886,7 @@ else:
     @app.get("/", response_class=HTMLResponse)
     def serve_missing_frontend_notice():
         return (
-            "<h1>Freight Pilot</h1>"
+            "<h1>Unector</h1>"
             "<p>The web dashboard hasn't been built yet. Run "
             "<code>cd frontend &amp;&amp; npm install &amp;&amp; npm run build</code>, "
             "then restart this server.</p>"

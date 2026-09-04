@@ -81,7 +81,7 @@ export default function Header({ transparent = false }: HeaderProps) {
       <nav className="nav container">
         <Link to="/" className="nav-logo">
           <span className="logo-icon" role="presentation" />
-          <span className="logo-text">Freight Pilot</span>
+          <span className="logo-text">Unector</span>
         </Link>
 
         <div className={`nav-menu ${isMenuOpen ? 'show-menu' : ''}`} id="nav-menu">

@@ -112,7 +112,7 @@ def manifest() -> dict:
 
 def test_the_manifest_says_what_installing_gives_you():
     data = manifest()
-    assert data["name"] == "Freight Pilot"
+    assert data["name"] == "Unector"
     assert data["start_url"] == "/"
     assert data["display"] == "standalone"
     assert data["description"]

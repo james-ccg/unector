@@ -46,7 +46,7 @@ export default function TrustPage() {
               <Icon name="shield" size={28} /> Trust &amp; Platform Stats
             </h1>
             <p className="page-description">
-              Counted from our own database when you loaded this page. Freight Pilot started in
+              Counted from our own database when you loaded this page. Unector started in
               August 2026, so these are small numbers - they are also the real ones, which is the
               only reason to put them on a page at all.
             </p>
@@ -58,7 +58,7 @@ export default function TrustPage() {
             <div className="stat-card card">
               <div className="stat-number">{loading || error ? '—' : stats?.companies ?? 0}</div>
               <div className="stat-label">Companies</div>
-              <p className="stat-desc">Carriers running dispatch through Freight Pilot</p>
+              <p className="stat-desc">Carriers running dispatch through Unector</p>
             </div>
 
             <div className="stat-card card">
@@ -76,7 +76,7 @@ export default function TrustPage() {
           </div>
 
           <div className="testimonials">
-            <h2 className="section-title">What Freight Pilot Automates</h2>
+            <h2 className="section-title">What Unector Automates</h2>
             <p className="page-description" style={{ marginBottom: 32 }}>
               We're an early-stage platform - here's exactly what's running under the hood today,
               not marketing claims.

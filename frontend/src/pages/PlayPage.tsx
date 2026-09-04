@@ -30,7 +30,7 @@ export default function PlayPage() {
           </Suspense>
 
           <p className="play-back">
-            <Link to="/">← Back to Freight Pilot</Link>
+            <Link to="/">← Back to Unector</Link>
           </p>
         </div>
       </div>

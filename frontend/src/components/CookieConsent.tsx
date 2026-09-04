@@ -83,7 +83,7 @@ export default function CookieConsent() {
             side by side, same size, same weight, at every level. */}
         <div className="consent-copy">
           <p className="consent-text">
-            <strong>No analytics, no advertising, no third-party trackers.</strong> Freight Pilot
+            <strong>No analytics, no advertising, no third-party trackers.</strong> Unector
             keeps you signed in, and remembers the settings you choose on this device.
           </p>
           <button

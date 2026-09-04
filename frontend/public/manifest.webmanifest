@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Freight Pilot",
-  "short_name": "Freight Pilot",
+  "name": "Unector",
+  "short_name": "Unector",
   "description": "Dispatch management for trucking companies, run through Telegram. Rate confirmations read from your inbox, load details posted to the driver's group, and a live dashboard.",
   "start_url": "/",
   "scope": "/",

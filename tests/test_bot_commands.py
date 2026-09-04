@@ -18,7 +18,7 @@ async def test_start_replies_with_welcome_and_command_list():
 
     message.reply.assert_awaited_once()
     text = message.reply.await_args.args[0]
-    assert "Welcome to Freight Pilot" in text
+    assert "Welcome to Unector" in text
     assert "/dispatch" in text
     assert "/faq" in text
     assert message.reply.await_args.kwargs.get("parse_mode") == "Markdown"
@@ -32,7 +32,7 @@ async def test_faq_replies_with_all_six_questions():
     message.reply.assert_awaited_once()
     text = message.reply.await_args.args[0]
     for expected in [
-        "What is Freight Pilot?",
+        "What is Unector?",
         "How does billing work?",
         "How does Gmail integration work?",
         "How does GPS tracking work?",

@@ -811,7 +811,7 @@ export default function SettingsPage() {
               <div>
                 <p className="settings-row-label">What we store</p>
                 <p className="settings-row-hint">
-                  Change what Freight Pilot keeps in this browser. Withdrawing a choice clears
+                  Change what Unector keeps in this browser. Withdrawing a choice clears
                   what was stored under it.
                 </p>
               </div>
@@ -985,7 +985,7 @@ export default function SettingsPage() {
                 )}
 
                 <p className="billing-hint">
-                  Card details go straight to Stripe and are never seen or stored by Freight Pilot.
+                  Card details go straight to Stripe and are never seen or stored by Unector.
                 </p>
               </div>
             )}
@@ -1374,7 +1374,7 @@ export default function SettingsPage() {
                       {linkDriverId === d.id && linkCode && (
                         <div className="twofa-enroll">
                           <p className="method-hint">
-                            Add the Freight Pilot bot to {d.full_name}'s Telegram group, then send in that
+                            Add the Unector bot to {d.full_name}'s Telegram group, then send in that
                             group: <code className="mono">{linkCode.bot_command}</code>
                           </p>
                           <button

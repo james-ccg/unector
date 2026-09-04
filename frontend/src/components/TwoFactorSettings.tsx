@@ -399,7 +399,7 @@ export default function TwoFactorSettings() {
           <div className="twofa-icon"><Icon name="location" size={20} /></div>
           <div className="twofa-info">
             <h3>Telegram</h3>
-            <p>Get a one-time code as a message from the Freight Pilot bot.</p>
+            <p>Get a one-time code as a message from the Unector bot.</p>
           </div>
           <span className={`status-badge ${status?.telegram_otp_enabled ? 'is-connected' : 'is-disconnected'}`}>
             {status?.telegram_otp_enabled ? 'Enabled' : status?.telegram_linked ? 'Linked' : 'Not linked'}

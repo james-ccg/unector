@@ -18,7 +18,7 @@ async def send_otp_telegram(telegram_user_id: int, code: str) -> None:
     try:
         await bot.send_message(
             telegram_user_id,
-            f"🔐 Your Freight Pilot verification code is: <code>{code}</code>\n\n"
+            f"🔐 Your Unector verification code is: <code>{code}</code>\n\n"
             "This code expires in 10 minutes. If you didn't request this, you can ignore it.",
             parse_mode="HTML",
         )

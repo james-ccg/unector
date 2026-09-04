@@ -9,7 +9,7 @@ export default function TermsOfServicePage() {
           <div className="page-header">
             <h1 className="page-title"><Scale size={36} /> Terms of Service</h1>
             <p className="page-description">
-              The terms that apply when your company uses Freight Pilot.
+              The terms that apply when your company uses Unector.
             </p>
           </div>
           <p className="legal-updated">Last updated: August 29, 2026</p>
@@ -18,8 +18,8 @@ export default function TermsOfServicePage() {
             <section>
               <p>
                 These Terms of Service ("Terms") are an agreement between your trucking company ("you," "your
-                company") and Freight Pilot, operated by Freight Pilot LLC
-                ("Freight Pilot," "we," "us"), governing your use of our Telegram bot, web dashboard, and related
+                company") and Unector, operated by Unector LLC
+                ("Unector," "we," "us"), governing your use of our Telegram bot, web dashboard, and related
                 services (the "Service"). By registering a company account, you agree to these Terms.
               </p>
             </section>
@@ -27,7 +27,7 @@ export default function TermsOfServicePage() {
             <section>
               <h2>1. The Service</h2>
               <p>
-                Freight Pilot is a dispatch-automation tool: it reads Rate Confirmation documents, uses AI to extract
+                Unector is a dispatch-automation tool: it reads Rate Confirmation documents, uses AI to extract
                 and check load details against photos and Bills of Lading, forwards Proof of Delivery documents,
                 tracks GPS proximity to pickup/delivery, and gives an owner and their dispatchers a web dashboard to
                 manage drivers, dispatcher logins, and billing.
@@ -54,7 +54,7 @@ export default function TermsOfServicePage() {
             <section>
               <h2>3. Subscriptions &amp; billing</h2>
               <ul>
-                <li>Freight Pilot offers a Free plan (one active driver) and paid plans (Pro, Max 5x, Max 20x) with higher driver limits, billed monthly or yearly through Stripe.</li>
+                <li>Unector offers a Free plan (one active driver) and paid plans (Pro, Max 5x, Max 20x) with higher driver limits, billed monthly or yearly through Stripe.</li>
                 <li>Paid plans include a 7-day free trial. Unless canceled before the trial ends, the subscription automatically converts to a paid, recurring plan and is billed to the payment method on file.</li>
                 <li>Starting a paid plan requires a payment method, which Stripe stores against your account. Until the first payment for that plan has been taken, the last remaining payment method cannot be removed, as it is the only means by which the amount owed can be collected. You may add another and remove the first at any time.</li>
                 <li>Once a payment has been taken, you may remove your payment methods at any time. Removing the last one ends the subscription at the close of the period already paid for: access continues until that date, and no further charge is made.</li>
@@ -82,7 +82,7 @@ export default function TermsOfServicePage() {
                 The Service integrates with Google (Gmail, Gemini), Stripe, Samsara, Telegram, and Cloudflare. Your
                 use of those integrations is also subject to each provider's own terms, and we're not responsible
                 for their availability, accuracy, or changes to their APIs. If a connected provider has an outage or
-                changes its API in a way that affects Freight Pilot, we'll work to restore the integration but can't
+                changes its API in a way that affects Unector, we'll work to restore the integration but can't
                 guarantee a specific timeline.
               </p>
             </section>
@@ -90,7 +90,7 @@ export default function TermsOfServicePage() {
             <section>
               <h2>6. Intellectual property</h2>
               <p>
-                Freight Pilot and its underlying software, design, and branding are our property. You retain
+                Unector and its underlying software, design, and branding are our property. You retain
                 ownership of the load data, documents, and photos you submit; by using the Service you grant us a
                 limited license to process that content (including sending it to Google's Gemini API) solely to
                 provide the Service to you.

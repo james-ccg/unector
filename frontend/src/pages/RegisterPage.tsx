@@ -188,7 +188,7 @@ export default function RegisterPage() {
           <div className="page-hero-content">
             <Link to="/" className="nav-logo" style={{ display: 'inline-flex', marginBottom: '32px' }}>
               <div className="logo-icon">FP</div>
-              <span className="logo-text">Freight Pilot</span>
+              <span className="logo-text">Unector</span>
             </Link>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 8 }}>
               STEP {step === 'connect-gmail' ? '1' : step === 'verify-email' ? '2' : '3'} OF 3
@@ -214,7 +214,7 @@ export default function RegisterPage() {
                 <div>
                   <p style={{ margin: 0, color: 'var(--text-primary)', fontWeight: 600 }}>Secure OAuth connection</p>
                   <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '14px' }}>
-                    You'll approve access on Google's own consent screen - Freight Pilot never sees your
+                    You'll approve access on Google's own consent screen - Unector never sees your
                     password, and you can revoke access any time from Settings.
                   </p>
                 </div>
@@ -309,7 +309,7 @@ export default function RegisterPage() {
           )}
 
           <p style={{ textAlign: 'center', marginTop: '20px', color: 'var(--text-muted)', fontSize: '13px', lineHeight: 1.5 }}>
-            Your password is encrypted and never visible to anyone at Freight Pilot, including us.
+            Your password is encrypted and never visible to anyone at Unector, including us.
             We'll only ever email you about your own account.
           </p>
 

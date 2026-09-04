@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email **security@freightpilot.example** with the details.
+Email **security@unector.example** with the details.
 
 > Replace that address before publishing this file - it is a placeholder.
 > A dedicated alias is worth setting up rather than a personal inbox: this
@@ -17,7 +17,7 @@ Useful things to include: what you did, what happened, and what you expected
 instead. A proof of concept helps enormously and does not need to be
 polished. If you are unsure whether something counts, report it anyway.
 
-You will get an acknowledgement within a few days. Freight Pilot is a small
+You will get an acknowledgement within a few days. Unector is a small
 project without a bounty programme, but credit is offered on any fix that
 comes from a report, if you want it.
 

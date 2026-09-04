@@ -8,12 +8,12 @@ export default function FAQPage() {
         <div className="container">
           <div className="page-header">
             <h1 className="page-title">Frequently Asked Questions</h1>
-            <p className="page-description">Everything you need to know about Freight Pilot</p>
+            <p className="page-description">Everything you need to know about Unector</p>
           </div>
 
           <div className="faq-list">
             <div className="faq-item card">
-              <h3 className="faq-question"><Lightbulb size={18} /> What is Freight Pilot?</h3>
+              <h3 className="faq-question"><Lightbulb size={18} /> What is Unector?</h3>
               <p className="faq-answer">
                 AI-powered dispatch management system that automates load management through
                 Telegram. Connects Gmail, extracts load details with AI, tracks GPS, and provides

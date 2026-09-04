@@ -21,7 +21,7 @@ export default function UpdatesPage() {
           <div className="page-header">
             <h1 className="page-title"><Newspaper size={36} /> Product Updates</h1>
             <p className="page-description">
-              Freight Pilot&apos;s first build was 19 August 2026. Everything below has shipped
+              Unector&apos;s first build was 19 August 2026. Everything below has shipped
               since then, dated as it happened. It is a short history, and it is the real one.
             </p>
           </div>
