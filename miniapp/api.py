@@ -567,7 +567,7 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 # (checked above), so keying off the full number - not a truncated
                 # prefix of it - avoids collisions between MC numbers that share a
                 # common prefix (e.g. "555000" vs "555001").
-                telegram_group_prefix=f"FP{body.mc_number}"[:20],
+                telegram_group_prefix=f"UN{body.mc_number}"[:20],
                 password_hash=hash_password(body.password)
             )
             session.add(new_company)

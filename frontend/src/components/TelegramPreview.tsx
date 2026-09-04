@@ -20,9 +20,9 @@ export default function TelegramPreview() {
     >
       <div className="tg-window">
         <div className="tg-titlebar">
-          <span className="tg-avatar" aria-hidden="true">FP</span>
+          <span className="tg-avatar" aria-hidden="true">UN</span>
           <div className="tg-titlebar-text">
-            <strong>Dave&apos;s Truck</strong>
+            <strong>Unit 3001</strong>
             <span>driver, dispatcher, bot</span>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function TelegramPreview() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 1.6 }}
           >
-            <p className="tg-line">📍 Dave is 5 miles from pickup.</p>
+            <p className="tg-line">📍 The truck is 5 miles from pickup.</p>
           </motion.div>
         </div>
       </div>

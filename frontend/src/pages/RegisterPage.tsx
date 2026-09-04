@@ -187,7 +187,7 @@ export default function RegisterPage() {
         <div className="container">
           <div className="page-hero-content">
             <Link to="/" className="nav-logo" style={{ display: 'inline-flex', marginBottom: '32px' }}>
-              <div className="logo-icon">FP</div>
+              <div className="logo-icon">UN</div>
               <span className="logo-text">Unector</span>
             </Link>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 8 }}>

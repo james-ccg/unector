@@ -241,7 +241,7 @@ export default function LoginPage() {
         <div className="container">
           <div className="page-hero-content">
             <Link to="/" className="nav-logo" style={{ display: 'inline-flex', marginBottom: '32px' }}>
-              <div className="logo-icon">FP</div>
+              <div className="logo-icon">UN</div>
               <span className="logo-text">Unector</span>
             </Link>
             <h1 className="page-hero-title">Welcome Back</h1>

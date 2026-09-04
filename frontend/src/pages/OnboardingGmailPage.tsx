@@ -61,7 +61,7 @@ export default function OnboardingGmailPage() {
       <section className="page-hero">
         <div className="container">
           <div className="page-hero-content">
-            <div className="logo-icon" style={{ margin: '0 auto 24px' }}>FP</div>
+            <div className="logo-icon" style={{ margin: '0 auto 24px' }}>UN</div>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600, letterSpacing: '0.04em', marginBottom: 8 }}>
               STEP 2 OF 2
             </p>

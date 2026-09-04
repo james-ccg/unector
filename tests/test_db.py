@@ -227,8 +227,8 @@ class TestDriverRepository:
     def test_create_driver_auto_assigns_sequential_bot_id(self, setup_db):
         company_id = self._make_company_id()
 
-        first = repository.create_driver(company_id, "Alice")
-        second = repository.create_driver(company_id, "Bob")
+        first = repository.create_driver(company_id, "Driver One")
+        second = repository.create_driver(company_id, "Driver Two")
 
         assert first["driver_bot_id"] == "D001"
         assert second["driver_bot_id"] == "D002"
@@ -237,44 +237,44 @@ class TestDriverRepository:
 
     def test_link_driver_group_sets_group_fields(self, setup_db):
         company_id = self._make_company_id()
-        driver = repository.create_driver(company_id, "Carol")
+        driver = repository.create_driver(company_id, "Driver One")
 
-        result = repository.link_driver_group(driver["id"], -100555, "Carol's Truck")
+        result = repository.link_driver_group(driver["id"], -100555, "Unit 1001")
         assert result == "ok"
 
         linked = repository.get_driver_by_group(-100555)
         assert linked is not None
         assert linked.id == driver["id"]
-        assert linked.telegram_group_title == "Carol's Truck"
+        assert linked.telegram_group_title == "Unit 1001"
 
     def test_link_driver_group_rejects_group_already_used_by_another_driver(self, setup_db):
         company_id = self._make_company_id()
-        driver_a = repository.create_driver(company_id, "Dave")
-        driver_b = repository.create_driver(company_id, "Erin")
-        repository.link_driver_group(driver_a["id"], -100777, "Dave's Truck")
+        driver_a = repository.create_driver(company_id, "Driver One")
+        driver_b = repository.create_driver(company_id, "Driver Two")
+        repository.link_driver_group(driver_a["id"], -100777, "Unit 1001")
 
-        result = repository.link_driver_group(driver_b["id"], -100777, "Erin's Truck")
+        result = repository.link_driver_group(driver_b["id"], -100777, "Unit 1002")
         assert result == "already_linked_elsewhere"
 
-        # Dave's link must be untouched by Erin's failed attempt.
-        still_daves = repository.get_driver_by_group(-100777)
-        assert still_daves.id == driver_a["id"]
+        # The first driver's link must survive the second one's failed attempt.
+        still_linked = repository.get_driver_by_group(-100777)
+        assert still_linked.id == driver_a["id"]
 
     def test_link_driver_group_returns_not_found_for_missing_driver(self, setup_db):
-        result = repository.link_driver_group(999999999, -100888, "Ghost")
+        result = repository.link_driver_group(999999999, -100888, "Unit 9999")
         assert result == "not_found"
 
     def test_relinking_same_driver_to_same_group_is_idempotent(self, setup_db):
         company_id = self._make_company_id()
-        driver = repository.create_driver(company_id, "Frank")
+        driver = repository.create_driver(company_id, "Driver Three")
 
-        first = repository.link_driver_group(driver["id"], -100999, "Frank's Truck")
-        second = repository.link_driver_group(driver["id"], -100999, "Frank's Truck (renamed)")
+        first = repository.link_driver_group(driver["id"], -100999, "Unit 1003")
+        second = repository.link_driver_group(driver["id"], -100999, "Unit 1003 (renamed)")
 
         assert first == "ok"
         assert second == "ok"
         linked = repository.get_driver_by_group(-100999)
-        assert linked.telegram_group_title == "Frank's Truck (renamed)"
+        assert linked.telegram_group_title == "Unit 1003 (renamed)"
 
 
 if __name__ == "__main__":

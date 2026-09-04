@@ -123,7 +123,7 @@ export default function Header({ transparent = false }: HeaderProps) {
                   {user?.avatar ? (
                     <img src={user.avatar} alt="" className="nav-profile-avatar-img" />
                   ) : (
-                    user?.status?.emoji || (displayName || 'FP').slice(0, 2).toUpperCase()
+                    user?.status?.emoji || (displayName || 'UN').slice(0, 2).toUpperCase()
                   )}
                 </span>
                 <span className="nav-profile-label">{user?.status?.text || displayName || 'Profile'}</span>

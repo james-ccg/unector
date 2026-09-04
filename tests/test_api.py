@@ -1389,7 +1389,7 @@ class TestFleetAssets:
 
     def test_driver_without_loads_can_be_deleted(self, client):
         self._register_owner(client, "766007")
-        driver = client.post("/api/drivers", json={"full_name": "Bobur"}, headers=_csrf_headers(client)).json()
+        driver = client.post("/api/drivers", json={"full_name": "Driver One"}, headers=_csrf_headers(client)).json()
         assert client.delete(f"/api/drivers/{driver['id']}", headers=_csrf_headers(client)).status_code == 200
         assert client.get("/api/drivers").json() == []
 
@@ -1454,11 +1454,11 @@ class TestGoogleSignIn:
                 + (f"&login_hint={login_hint}" if login_hint else "")
             ),
         )
-        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dave@example.com")
+        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dispatcher@example.com")
 
         body = client.get("/api/auth/google/start").json()
-        assert body["hinted_account"] == "dave@example.com"
-        assert "login_hint=dave@example.com" in body["auth_url"]
+        assert body["hinted_account"] == "dispatcher@example.com"
+        assert "login_hint=dispatcher@example.com" in body["auth_url"]
 
     def test_switching_account_drops_the_hint_and_forgets_it(self, client, monkeypatch):
         """A suggestion nobody can get out of is not a convenience."""
@@ -1473,7 +1473,7 @@ class TestGoogleSignIn:
                 + (f"&login_hint={login_hint}" if login_hint else "")
             ),
         )
-        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dave@example.com")
+        client.cookies.set(LAST_ACCOUNT_COOKIE_NAME, "dispatcher@example.com")
 
         response = client.get("/api/auth/google/start?switch_account=true")
         body = response.json()
