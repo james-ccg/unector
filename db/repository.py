@@ -211,6 +211,39 @@ def get_load_by_group(telegram_group_id: int) -> Load | None:
         )
 
 
+def take_over_pin(company_id: int, driver_id: int, load_id: str, message_id: int) -> list[int]:
+    """Records `message_id` as this load's pinned card and hands back the
+    pins it supersedes.
+
+    A driver's group should show one pinned load - the job they are on. So
+    claiming the pin is also releasing the last one, and doing both in a
+    single transaction means a crash between them cannot leave a pin nobody
+    remembers. The returned ids are the caller's to unpin in Telegram;
+    they are already forgotten here, because a pin we failed to remove is
+    better than a row pointing at a message that is no longer pinned.
+    """
+    with get_session() as session:
+        rows = (
+            session.query(models.Load)
+            .filter(
+                models.Load.company_id == company_id,
+                models.Load.driver_id == driver_id,
+            )
+            .all()
+        )
+
+        superseded: list[int] = []
+        for row in rows:
+            if row.load_id == load_id:
+                row.pinned_message_id = message_id
+            elif row.pinned_message_id is not None:
+                superseded.append(row.pinned_message_id)
+                row.pinned_message_id = None
+
+        session.commit()
+        return superseded
+
+
 # ------------------------------------------------------------------
 # Company credentials (encrypted secrets like Gmail refresh tokens,
 # Samsara API keys, etc.)

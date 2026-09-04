@@ -128,6 +128,12 @@ written in the same shape carriers already use, which means `/readbio` can still
 afterwards without the round trip losing anything. The bot needs the **Change group info** admin
 right for this; without it the write is logged and skipped, and the confirmation still stands.
 
+The load card gets pinned. When `/dispatch` posts a load into a truck's group, the bot pins it
+and unpins the one it replaces, so the addresses, appointment times and reference numbers stay
+one tap away instead of twenty messages up by the afternoon - and exactly one load is pinned, so
+the driver never has to work out which of several is today's. This needs the **Pin messages**
+admin right; without it the pin is logged and skipped, and the load still lands.
+
 Send `/readbio` in the group to read the description again after editing it. The **Details**
 button on any driver in Settings opens the same fields for typing in by hand, which is the path
 for carriers who keep nothing in the description.

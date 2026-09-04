@@ -279,3 +279,91 @@ class TestDriverRepository:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestTakeOverPin:
+    """One load stays pinned in a driver's group - the job they are on. See
+    db/repository.py's take_over_pin, which claims the pin for the new card
+    and releases the last one in the same transaction."""
+
+    def _company_with_driver(self):
+        unique_mc = _unique_mc()
+        with get_session() as session:
+            company = models.Company(
+                mc_number=unique_mc,
+                company_name=f"Pin Test {unique_mc}",
+                telegram_group_prefix=_unique_prefix(unique_mc),
+            )
+            session.add(company)
+            session.commit()
+            session.refresh(company)
+
+            driver = models.Driver(
+                company_id=company.id, driver_bot_id="D001", full_name="Test Driver"
+            )
+            session.add(driver)
+            session.commit()
+            session.refresh(driver)
+            return company.id, driver.id
+
+    def _add_load(self, company_id, driver_id, load_id, pinned=None):
+        with get_session() as session:
+            session.add(models.Load(
+                company_id=company_id, driver_id=driver_id,
+                load_id=load_id, pinned_message_id=pinned,
+            ))
+            session.commit()
+
+    def _pin_of(self, company_id, load_id):
+        with get_session() as session:
+            return (
+                session.query(models.Load)
+                .filter(models.Load.company_id == company_id, models.Load.load_id == load_id)
+                .first()
+                .pinned_message_id
+            )
+
+    def test_the_new_load_holds_the_pin(self, setup_db):
+        company_id, driver_id = self._company_with_driver()
+        self._add_load(company_id, driver_id, "L-1")
+
+        assert repository.take_over_pin(company_id, driver_id, "L-1", 500) == []
+        assert self._pin_of(company_id, "L-1") == 500
+
+    def test_the_previous_pin_is_handed_back_and_forgotten(self, setup_db):
+        company_id, driver_id = self._company_with_driver()
+        self._add_load(company_id, driver_id, "L-1", pinned=400)
+        self._add_load(company_id, driver_id, "L-2")
+
+        assert repository.take_over_pin(company_id, driver_id, "L-2", 500) == [400]
+        assert self._pin_of(company_id, "L-1") is None
+        assert self._pin_of(company_id, "L-2") == 500
+
+    def test_loads_that_were_never_pinned_are_not_reported(self, setup_db):
+        """Only ids the caller has to unpin come back - a load with no pin
+        would send the bot chasing a message that was never up."""
+        company_id, driver_id = self._company_with_driver()
+        self._add_load(company_id, driver_id, "L-1")
+        self._add_load(company_id, driver_id, "L-2", pinned=400)
+        self._add_load(company_id, driver_id, "L-3")
+
+        assert repository.take_over_pin(company_id, driver_id, "L-3", 500) == [400]
+
+    def test_another_driver_in_the_same_company_keeps_their_pin(self, setup_db):
+        """Each truck has its own group, so a dispatch to one must not take
+        down the pinned load in another."""
+        company_id, driver_id = self._company_with_driver()
+        with get_session() as session:
+            other = models.Driver(
+                company_id=company_id, driver_bot_id="D002", full_name="Test Driver"
+            )
+            session.add(other)
+            session.commit()
+            session.refresh(other)
+            other_id = other.id
+
+        self._add_load(company_id, other_id, "L-OTHER", pinned=400)
+        self._add_load(company_id, driver_id, "L-MINE")
+
+        assert repository.take_over_pin(company_id, driver_id, "L-MINE", 500) == []
+        assert self._pin_of(company_id, "L-OTHER") == 400

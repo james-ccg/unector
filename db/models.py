@@ -173,6 +173,10 @@ class Load(Base):
     alerted_rule_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     detention_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     raw_extracted_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # The load card pinned in the driver's group, so the next dispatch can
+    # take the old pin down. Null when nothing was pinned - the bot may not
+    # have the right in that group, and that is not an error.
+    pinned_message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
 

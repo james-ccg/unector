@@ -43,7 +43,7 @@ import time
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
-from aiogram.exceptions import TelegramNetworkError
+from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 from aiogram.filters import Command
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand, CallbackQuery,
@@ -80,6 +80,7 @@ from db.repository import (
     companies_due_trial_reminder,
     mark_trial_reminder_sent,
     create_notification,
+    take_over_pin,
 )
 from services import (
     gemini_service, email_service, samsara_service, geo_utils, group_profile,
@@ -617,6 +618,53 @@ async def _get_driver_and_company(message: Message) -> tuple | None:
     return driver, get_company(driver.company_id)
 
 
+async def _pin_load_card(company_id: int, driver_id: int, load_id: str, posted: Message) -> bool:
+    """Pins the load card just posted, and takes down the one it replaces.
+
+    The card is the message a driver comes back to all week - the addresses,
+    the appointment times, the reference numbers - and in a busy group it is
+    twenty messages up by the afternoon. Pinning puts it one tap away.
+
+    Exactly one load stays pinned, because a stack of finished jobs is worse
+    than no pin at all: the driver has to work out which of them is today's.
+
+    Nothing here is allowed to fail the dispatch. Pinning needs the bot to be
+    an admin with "Pin messages", which is a Telegram setup question rather
+    than something the code can fix, and the load has already been saved and
+    posted by the time this runs. So a refusal is logged and swallowed, and
+    the driver still has their load.
+    """
+    try:
+        superseded = take_over_pin(company_id, driver_id, load_id, posted.message_id)
+    except Exception:
+        logger.exception("Couldn't record the pinned card for load %s", load_id)
+        return False
+
+    try:
+        # Silent: the card itself already notified the group a moment ago,
+        # and a second ping saying the same message was pinned is noise.
+        await posted.pin(disable_notification=True)
+    except TelegramAPIError as e:
+        logger.warning(
+            "Couldn't pin the card for load %s in group %s: %s: %s",
+            load_id, posted.chat.id, type(e).__name__, e,
+        )
+        return False
+
+    for message_id in superseded:
+        try:
+            await bot.unpin_chat_message(posted.chat.id, message_id)
+        except TelegramAPIError as e:
+            # Ordinary once a group is a few months old: the driver unpinned
+            # it themselves, or the message aged out. Not worth a warning.
+            logger.info(
+                "Couldn't unpin the previous card (%s) in group %s: %s: %s",
+                message_id, posted.chat.id, type(e).__name__, e,
+            )
+
+    return True
+
+
 async def _post_load_template(message: Message, driver, company, load_id: str, data: dict):
     """Geocodes, saves the load, and posts the formatted template to the
     group - the tail end both the email-search and direct-PDF paths share.
@@ -657,7 +705,8 @@ async def _post_load_template(message: Message, driver, company, load_id: str, d
     dispatcher_tag = f"@{driver.dispatcher_username}" if driver.dispatcher_username else ""
     driver_tag = f"@{driver.telegram_username}" if driver.telegram_username else ""
 
-    await message.answer(f"{text}\n\n{driver_tag} {dispatcher_tag}", parse_mode="HTML")
+    posted = await message.answer(f"{text}\n\n{driver_tag} {dispatcher_tag}", parse_mode="HTML")
+    await _pin_load_card(company.id, driver.id, load_id, posted)
 
 
 async def _extract_rc_data_or_reply(message: Message, pdf_bytes: bytes, context: str) -> dict | None:
