@@ -1,4 +1,4 @@
-import { Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket, UserRound } from 'lucide-react'
+import { Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket, UserRound, Bell } from 'lucide-react'
 import Layout from '../components/Layout'
 
 /** The changelog, and only what actually happened.
@@ -36,11 +36,44 @@ export default function UpdatesPage() {
                   for apps whose consent screen is still under review, and ours is. Settings warns
                   two days ahead; the limit disappears once the review clears.
                 </li>
+                <li>
+                  Notifications currently fire for three things: a driver&apos;s group finishing
+                  linking, a group description waiting to be checked, and detention being
+                  requested. The rest of the list in Settings is real and switchable, but nothing
+                  triggers those events yet.
+                </li>
                 <li>The offline game only works offline from your second visit, once the browser has cached it.</li>
                 <li>No public status page or uptime figure - we will not publish one we cannot measure.</li>
                 <li>
                   Signing out does not yet revoke a session server-side. The cookie goes, but a
                   token captured beforehand stays valid until it expires.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">4 September 2026</div>
+              <h3 className="update-title"><Bell size={20} /> Being told, and choosing how</h3>
+              <ul className="update-list">
+                <li>
+                  A bell in the header with everything the app has told you, and a screen in
+                  Settings for choosing what reaches you by Telegram or email as well.
+                </li>
+                <li>
+                  The dashboard list always gets everything. Email can bounce and Telegram
+                  won&apos;t let a bot message anyone who hasn&apos;t started a chat with it
+                  first, so the bell is the one place nothing goes missing - which is also why
+                  it&apos;s the one channel with nothing to configure.
+                </li>
+                <li>
+                  Anything with money or account access attached stays on: a failed payment, a
+                  sign-in you didn&apos;t make, an integration that quietly stopped working.
+                  Those are shown in Settings as locked rather than hidden, so you can see what
+                  will reach you even where you can&apos;t change it.
+                </li>
+                <li>
+                  The bot has been telling drivers &ldquo;your dispatcher has been
+                  notified&rdquo; when detention is requested. Until now nothing was.
                 </li>
               </ul>
             </div>

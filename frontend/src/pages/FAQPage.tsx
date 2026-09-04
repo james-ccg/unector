@@ -1,4 +1,4 @@
-import { Lightbulb, CreditCard, Mail, Map, Bot, Users } from 'lucide-react'
+import { Lightbulb, CreditCard, Mail, Map, Bot, Users, Bell } from 'lucide-react'
 import Layout from '../components/Layout'
 
 export default function FAQPage() {
@@ -66,6 +66,20 @@ export default function FAQPage() {
               <p className="faq-answer">
                 Yes - add as many dispatchers as you need, each with their own dashboard login
                 and permissions.
+              </p>
+            </div>
+
+            <div className="faq-item card">
+              <h3 className="faq-question"><Bell size={18} /> How do notifications work?</h3>
+              <p className="faq-answer">
+                Three places: a bell in the dashboard, a Telegram message, and email. Settings
+                &rarr; Notifications is where you choose which of them each kind of news reaches
+                you on, and an owner and a dispatcher each set their own. The dashboard list
+                always gets everything - email can bounce and Telegram won't message anyone who
+                hasn't started a chat with the bot, so the bell is the one place nothing goes
+                missing. A few things stay on whatever you choose: a failed payment, a sign-in
+                you didn't make, an integration that stopped working. They're shown as locked
+                rather than hidden, so you can always see what will reach you.
               </p>
             </div>
           </div>
