@@ -4,6 +4,8 @@ Two things are worth holding still here: what the reader is allowed to make
 of a bio, and the rule that nothing reaches Driver or Truck until a person
 confirms it - from either side, once.
 """
+from unittest.mock import patch
+
 import pytest
 
 from db import models, repository
@@ -249,3 +251,89 @@ def test_the_summary_counts_disagreements_in_words_that_read():
     assert "Nothing disagrees" in group_profile.summarise({**base, "conflicts": []})
     assert "One thing disagrees" in group_profile.summarise({**base, "conflicts": ["a"]})
     assert "2 things disagree" in group_profile.summarise({**base, "conflicts": ["a", "b"]})
+
+
+# ------------------------------------------------------------------
+# Writing the description back
+# ------------------------------------------------------------------
+
+def test_the_written_bio_is_the_shape_carriers_already_use():
+    """It has to read like a dispatcher wrote it, because a dispatcher is
+    who reads it."""
+    text = group_profile.compose_bio({
+        "truck_unit_number": "1001", "trailer_number": "A000123",
+        "full_name": "Driver One", "phone": "410-555-0142",
+    })
+    assert "Truck# 1001" in text
+    assert "Driver: Driver One" in text
+    assert "410-555-0142" in text
+
+
+def test_the_written_bio_fits_what_telegram_accepts():
+    """setChatDescription takes 0-255 characters and refuses more, so the
+    fields go in by priority and the last ones are dropped rather than the
+    whole write failing."""
+    text = group_profile.compose_bio({
+        "truck_unit_number": "1001" * 20,
+        "trailer_number": "A000123" * 20,
+        "full_name": "Driver One" * 20,
+        "phone": "410-555-0142" * 20,
+        "vin": "1XPTEST0000000001",
+        "email": "driver@example.com",
+    })
+    assert len(text) <= group_profile.DESCRIPTION_LIMIT
+
+
+def test_nothing_confirmed_means_nothing_written():
+    """Blanking a description somebody typed by hand, because our own
+    record is empty, would be pure loss."""
+    assert group_profile.compose_bio({}) == ""
+
+
+def test_a_driver_with_no_group_is_not_written_to(company_and_driver):
+    company_id, driver_id = company_and_driver
+    result = group_profile.publish_bio(company_id, driver_id)
+    assert result["written"] is False
+    assert result["reason"] == "no group linked"
+
+
+def test_confirming_writes_the_group_description(company_and_driver):
+    company_id, driver_id = company_and_driver
+    with get_session() as session:
+        session.get(models.Driver, driver_id).telegram_group_id = -100900777
+        session.commit()
+
+    repository.update_driver_details(driver_id, company_id, {
+        "truck_number": "1001", "driver_name": "Driver One",
+        "driver_phone": "410-555-0142",
+    })
+
+    with patch("services.group_profile.requests.post") as post:
+        post.return_value.ok = True
+        result = group_profile.publish_bio(company_id, driver_id)
+
+    assert result["written"] is True
+    sent = post.call_args.kwargs["json"]
+    assert sent["chat_id"] == -100900777
+    assert "Truck# 1001" in sent["description"]
+    assert post.call_args.args[0].endswith("/setChatDescription")
+
+
+def test_telegram_refusing_does_not_raise(company_and_driver):
+    """The confirmation already succeeded by the time this runs. A group
+    where the bot was never made an admin must not turn that into an
+    error."""
+    company_id, driver_id = company_and_driver
+    with get_session() as session:
+        session.get(models.Driver, driver_id).telegram_group_id = -100900778
+        session.commit()
+    repository.update_driver_details(driver_id, company_id, {"truck_number": "1001"})
+
+    with patch("services.group_profile.requests.post") as post:
+        post.return_value.ok = False
+        post.return_value.status_code = 400
+        post.return_value.text = "Bad Request: not enough rights"
+        result = group_profile.publish_bio(company_id, driver_id)
+
+    assert result["written"] is False
+    assert "400" in result["reason"]

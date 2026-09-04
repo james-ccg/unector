@@ -1282,10 +1282,19 @@ def confirm_group_profile(
 ):
     from db.repository import apply_group_profile_proposal
 
+    from db.repository import proposal_driver_id
+    from services import group_profile
+
+    owner = proposal_driver_id(proposal_id)
     ok, reason = apply_group_profile_proposal(
         proposal_id, "dashboard", company_id=user["company_id"], edits=body.fields
     )
     if ok:
+        # The record is now the confirmed one, so the group's description
+        # is written to match it. Failure here is logged inside and does
+        # not undo the confirmation.
+        if owner:
+            group_profile.publish_bio(*owner)
         return {"success": True}
     if reason == "already_resolved":
         raise HTTPException(409, "This was already confirmed - from Telegram, or from another tab.")
@@ -1322,10 +1331,13 @@ def save_driver_details(
     """Typed in by hand, for a driver whose group bio says nothing useful."""
     from db.repository import update_driver_details
 
+    from services import group_profile
+
     ok, reason = update_driver_details(
         driver_id, user["company_id"], body.model_dump(exclude_none=True)
     )
     if ok:
+        group_profile.publish_bio(user["company_id"], driver_id)
         return {"success": True}
     if reason == "nothing_to_save":
         raise HTTPException(400, "No details were sent.")

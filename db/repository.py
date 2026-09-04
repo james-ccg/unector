@@ -2173,6 +2173,15 @@ def get_driver_identity(driver_id: int, company_id: int) -> dict | None:
             "co_driver_name": driver.co_driver_name,
             "co_driver_phone": driver.co_driver_phone,
             "truck_unit_number": driver.truck.unit_number if driver.truck else None,
+            # Needed to write the group's description back out, which wants
+            # every field the bio can carry rather than just the ones the
+            # conflict check compares.
+            "trailer_number": (
+                driver.truck.trailer.unit_number
+                if driver.truck and driver.truck.trailer else None
+            ),
+            "vin": driver.truck.vin if driver.truck else None,
+            "telegram_group_id": driver.telegram_group_id,
         }
 
 
@@ -2661,3 +2670,14 @@ def login_already_seen_from(account_type: str, account_id: int, ip: str) -> bool
             )
             .exists()
         ).scalar()
+
+
+def proposal_driver_id(proposal_id: int) -> tuple[int, int] | None:
+    """The (company_id, driver_id) a proposal belongs to.
+
+    Needed after confirming one: the caller then writes the confirmed
+    details back into that driver's group, and apply_group_profile_proposal
+    returns only whether it worked."""
+    with get_session() as session:
+        row = session.get(models.GroupProfileProposal, proposal_id)
+        return (row.company_id, row.driver_id) if row else None

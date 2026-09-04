@@ -76,6 +76,7 @@ from db.repository import (
     get_pending_proposal_for_group,
     apply_group_profile_proposal,
     dismiss_group_profile_proposal,
+    proposal_driver_id,
     companies_due_trial_reminder,
     mark_trial_reminder_sent,
     create_notification,
@@ -445,7 +446,12 @@ async def handle_group_profile_button(callback: CallbackQuery):
         return
 
     if action == "apply":
+        owner = proposal_driver_id(proposal_id)
         ok, reason = apply_group_profile_proposal(proposal_id, "telegram")
+        if ok and owner:
+            # Rewrites this group's own description from what was just
+            # confirmed, so the text everyone sees matches the record.
+            await asyncio.to_thread(group_profile.publish_bio, *owner)
         done_text = "✅ Saved to the dashboard."
     elif action == "skip":
         ok, reason = dismiss_group_profile_proposal(proposal_id, "telegram")

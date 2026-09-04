@@ -18,6 +18,9 @@ from __future__ import annotations
 import logging
 import re
 
+import requests
+
+from config import TELEGRAM_BOT_TOKEN
 from db import repository
 from services import gemini_service
 
@@ -184,3 +187,135 @@ def describe(proposal: dict) -> str:
     lines.append("")
     lines.append("Confirm to save this to the dashboard, or edit it there instead.")
     return "\n".join(lines)
+
+
+# ------------------------------------------------------------------
+# Writing the description back
+#
+# The other direction. Once a person has confirmed what the bio said - from
+# the group or from the dashboard - the confirmed record is written back
+# into the group's description, so the two stop disagreeing.
+#
+# This overwrites whatever a dispatcher typed there. That is the point: the
+# text was read, checked and confirmed by a person, so the record is now
+# the better copy. It is also why nothing writes without a confirmation.
+# ------------------------------------------------------------------
+
+# setChatDescription accepts 0-255 characters and refuses anything longer,
+# so the fields go in by priority and stop when the next one would not fit.
+DESCRIPTION_LIMIT = 255
+TELEGRAM_TIMEOUT_SECONDS = 10
+
+
+def compose_bio(details: dict) -> str:
+    """The confirmed details as a group description.
+
+    Written in the shape carriers already use - "Truck#", "Driver:",
+    "CO-driver:" - for two reasons. It reads the way a dispatcher expects,
+    and it is a shape extract_group_profile can read back, so a group whose
+    description this wrote can still be re-read by /readbio without the
+    round trip losing anything."""
+
+    def value(key: str) -> str | None:
+        raw = details.get(key)
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        return text or None
+
+    truck, trailer = value("truck_unit_number"), value("trailer_number")
+    first = " | ".join(
+        part for part in (
+            f"Truck# {truck}" if truck else None,
+            f"Trailer# {trailer}" if trailer else None,
+        ) if part
+    )
+
+    driver, phone = value("full_name"), value("phone")
+    second = " | ".join(
+        part for part in (
+            f"Driver: {driver}" if driver else None,
+            phone,
+        ) if part
+    )
+
+    co, co_phone = value("co_driver_name"), value("co_driver_phone")
+    third = " | ".join(
+        part for part in (
+            f"CO-driver: {co}" if co else None,
+            co_phone,
+        ) if part
+    )
+
+    # Ordered by what a dispatcher needs at a glance. VIN and email are
+    # real but rarely urgent, so they are what gets dropped if the 255
+    # characters run out.
+    lines = [line for line in (first, second, third) if line]
+    vin = value("vin")
+    if vin:
+        lines.append(f"VIN# {vin}")
+    email = value("email")
+    if email:
+        lines.append(email)
+
+    kept: list[str] = []
+    for line in lines:
+        candidate = "\n".join(kept + [line])
+        if len(candidate) > DESCRIPTION_LIMIT:
+            break
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def publish_bio(company_id: int, driver_id: int) -> dict:
+    """Writes the driver's confirmed details into their group description.
+
+    Reached over plain HTTP rather than through aiogram, because this runs
+    in the API process as often as in the bot's and those share neither a
+    Bot instance nor an event loop.
+
+    Every failure is reported and swallowed. Confirming the details is the
+    thing that mattered, and it already succeeded by the time this runs -
+    a group where the bot was never made an admin should not turn a
+    successful confirmation into an error."""
+    if not TELEGRAM_BOT_TOKEN:
+        return {"written": False, "reason": "no bot token"}
+
+    details = repository.get_driver_identity(driver_id, company_id)
+    if not details:
+        return {"written": False, "reason": "driver not found"}
+
+    chat_id = details.get("telegram_group_id")
+    if not chat_id:
+        return {"written": False, "reason": "no group linked"}
+
+    text = compose_bio(details)
+    if not text:
+        # Nothing confirmed yet. Blanking a description somebody wrote by
+        # hand because our own record is empty would be pure loss.
+        return {"written": False, "reason": "nothing to write"}
+
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setChatDescription",
+            json={"chat_id": chat_id, "description": text},
+            timeout=TELEGRAM_TIMEOUT_SECONDS,
+        )
+        if not response.ok:
+            # The ordinary failure is the bot not being an admin with
+            # "Change group info", which is a setup problem in Telegram
+            # rather than a bug here.
+            logger.warning(
+                "Couldn't write the description of group %s: HTTP %s: %s",
+                chat_id, response.status_code, response.text[:200],
+            )
+            return {"written": False, "reason": f"HTTP {response.status_code}"}
+    except Exception as e:  # noqa: BLE001 - reported, not swallowed silently
+        logger.warning(
+            "Couldn't write the description of group %s: %s: %s",
+            chat_id, type(e).__name__, e,
+        )
+        return {"written": False, "reason": type(e).__name__}
+
+    logger.info("Wrote the description of group %s (%s chars).", chat_id, len(text))
+    return {"written": True, "text": text}

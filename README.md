@@ -122,6 +122,12 @@ second is told it is already done. Nothing reaches the driver or truck record un
 confirms - a group description is a note a dispatcher typed, not a source of record, so anything
 that disagrees with what is on file is shown rather than applied.
 
+Confirming also writes back. Once someone says yes - from the group or from Settings - the
+confirmed record is written into that group's description, so the two stop disagreeing. It is
+written in the same shape carriers already use, which means `/readbio` can still read it back
+afterwards without the round trip losing anything. The bot needs the **Change group info** admin
+right for this; without it the write is logged and skipped, and the confirmation still stands.
+
 Send `/readbio` in the group to read the description again after editing it. The **Details**
 button on any driver in Settings opens the same fields for typing in by hand, which is the path
 for carriers who keep nothing in the description.
