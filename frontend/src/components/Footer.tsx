@@ -18,7 +18,7 @@ export default function Footer() {
             </p>
             <div className="social-links">
               <a
-                href="https://t.me/Freight_Pilot"
+                href="https://t.me/Unector"
                 className="social-link"
                 aria-label="Telegram channel"
                 target="_blank"
