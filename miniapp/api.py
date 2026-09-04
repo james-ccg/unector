@@ -1296,6 +1296,152 @@ def save_driver_details(
     raise HTTPException(404, "Driver not found.")
 
 
+# ------------------------------------------------------------------
+# Notifications
+#
+# The bell, and the screen that decides what rings it. Addressed by
+# (account_type, account_id) rather than by company: an owner and a
+# dispatcher at the same company are different people who asked to be told
+# different things.
+# ------------------------------------------------------------------
+def _notification_account(user: dict) -> tuple[str, int]:
+    """Which login this is, in the pair the notification tables use.
+
+    An owner is identified by their company - there is one owner per
+    company and no separate row for them - while a dispatcher has an id of
+    their own."""
+    role = user.get("role")
+    if role == "dispatcher":
+        return "dispatcher", int(user["dispatcher_id"])
+    return "owner", int(user["company_id"])
+
+
+class MarkReadRequest(BaseModel):
+    # Omitted means all of them - the "mark everything read" button.
+    ids: list[int] | None = None
+
+
+class NotificationPreferenceRequest(BaseModel):
+    event: str
+    channel: str
+    enabled: bool
+
+
+@app.get("/api/notifications")
+def get_notifications(
+    limit: int = 50,
+    unread_only: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    from db.repository import list_notifications, unread_notification_count
+
+    account_type, account_id = _notification_account(user)
+    limit = max(1, min(limit, 100))
+    return {
+        "notifications": list_notifications(
+            account_type, account_id, limit=limit, unread_only=unread_only
+        ),
+        "unread": unread_notification_count(account_type, account_id),
+    }
+
+
+@app.post("/api/notifications/read")
+def mark_notifications(
+    body: MarkReadRequest,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import mark_notifications_read, unread_notification_count
+
+    account_type, account_id = _notification_account(user)
+    marked = mark_notifications_read(account_type, account_id, body.ids)
+    return {"marked": marked, "unread": unread_notification_count(account_type, account_id)}
+
+
+@app.get("/api/notifications/preferences")
+def get_notification_preferences(user: dict = Depends(get_current_user)):
+    """The whole catalogue, as this account currently has it set.
+
+    Everything the screen needs comes from here rather than being duplicated
+    in the frontend: which events exist, which apply to this kind of login,
+    which channels each one can use, and whether it is on. Mandatory events
+    are included and flagged rather than hidden - people should be able to
+    see what they will be told about even when they cannot change it."""
+    from db.repository import notification_preferences
+    from services import notification_events as events
+    from services.notification_service import wants
+
+    account_type, account_id = _notification_account(user)
+    saved = notification_preferences(account_type, account_id)
+
+    rows = []
+    for event in events.for_audience(account_type):
+        rows.append({
+            "event": event.key,
+            "category": event.category,
+            "category_label": events.CATEGORY_LABELS.get(event.category, event.category),
+            "label": event.label,
+            "description": event.description,
+            "mandatory": event.mandatory,
+            "channels": {
+                channel: {
+                    "available": event.allows(channel),
+                    "enabled": wants(account_type, account_id, event, channel, saved),
+                    # The site channel is the record of what was sent, so it
+                    # is never something to switch off.
+                    "locked": event.mandatory or channel == events.SITE,
+                }
+                for channel in events.CHANNELS
+            },
+        })
+
+    return {
+        "channels": [
+            {"key": channel, "label": events.CHANNEL_LABELS[channel]}
+            for channel in events.CHANNELS
+        ],
+        "events": rows,
+    }
+
+
+@app.put("/api/notifications/preferences")
+def set_notification_preferences(
+    body: NotificationPreferenceRequest,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    from db.repository import set_notification_preference
+    from services import notification_events as events
+
+    event = events.get(body.event)
+    if not event:
+        raise HTTPException(404, f"No such notification: {body.event}")
+    if body.channel not in events.CHANNELS:
+        raise HTTPException(400, f"No such channel: {body.channel}")
+
+    account_type, account_id = _notification_account(user)
+    if account_type not in event.audience:
+        raise HTTPException(403, "That notification isn't sent to this kind of account.")
+    if not event.allows(body.channel):
+        raise HTTPException(400, f"{event.label} is never sent by {body.channel}.")
+
+    # Refused rather than quietly ignored: a switch that appears to move and
+    # then does nothing is worse than one that says why it cannot.
+    if event.mandatory:
+        raise HTTPException(
+            409,
+            f"{event.label} can't be turned off - it's the kind of thing you need to know about.",
+        )
+    if body.channel == events.SITE:
+        raise HTTPException(
+            409,
+            "The dashboard list can't be turned off - it's the record of what was sent.",
+        )
+
+    set_notification_preference(account_type, account_id, body.event, body.channel, body.enabled)
+    return {"success": True}
+
+
 @app.get("/api/trailers")
 def list_company_trailers(user: dict = Depends(get_current_user)):
     from db.repository import list_trailers

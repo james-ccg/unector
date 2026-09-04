@@ -101,6 +101,44 @@ def send_password_reset_email(to_address: str, reset_url: str) -> None:
         server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())
 
 
+def send_notification_email(to_address: str, title: str, body: str | None, link: str | None) -> None:
+    """One notification, as an email.
+
+    Deliberately plain. These are operational messages about someone's own
+    account - a load dispatched, a payment that failed - which is what makes
+    them transactional rather than marketing, and why they carry no
+    unsubscribe footer: CAN-SPAM exempts them, and adding promotional
+    content is what would forfeit that. The way to stop receiving one is the
+    switch in Settings, which is a better answer than a link in a footer
+    anyway."""
+    if not is_configured():
+        raise NotImplementedError(
+            "Email isn't configured yet. Set SMTP_HOST, SMTP_USERNAME, and "
+            "SMTP_PASSWORD in .env (a Gmail app password works fine for this)."
+        )
+
+    lines = [title, ""]
+    if body:
+        lines += [body, ""]
+    if link:
+        lines += [f"Open it here: {FRONTEND_URL}{link}", ""]
+    lines += [
+        "You can choose which of these reach you, and how, in Settings > Notifications.",
+        "",
+        "Freight Pilot",
+    ]
+
+    message = MIMEText("\n".join(lines))
+    message["Subject"] = f"Freight Pilot: {title}"
+    message["From"] = SMTP_FROM_EMAIL
+    message["To"] = to_address
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_FROM_EMAIL, [to_address], message.as_string())
+
+
 def send_trial_ending_email(
     to_address: str,
     *,

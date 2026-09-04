@@ -2469,3 +2469,172 @@ def mark_trial_reminder_sent(company_id: int) -> None:
         if row:
             row.trial_reminder_sent_at = models.now_utc()
             session.commit()
+
+
+# ------------------------------------------------------------------
+# Notifications
+# ------------------------------------------------------------------
+
+def office_recipients(company_id: int) -> list[dict]:
+    """Everyone at a company who should hear about things: the owner and
+    every dispatcher.
+
+    Each comes back with whatever addresses exist for them, and any of them
+    may be None. Dispatchers have no email column at all - the only address
+    they ever give is the one for email two-factor - so the email channel
+    silently has no target for most of them. That is the reason the site
+    channel cannot be switched off: it is the one that always arrives."""
+    with get_session() as session:
+        company = session.get(models.Company, company_id)
+        if not company:
+            return []
+
+        secrets = {
+            (row.account_type, row.account_id): row
+            for row in session.query(models.TwoFactorSecret)
+            .filter(models.TwoFactorSecret.account_type.in_(("owner", "dispatcher")))
+            .all()
+        }
+
+        owner_secret = secrets.get(("owner", company_id))
+        people = [{
+            "account_type": "owner",
+            "account_id": company_id,
+            "name": company.company_name,
+            "email": company.email,
+            "telegram_user_id": owner_secret.telegram_user_id if owner_secret else None,
+        }]
+
+        dispatchers = (
+            session.query(models.Dispatcher)
+            .filter(models.Dispatcher.company_id == company_id)
+            .all()
+        )
+        for row in dispatchers:
+            secret = secrets.get(("dispatcher", row.id))
+            people.append({
+                "account_type": "dispatcher",
+                "account_id": row.id,
+                "name": row.username,
+                "email": secret.contact_email if secret else None,
+                "telegram_user_id": row.telegram_user_id or (
+                    secret.telegram_user_id if secret else None
+                ),
+            })
+        return people
+
+
+def notification_preferences(account_type: str, account_id: int) -> dict:
+    """The switches this account has actually set, as {(event, channel): on}.
+
+    Anything absent is not a "no" - it means untouched, and the caller falls
+    back to the event's own default. Writing a full grid on sign-up would
+    freeze today's defaults for accounts that never opened the page."""
+    with get_session() as session:
+        rows = (
+            session.query(models.NotificationPreference)
+            .filter(
+                models.NotificationPreference.account_type == account_type,
+                models.NotificationPreference.account_id == account_id,
+            )
+            .all()
+        )
+        return {(r.event, r.channel): r.enabled for r in rows}
+
+
+def set_notification_preference(
+    account_type: str, account_id: int, event: str, channel: str, enabled: bool
+) -> None:
+    with get_session() as session:
+        row = (
+            session.query(models.NotificationPreference)
+            .filter(
+                models.NotificationPreference.account_type == account_type,
+                models.NotificationPreference.account_id == account_id,
+                models.NotificationPreference.event == event,
+                models.NotificationPreference.channel == channel,
+            )
+            .first()
+        )
+        if row:
+            row.enabled = enabled
+        else:
+            session.add(models.NotificationPreference(
+                account_type=account_type, account_id=account_id,
+                event=event, channel=channel, enabled=enabled,
+            ))
+        session.commit()
+
+
+def create_notification(
+    company_id: int, account_type: str, account_id: int, *,
+    event: str, title: str, body: str | None = None, link: str | None = None,
+) -> dict:
+    with get_session() as session:
+        row = models.Notification(
+            company_id=company_id, account_type=account_type, account_id=account_id,
+            event=event, title=title, body=body, link=link,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return _notification_dict(row)
+
+
+def _notification_dict(row: models.Notification) -> dict:
+    return {
+        "id": row.id,
+        "event": row.event,
+        "title": row.title,
+        "body": row.body,
+        "link": row.link,
+        "read": row.read_at is not None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def list_notifications(
+    account_type: str, account_id: int, *, limit: int = 50, unread_only: bool = False
+) -> list[dict]:
+    with get_session() as session:
+        query = session.query(models.Notification).filter(
+            models.Notification.account_type == account_type,
+            models.Notification.account_id == account_id,
+        )
+        if unread_only:
+            query = query.filter(models.Notification.read_at.is_(None))
+        rows = query.order_by(models.Notification.id.desc()).limit(limit).all()
+        return [_notification_dict(r) for r in rows]
+
+
+def unread_notification_count(account_type: str, account_id: int) -> int:
+    with get_session() as session:
+        return (
+            session.query(models.Notification)
+            .filter(
+                models.Notification.account_type == account_type,
+                models.Notification.account_id == account_id,
+                models.Notification.read_at.is_(None),
+            )
+            .count()
+        )
+
+
+def mark_notifications_read(
+    account_type: str, account_id: int, ids: list[int] | None = None
+) -> int:
+    """Marks some or all of an account's notifications read. `ids` of None
+    means all of them - the "mark everything read" button."""
+    with get_session() as session:
+        query = session.query(models.Notification).filter(
+            models.Notification.account_type == account_type,
+            models.Notification.account_id == account_id,
+            models.Notification.read_at.is_(None),
+        )
+        if ids is not None:
+            if not ids:
+                return 0
+            query = query.filter(models.Notification.id.in_(ids))
+        count = query.update({"read_at": models.now_utc()}, synchronize_session=False)
+        session.commit()
+        return count

@@ -519,3 +519,68 @@ class GroupProfileProposal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
 
     driver: Mapped["Driver"] = relationship(lazy="joined")
+
+
+# ------------------------------------------------------------------
+# Notifications
+#
+# Recipients are offices, not drivers: an owner or a dispatcher. Drivers
+# already hear everything in their own truck's group, and adding a second
+# channel for them would only mean saying it twice.
+#
+# The (account_type, account_id) pair is the same shape TwoFactorSecret
+# uses - "owner" points at companies.id, "dispatcher" at dispatchers.id -
+# rather than two nullable foreign keys that are never both set.
+# ------------------------------------------------------------------
+class Notification(Base):
+    """One thing worth telling somebody, and whether they have seen it.
+
+    Written for every notification that gets sent, whatever channels it
+    went out on. The site is the record: email can bounce and Telegram can
+    be muted, and the bell is where anything the other channels dropped can
+    still be found."""
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+    account_type: Mapped[str] = mapped_column(String(20))   # owner | dispatcher
+    account_id: Mapped[int] = mapped_column(index=True)
+
+    # The catalogue key from services/notification_events.py.
+    event: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Where in the dashboard this is about, e.g. "/settings#drivers". Kept
+    # relative: the host changes and a stored absolute URL would go stale.
+    link: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)
+
+
+class NotificationPreference(Base):
+    """One switch: this account, this event, this channel, on or off.
+
+    A row per switch rather than a blob per account, so a new event in the
+    catalogue needs no migration and no backfill - anything with no row
+    falls back to the event's own default, which is what someone who has
+    never opened the settings should get.
+
+    Rows are written for mandatory events too, and ignored when they are
+    read. Storing the choice and then not honouring it would be worse than
+    refusing it, so the API rejects the write instead."""
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "account_type", "account_id", "event", "channel",
+            name="uq_notification_preference",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_type: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int] = mapped_column(index=True)
+    event: Mapped[str] = mapped_column(String(40))
+    channel: Mapped[str] = mapped_column(String(20))        # site | telegram | email
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
