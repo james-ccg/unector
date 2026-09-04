@@ -2433,10 +2433,9 @@ from fastapi.responses import FileResponse
 def get_public_stats():
     """Returns aggregated public statistics from database"""
     try:
-        from sqlalchemy import func
         from db.database import get_session
         from db import models
-        
+
         with get_session() as session:
             # Total companies registered
             total_companies = session.query(models.Company).count()
@@ -2448,12 +2447,14 @@ def get_public_stats():
             
             # Total loads processed
             total_loads = session.query(models.Load).count()
-            
-            # Total loads value (sum of all rate amounts)
-            loads_value = session.query(
-                func.sum(models.Load.rate_amount)
-            ).scalar() or 0
 
+            # Deliberately no total rate value. Counts stay anonymous however
+            # few companies there are, but a sum of money does not: while one
+            # carrier is signed up, "all loads booked through Unector" is that
+            # carrier's revenue, published to anyone who asks and signed in as
+            # nobody. It was never shown on the trust page either, so serving
+            # it bought nothing.
+            #
             # No "uptime" figure here - there's no real monitoring/health-check
             # history to compute one from, and TrustPage explicitly promises
             # these are real database numbers, not marketing claims.
@@ -2461,7 +2462,6 @@ def get_public_stats():
                 "companies": total_companies,
                 "active_trucks": active_drivers,
                 "loads_delivered": total_loads,
-                "loads_value": float(loads_value),
             }
     except Exception:
         import logging
@@ -2472,7 +2472,6 @@ def get_public_stats():
             "companies": 0,
             "active_trucks": 0,
             "loads_delivered": 0,
-            "loads_value": 0,
         }
 
 

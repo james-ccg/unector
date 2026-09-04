@@ -1,0 +1,14 @@
+# Crawlers get the same HTML shell on every route, because the dashboard is
+# rendered in the browser. The signed-in routes below therefore carry nothing
+# a search engine can use, and an indexed /dashboard that shows a stranger a
+# login screen is worse than no result at all. The marketing pages are the
+# ones worth finding, so everything else stays open.
+
+User-agent: *
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /monitoring
+Disallow: /onboarding/
+Disallow: /reset-password
+Disallow: /forgot-password
+Disallow: /api/

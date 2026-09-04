@@ -2199,10 +2199,13 @@ class TestPublicAPI:
         assert "companies" in data
         assert "active_trucks" in data
         assert "loads_delivered" in data
-        assert "loads_value" in data
         # No "uptime" - there's no real monitoring to compute one from, and
         # this endpoint promises real database numbers, not fabricated ones.
         assert "uptime" not in data
+        # No money either. Counts stay anonymous with one company signed up;
+        # a sum of rates would be that one company's revenue, served to
+        # anyone unauthenticated.
+        assert "loads_value" not in data
         assert isinstance(data["companies"], int)
 
 
