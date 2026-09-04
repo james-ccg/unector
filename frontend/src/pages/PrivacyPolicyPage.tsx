@@ -176,7 +176,7 @@ export default function PrivacyPolicyPage() {
             <section>
               <h2>9. Contact us</h2>
               <p>
-                Questions about this policy or your data: <a href="mailto:freightpilot.bot@gmail.com">freightpilot.bot@gmail.com</a>, or
+                Questions about this policy or your data: <a href="mailto:unector.bot@gmail.com">unector.bot@gmail.com</a>, or
                 message us on Telegram at <a href="https://t.me/Unector" target="_blank" rel="noopener noreferrer">@Unector</a>.
               </p>
             </section>
