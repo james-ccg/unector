@@ -141,6 +141,28 @@ async def read_and_propose(bot, *, company_id: int, driver_id: int, chat_id: int
     )
 
 
+def summarise(proposal: dict) -> str:
+    """One plain line, for a notification body.
+
+    describe() builds the Telegram message and is full of HTML tags, which
+    would be shown literally anywhere that is not Telegram - the dashboard
+    list and an email both being that."""
+    fields = proposal.get("fields") or {}
+    parts = [
+        f"{FIELD_LABELS[key]} {fields[key]}"
+        for key in ("truck_number", "trailer_number", "driver_name")
+        if key in fields
+    ]
+    read = ", ".join(parts) if parts else "some details"
+
+    conflicts = proposal.get("conflicts") or []
+    if len(conflicts) == 1:
+        return f"{read}. One thing disagrees with what is on file."
+    if conflicts:
+        return f"{read}. {len(conflicts)} things disagree with what is on file."
+    return f"{read}. Nothing disagrees with what is on file."
+
+
 def describe(proposal: dict) -> str:
     """The proposal as a person reads it, for the Telegram message."""
     fields = proposal.get("fields") or {}

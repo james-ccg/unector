@@ -510,6 +510,42 @@ export type GroupProfileField =
   | 'vin'
   | 'driver_email'
 
+/** One thing that happened, addressed to the signed-in account. Every
+ *  notification lands in this list whatever else it does - email can bounce
+ *  and Telegram refuses to message anyone who has not started a chat with
+ *  the bot, so the bell is the one channel that always arrives. */
+export interface AppNotification {
+  id: number
+  event: string
+  title: string
+  body: string | null
+  /** Where in the dashboard to go to act on it. Relative, because the host
+   *  changes between a dev tunnel and a real domain. */
+  link: string | null
+  read: boolean
+  created_at: string | null
+}
+
+export type NotificationChannel = 'site' | 'telegram' | 'email'
+
+export interface NotificationChannelState {
+  available: boolean
+  enabled: boolean
+  /** Set when the switch cannot move: a mandatory event, or the site
+   *  channel, which is the record of what was sent. */
+  locked: boolean
+}
+
+export interface NotificationEventPreference {
+  event: string
+  category: string
+  category_label: string
+  label: string
+  description: string
+  mandatory: boolean
+  channels: Record<NotificationChannel, NotificationChannelState>
+}
+
 export interface DriverLinkCode {
   code: string
   bot_command: string
@@ -702,6 +738,38 @@ export const dashboardApi = {
     apiRequest<{ success: boolean }>(`/api/drivers/${driverId}/details`, {
       method: 'PATCH',
       body: JSON.stringify(fields),
+    }),
+
+  listNotifications: (options: { limit?: number; unreadOnly?: boolean } = {}) => {
+    const query = new URLSearchParams()
+    if (options.limit) query.set('limit', String(options.limit))
+    if (options.unreadOnly) query.set('unread_only', 'true')
+    const suffix = query.toString() ? `?${query}` : ''
+    return apiRequest<{ notifications: AppNotification[]; unread: number }>(
+      `/api/notifications${suffix}`
+    )
+  },
+
+  /** Omit `ids` to mark everything read. */
+  markNotificationsRead: (ids?: number[]) =>
+    apiRequest<{ marked: number; unread: number }>('/api/notifications/read', {
+      method: 'POST',
+      body: JSON.stringify(ids ? { ids } : {}),
+    }),
+
+  getNotificationPreferences: () =>
+    apiRequest<{
+      channels: { key: NotificationChannel; label: string }[]
+      events: NotificationEventPreference[]
+    }>('/api/notifications/preferences'),
+
+  /** Fails with 409 for a switch that cannot move - a mandatory event, or
+   *  the site channel. The server says which, so the message is shown
+   *  rather than the toggle silently springing back. */
+  setNotificationPreference: (event: string, channel: NotificationChannel, enabled: boolean) =>
+    apiRequest<{ success: boolean }>('/api/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ event, channel, enabled }),
     }),
 
   createDriverLinkToken: (driverId: number | string) =>

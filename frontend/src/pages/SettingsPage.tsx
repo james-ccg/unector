@@ -11,6 +11,7 @@ import FontToggle from '../components/FontToggle'
 import AvatarPicker from '../components/AvatarPicker'
 import Alert from '../components/Alert'
 import GroupProfileReview, { FieldGrid } from '../components/GroupProfileReview'
+import NotificationSettings from '../components/NotificationSettings'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
@@ -127,11 +128,11 @@ export default function SettingsPage() {
   // share a tab now. Every tab shows for both roles; the owner-only sections
   // inside keep their own guards, so a dispatcher opening People simply sees
   // Team and nothing else.
-  type SettingsSection = 'company' | 'preferences' | 'billing' | 'integrations' | 'alerts' | 'fleet' | 'drivers' | 'dispatchers' | 'team' | 'security'
+  type SettingsSection = 'company' | 'preferences' | 'notifications' | 'billing' | 'integrations' | 'alerts' | 'fleet' | 'drivers' | 'dispatchers' | 'team' | 'security'
   type SettingsTab = 'general' | 'billing' | 'integrations' | 'fleet' | 'people' | 'security'
 
   const TAB_SECTIONS: Record<SettingsTab, SettingsSection[]> = {
-    general: ['company', 'preferences'],
+    general: ['company', 'preferences', 'notifications'],
     billing: ['billing'],
     integrations: ['integrations', 'alerts'],
     fleet: ['fleet', 'drivers'],
@@ -1294,6 +1295,14 @@ export default function SettingsPage() {
           </div>
 
           {fleetError && <Alert kind="error" onDismiss={() => setFleetError('')}>{fleetError}</Alert>}
+        </section>
+
+        {/* ---------------- Notifications ---------------- */}
+        <section className={sectionClass('notifications')}>
+          <h2 className="section-title">Notifications</h2>
+          <div className="card">
+            <NotificationSettings />
+          </div>
         </section>
 
         {/* ---------------- Drivers ---------------- */}

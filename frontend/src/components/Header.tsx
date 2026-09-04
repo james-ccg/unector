@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import Icon from './Icon'
 import EditStatusModal from './EditStatusModal'
+import NotificationBell from './NotificationBell'
 import './Header.css'
 
 interface HeaderProps {
@@ -109,6 +110,7 @@ export default function Header({ transparent = false }: HeaderProps) {
         </div>
 
         <div className="nav-actions">
+          {isAuthenticated && <NotificationBell />}
           {isAuthenticated ? (
             <div className="nav-profile-wrap" ref={profileMenuRef}>
               <button

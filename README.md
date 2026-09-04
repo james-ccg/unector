@@ -163,6 +163,35 @@ The bot process also runs two background jobs: the GPS location monitor, and an 
 that emails owners two days before their trial ends. Both live inside `bot.py`, so nothing is
 sent while only the API is running - worth knowing before wondering where a reminder went.
 
+## Notifications
+
+Three channels: the bell in the dashboard, a Telegram DM, and email. `services/notification_events.py`
+is the catalogue - what the app can tell somebody, who it is for, and where it goes when nobody has
+said otherwise - and everything else reads from it, so the preference screen, the delivery service
+and the tests cannot drift apart.
+
+`notification_service.notify(company_id, event_key, title=..., body=..., link=...)` is the only
+entry point. It works out who at the company wants it and where, tries each channel independently,
+and logs and swallows every failure: a load was dispatched whether or not the email went out, and
+an SMTP timeout rolling back a dispatch would be far worse than a missed message. Call
+`notify_async` from the bot, which is async and would otherwise stall its event loop on SMTP.
+
+Two things cannot be switched off, and the settings screen shows them locked rather than hiding
+them. The dashboard list always fires - email can bounce and Telegram refuses to let a bot message
+anyone who has not started a chat with it first, so the bell is the one channel that always arrives
+and therefore the record of what was sent. And events with a real consequence attached - a failed
+payment, a sign-in nobody recognises, an integration that quietly stopped working - ignore
+preferences entirely, because whoever muted one a year ago will not remember doing so on the day it
+matters.
+
+Preferences are stored only where they differ from the default. Writing a full grid of switches when
+an account is created would freeze today's defaults for everyone who never opens the page, and an
+event added later would reach nobody.
+
+Note that GPS proximity alerts and load dispatches to the driver's own group are a separate thing -
+see `LocationAlertRule` and bot.py. That is dispatch doing its job, not a notification anyone should
+be able to mute.
+
 ## Link previews
 
 The card Telegram, X and WhatsApp show when someone pastes a link comes from Open Graph tags in

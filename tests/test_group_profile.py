@@ -228,3 +228,24 @@ def test_dismissing_leaves_the_records_untouched(company_and_driver):
     assert identity["full_name"] is None
     assert identity["truck_unit_number"] is None
     assert repository.get_pending_proposal_for_group(-100900008) is None
+
+
+def test_the_notification_summary_carries_no_markup():
+    """describe() builds the Telegram message and is full of HTML tags.
+    The same text in the dashboard list or an email would show them
+    literally, which is why there are two functions."""
+    proposal = {
+        "fields": {"truck_number": "1001", "driver_name": "Test Driver"},
+        "unclear": [],
+        "conflicts": [],
+    }
+    summary = group_profile.summarise(proposal)
+    assert "<" not in summary and ">" not in summary
+    assert "1001" in summary and "Test Driver" in summary
+
+
+def test_the_summary_counts_disagreements_in_words_that_read():
+    base = {"fields": {"truck_number": "1001"}, "unclear": []}
+    assert "Nothing disagrees" in group_profile.summarise({**base, "conflicts": []})
+    assert "One thing disagrees" in group_profile.summarise({**base, "conflicts": ["a"]})
+    assert "2 things disagree" in group_profile.summarise({**base, "conflicts": ["a", "b"]})

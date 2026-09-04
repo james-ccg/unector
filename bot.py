@@ -79,7 +79,10 @@ from db.repository import (
     companies_due_trial_reminder,
     mark_trial_reminder_sent,
 )
-from services import gemini_service, email_service, samsara_service, geo_utils, group_profile
+from services import (
+    gemini_service, email_service, samsara_service, geo_utils, group_profile,
+    notification_service,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -331,6 +334,13 @@ async def handle_linkdriver(message: Message):
     # it all again on the dashboard.
     driver = get_driver_by_group(message.chat.id)
     if driver:
+        await notification_service.notify_async(
+            driver.company_id,
+            "fleet.group_linked",
+            title=f"{message.chat.title or 'A group'} is linked",
+            body=f"It is now the dispatch group for driver {driver.driver_bot_id}.",
+            link="/settings#drivers",
+        )
         await offer_group_profile(message.chat.id, driver.id, driver.company_id)
 
 
@@ -363,6 +373,16 @@ async def offer_group_profile(chat_id: int, driver_id: int, company_id: int) -> 
     )
     await bot.send_message(
         chat_id, group_profile.describe(proposal), parse_mode="HTML", reply_markup=keyboard
+    )
+
+    # The group has been asked; the office may not be watching it, so tell
+    # them too. Either side confirming resolves the same proposal.
+    await notification_service.notify_async(
+        company_id,
+        "fleet.profile_pending",
+        title="A group description needs checking",
+        body=group_profile.summarise(proposal),
+        link="/settings#drivers",
     )
 
 
@@ -1292,6 +1312,14 @@ async def handle_detention(message: Message):
         return
 
     mark_detention_requested(load.id)
+
+    await notification_service.notify_async(
+        driver.company_id,
+        "load.detention",
+        title=f"Detention requested on load {load.load_id}",
+        body=f"{driver.driver_bot_id} has been sitting. The request went to {broker_email}.",
+        link="/dashboard",
+    )
 
     dispatcher_tag = f"@{driver.dispatcher_username}" if driver.dispatcher_username else "Your dispatcher"
     await message.reply(
