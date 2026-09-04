@@ -102,8 +102,8 @@ export default function TermsOfServicePage() {
               <p>
                 The Service is provided "as is" and "as available," without warranties of any kind, express or
                 implied. We don't warrant that the Service, its AI features, or any connected integration will be
-                uninterrupted, error-free, or perfectly accurate. To the maximum extent permitted by law, Freight
-                Pilot won't be liable for indirect, incidental, or consequential damages (including lost freight
+                uninterrupted, error-free, or perfectly accurate. To the maximum extent permitted by law, Unector
+                won't be liable for indirect, incidental, or consequential damages (including lost freight
                 revenue, missed deliveries, or detention charges) arising from your use of the Service, and our
                 total liability for any claim is limited to the amount you paid us in the 12 months before the
                 claim arose.

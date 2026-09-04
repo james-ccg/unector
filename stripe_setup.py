@@ -1,6 +1,6 @@
 """
-One-time setup script: creates the Stripe Products/Prices for Freight
-Pilot's Pro/Max 5x/Max 20x plans (monthly + yearly each = 6 Prices total),
+One-time setup script: creates the Stripe Products/Prices for Unector's
+Pro/Max 5x/Max 20x plans (monthly + yearly each = 6 Prices total),
 using the dollar amounts in config.PLAN_PRICES, and prints the resulting
 Price IDs to paste into .env.
 
