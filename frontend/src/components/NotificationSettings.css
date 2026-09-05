@@ -116,3 +116,45 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* Connecting Telegram.
+   Sits above the switches on purpose: it is the thing that decides whether
+   any of them below can do anything, and finding that out after choosing is
+   the wrong order. */
+.ns-connect {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* Once it is connected this is a statement rather than a task, so it drops
+   back to the quieter treatment the rest of the panel uses. */
+.ns-connect.is-done {
+  border-style: dashed;
+}
+
+.ns-connect-text {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.ns-connect-text strong {
+  color: var(--text-primary);
+}
+
+.ns-connect-ready {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.ns-connect-ready .settings-hint {
+  margin: 0;
+}

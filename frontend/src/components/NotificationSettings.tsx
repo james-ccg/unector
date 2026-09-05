@@ -7,6 +7,13 @@ import {
 } from '../services/api'
 import './NotificationSettings.css'
 
+type TelegramLink = {
+  code: string
+  url: string | null
+  bot_command: string
+  expires_in_minutes: number
+}
+
 /**
  * What you get told about, and where.
  *
@@ -32,12 +39,24 @@ export default function NotificationSettings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  // Whether the bot can reach this person at all, and the link that fixes
+  // it when it cannot. Kept here rather than on the Security screen because
+  // this is where somebody switches Telegram on and would otherwise never
+  // learn that switching it on is not enough.
+  const [telegramConnected, setTelegramConnected] = useState(true)
+  const [link, setLink] = useState<TelegramLink | null>(null)
+  const [linking, setLinking] = useState(false)
+  const [linkError, setLinkError] = useState('')
 
   const load = useCallback(async () => {
     try {
       const data = await dashboardApi.getNotificationPreferences()
       setRows(data.events)
       setLabels(Object.fromEntries(data.channels.map((c) => [c.key, c.label])))
+      setTelegramConnected(data.telegram_connected)
+      // Clears a stale link once the connection has actually happened, so
+      // the panel does not keep offering a code that has been spent.
+      if (data.telegram_connected) setLink(null)
       setError('')
     } catch (err) {
       setError(errorMessage(err, "Couldn't load your notification settings."))
@@ -85,6 +104,34 @@ export default function NotificationSettings() {
     }
   }
 
+  const connect = async () => {
+    setLinking(true)
+    setLinkError('')
+    try {
+      setLink(await dashboardApi.startTelegramLink())
+    } catch (err) {
+      setLinkError(errorMessage(err, "Couldn't prepare a Telegram link."))
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  const disconnect = async () => {
+    setLinking(true)
+    setLinkError('')
+    try {
+      await dashboardApi.stopTelegramLink()
+      await load()
+    } catch (err) {
+      // 409 while Telegram is also a two-factor method - the message says
+      // which screen to turn that off on, so it is shown rather than
+      // flattened into "couldn't do that".
+      setLinkError(errorMessage(err, "Couldn't disconnect Telegram."))
+    } finally {
+      setLinking(false)
+    }
+  }
+
   if (loading) {
     return <p className="settings-hint">Loading your notification settings...</p>
   }
@@ -108,6 +155,65 @@ export default function NotificationSettings() {
         one place nothing can go missing. Telegram and email are yours to choose, except where
         there&apos;s money or account access involved.
       </p>
+
+      {/* Telegram cannot be delivered to until the person has opened a chat
+          with the bot - Telegram refuses to let a bot message a stranger,
+          and nothing on our side can grant that. So a switch turned on
+          without it is indistinguishable from a working one, right up until
+          the message somebody needed never arrives. This says so, and makes
+          the one required step a single tap. */}
+      {!telegramConnected && (
+        <div className="ns-connect">
+          <p className="ns-connect-text">
+            <strong>Telegram isn&apos;t connected.</strong> Anything set to Telegram below
+            won&apos;t arrive until it is. Telegram doesn&apos;t let a bot message someone who
+            hasn&apos;t opened a chat with it, so it takes one tap - the link opens the bot, and
+            pressing Start connects this account.
+          </p>
+          {linkError && <p className="ns-error">{linkError}</p>}
+          {link ? (
+            <div className="ns-connect-ready">
+              {link.url && (
+                <a
+                  className="btn btn-primary btn-sm"
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open Telegram and connect
+                </a>
+              )}
+              <p className="settings-hint">
+                {link.url
+                  ? 'No Telegram on this device? Send '
+                  : "Couldn't build a link to the bot. Send "}
+                <code className="mono">{link.bot_command}</code> to the bot instead. Good for{' '}
+                {link.expires_in_minutes} minutes.
+              </p>
+              <button className="btn btn-ghost btn-sm" onClick={load}>
+                I&apos;ve done it - check now
+              </button>
+            </div>
+          ) : (
+            <button className="btn btn-primary btn-sm" onClick={connect} disabled={linking}>
+              {linking ? 'Preparing...' : 'Connect Telegram'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {telegramConnected && (
+        <div className="ns-connect is-done">
+          <p className="ns-connect-text">
+            <strong>Telegram is connected.</strong> Anything set to Telegram below arrives in
+            your chat with the bot.
+          </p>
+          {linkError && <p className="ns-error">{linkError}</p>}
+          <button className="btn btn-ghost btn-sm" onClick={disconnect} disabled={linking}>
+            {linking ? 'Working...' : 'Disconnect Telegram'}
+          </button>
+        </div>
+      )}
 
       {error && <p className="ns-error">{error}</p>}
 

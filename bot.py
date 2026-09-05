@@ -44,7 +44,7 @@ import time
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand, CallbackQuery,
 )
@@ -71,6 +71,7 @@ from db.repository import (
     mark_alert_rule_fired,
     get_enabled_alert_rules,
     consume_telegram_link_token,
+    link_telegram_account,
     set_telegram_otp,
     link_driver_group,
     get_pending_proposal_for_group,
@@ -135,9 +136,61 @@ async def update_group_title(group_id: int, title: str):
             logger.info(f"Updated group title for driver {driver.driver_bot_id}: {title}")
 
 
+async def _connect_from_start(message: Message, payload: str) -> None:
+    """Connects the Telegram account that just pressed Start.
+
+    Same token /verify2fa consumes, so there is one thing to expire and one
+    place a code can be spent. A code meant for a driver group is refused
+    here for the same reason it is refused there: the two share a table, and
+    spending one in the wrong place would link the wrong thing quietly.
+
+    Notifications are the point rather than 2FA. Connecting does not turn
+    Telegram on as a second factor - that stays a separate, deliberate
+    choice in Settings, because a channel somebody wanted for news is not
+    consent to depend on it for getting in.
+    """
+    code = payload.strip().upper()
+    result = await asyncio.to_thread(consume_telegram_link_token, code)
+    if not result or result["account_type"] not in ("owner", "dispatcher"):
+        await message.reply(
+            "❌ That link has expired or was already used. Open Settings → "
+            "Notifications in the dashboard and tap Connect Telegram again - "
+            "a fresh link is good for 30 minutes."
+        )
+        return
+
+    # Records where to send things and nothing else - set_telegram_otp would
+    # also write the two-factor flag, switching it off for anybody who had
+    # already turned it on.
+    await asyncio.to_thread(
+        link_telegram_account,
+        result["account_type"], result["account_id"], message.from_user.id,
+    )
+    await message.reply(
+        "✅ **Telegram connected.**\n\n"
+        "Notifications you have chosen for Telegram will arrive here - loads, "
+        "billing, and anything about your account's security.\n\n"
+        "Choose which ones in Settings → Notifications. To use Telegram for "
+        "two-factor codes as well, turn that on in Settings → Security.",
+        parse_mode="Markdown",
+    )
+
+
 @dp.message(Command("start"))
-async def handle_start(message: Message):
-    """Welcome message + command list - the first thing most users see."""
+async def handle_start(message: Message, command: CommandObject | None = None):
+    """Welcome message + command list - the first thing most users see.
+
+    A payload turns it into the other thing it is: the moment a person's
+    Telegram account gets connected to their Unector login. Telegram will
+    not let a bot message anybody who has not opened a chat with it, so
+    pressing Start is required either way - the deep link just makes that
+    same press do the connecting too, instead of sending somebody back to
+    the dashboard for a code to type."""
+    payload = (command.args or "").strip() if command else ""
+    if payload:
+        await _connect_from_start(message, payload)
+        return
+
     await message.reply(
         "👋 **Welcome to Unector!**\n\n"
         "I help trucking companies automate dispatch: I pull rate confirmations from email, "

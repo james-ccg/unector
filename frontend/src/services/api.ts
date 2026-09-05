@@ -775,7 +775,31 @@ export const dashboardApi = {
     apiRequest<{
       channels: { key: NotificationChannel; label: string }[]
       events: NotificationEventPreference[]
+      /** Whether Telegram can be delivered to at all. Telegram refuses to
+       *  let a bot message anyone who has not opened a chat with it, so a
+       *  switch turned on without this is indistinguishable from a working
+       *  one until the message nobody received. */
+      telegram_connected: boolean
     }>('/api/notifications/preferences'),
+
+  /** A one-tap link that connects this account to the bot. `url` is null
+   *  when the bot is unreachable, in which case the code and the command
+   *  are the way through. */
+  startTelegramLink: () =>
+    apiRequest<{
+      code: string
+      url: string | null
+      bot_command: string
+      expires_in_minutes: number
+    }>('/api/notifications/telegram/link', { method: 'POST' }),
+
+  /** Fails with 409 while Telegram is also a two-factor method - removing
+   *  the id would leave that method pointing nowhere. */
+  stopTelegramLink: () =>
+    apiRequest<{ success: boolean }>(
+      '/api/notifications/telegram/link',
+      { method: 'DELETE' }
+    ),
 
   /** Fails with 409 for a switch that cannot move - a mandatory event, or
    *  the site channel. The server says which, so the message is shown

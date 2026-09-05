@@ -1416,6 +1416,68 @@ def set_sms_otp(account_type: str, account_id: int, phone_number: str | None, en
         session.commit()
 
 
+def link_telegram_account(account_type: str, account_id: int, telegram_user_id: int) -> None:
+    """Records where to reach this account on Telegram, and nothing else.
+
+    Deliberately not set_telegram_otp with enabled=False: that would switch
+    off two-factor for anybody who already had it on, so connecting for
+    notifications would quietly remove a second factor. Wanting news in
+    Telegram and depending on Telegram to get in are separate decisions and
+    stay separately recorded.
+    """
+    with get_session() as session:
+        row = _get_or_create_2fa_row(session, account_type, account_id)
+        row.telegram_user_id = telegram_user_id
+        session.commit()
+
+
+def unlink_telegram_account(account_type: str, account_id: int) -> tuple[bool, str]:
+    """Forgets where to reach this account on Telegram.
+
+    Refuses while Telegram is also a two-factor method, because clearing the
+    id would leave that method pointing nowhere - and the way somebody finds
+    out is being unable to get in. Same shape as refusing to remove the last
+    payment method during a trial: keep the guard, say why, and let them
+    turn the other thing off first if they mean it.
+    """
+    with get_session() as session:
+        row = (
+            session.query(models.TwoFactorSecret)
+            .filter(
+                models.TwoFactorSecret.account_type == account_type,
+                models.TwoFactorSecret.account_id == account_id,
+            )
+            .first()
+        )
+        if not row or not row.telegram_user_id:
+            return True, "ok"
+        if row.telegram_otp_enabled:
+            return False, "used_for_2fa"
+
+        row.telegram_user_id = None
+        session.commit()
+        return True, "ok"
+
+
+def telegram_account_linked(account_type: str, account_id: int) -> bool:
+    """Whether Telegram can be delivered to at all.
+
+    The settings screen needs this: a channel switched on with nowhere to
+    send to looks identical to one that is working, right up until the
+    message somebody needed does not arrive.
+    """
+    with get_session() as session:
+        row = (
+            session.query(models.TwoFactorSecret)
+            .filter(
+                models.TwoFactorSecret.account_type == account_type,
+                models.TwoFactorSecret.account_id == account_id,
+            )
+            .first()
+        )
+        return bool(row and row.telegram_user_id)
+
+
 def set_telegram_otp(account_type: str, account_id: int, telegram_user_id: int | None, enabled: bool) -> None:
     with get_session() as session:
         row = _get_or_create_2fa_row(session, account_type, account_id)

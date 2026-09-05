@@ -1642,13 +1642,58 @@ def get_notification_preferences(user: dict = Depends(get_current_user)):
             },
         })
 
+    from db.repository import telegram_account_linked
+
     return {
         "channels": [
             {"key": channel, "label": events.CHANNEL_LABELS[channel]}
             for channel in events.CHANNELS
         ],
         "events": rows,
+        # Whether Telegram can be delivered to at all. Telegram refuses to
+        # let a bot message anyone who has not opened a chat with it, so a
+        # switch turned on without that looks identical to one that is
+        # working - right up until the message somebody needed never
+        # arrives. The screen says so instead.
+        "telegram_connected": telegram_account_linked(account_type, account_id),
     }
+
+
+@app.post("/api/notifications/telegram/link")
+def start_telegram_link(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+    """A one-tap link that connects this account to the bot.
+
+    Telegram's rule - no messages to anyone who has not opened a chat with
+    the bot - cannot be worked around, so this makes the one required step
+    as small as it goes: tapping the link opens the bot, and pressing Start
+    both begins that conversation and links the account.
+
+    The code is returned as well, for a desktop with no Telegram installed
+    where the link cannot be tapped. Same token either way.
+    """
+    from services import telegram_link
+
+    account_type, account_id = _notification_account(user)
+    issued = telegram_link.issue_link(account_type, account_id)
+    return {**issued, "bot_command": f"/start {issued['code']}"}
+
+
+@app.delete("/api/notifications/telegram/link")
+def stop_telegram_link(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+    """Forgets where to reach this account on Telegram.
+
+    Leaves any Telegram two-factor setting alone - that is a separate
+    decision, made on a different screen, and silently removing somebody's
+    second factor because they stopped wanting notifications there would be
+    a surprise of the worst kind.
+    """
+    from db.repository import unlink_telegram_account
+
+    account_type, account_id = _notification_account(user)
+    ok, reason = unlink_telegram_account(account_type, account_id)
+    if ok:
+        return {"success": True}
+    raise HTTPException(409, "Telegram is one of your two-factor methods, so disconnecting it here would leave you unable to sign in. Turn it off in Settings → Security first.")
 
 
 @app.put("/api/notifications/preferences")

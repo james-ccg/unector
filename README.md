@@ -220,6 +220,21 @@ are for the carrier who asks for them, because a message per edit is the fastest
 somebody to ignore the sender. The exceptions are the two with a consequence attached: a teammate
 gaining access, and a payment method disappearing.
 
+Telegram has to be connected before it can deliver, and that is not a setting anyone can grant.
+Telegram refuses to let a bot message somebody who has never opened a chat with it - sendMessage
+answers 403 - so consent given on our site cannot authorise it. What the site can do is make the
+one required step a single tap: Settings issues a deep link, opening it starts a chat with the
+bot, and pressing Start both satisfies Telegram's rule and links the account, since the payload
+travels with it. `services/telegram_link.py` mints the link; the same token /verify2fa consumes,
+so there is one thing to expire.
+
+The settings screen says whether Telegram is connected, because a switch turned on with nowhere
+to send to looks exactly like one that works - until the message somebody needed never arrives.
+
+Connecting for notifications deliberately does not switch Telegram on as a second factor, and
+disconnecting is refused while it *is* one: clearing the chat id would leave that method pointing
+nowhere, and the way somebody finds that out is being unable to sign in.
+
 Preferences are stored only where they differ from the default. Writing a full grid of switches when
 an account is created would freeze today's defaults for everyone who never opens the page, and an
 event added later would reach nobody.
