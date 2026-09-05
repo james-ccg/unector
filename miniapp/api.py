@@ -3070,7 +3070,18 @@ def webauthn_delete(
 
 @app.post("/api/2fa/recovery-codes/generate")
 def recovery_codes_generate(user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf)):
+    """Codes for getting in when the second factor is unavailable.
+
+    Refused until there is a second factor, because until then there is
+    nothing to recover from - the password alone already signs you in, and
+    the codes would sit there doing nothing except being one more secret
+    that could be found. Enforced here and not only in the screen: a rule
+    that lives in the frontend is a suggestion.
+    """
     account_type, account_id = _self_account(user)
+    if not get_2fa_status(account_type, account_id)["any_enabled"]:
+        raise HTTPException(409, "Recovery codes are for getting in when your second factor isn't available, so turn one on first - until then your password alone signs you in and there is nothing for a code to recover.")
+
     codes = twofactor_service.generate_recovery_codes()
     save_recovery_codes(account_type, account_id, [twofactor_service.hash_recovery_code(c) for c in codes])
     return {"codes": codes}

@@ -465,7 +465,14 @@ export default function TwoFactorSettings() {
         {!isWebAuthnSupported() && <p className="method-hint">This browser does not support security keys.</p>}
       </div>
 
-      {/* ---------------- Recovery codes ---------------- */}
+      {/* ---------------- Recovery codes ----------------
+          Only once there is a second factor. Until then there is nothing to
+          recover from - the password alone signs you in - so the card would
+          be offering a solution to a problem the account does not have, and
+          the codes would sit there being one more secret that could be
+          found. It appears the moment a method is turned on, which is also
+          the moment it starts being worth setting up. */}
+      {status?.any_enabled && (
       <div className="card twofa-card">
         <div className="twofa-card-head">
           <div className="twofa-icon"><Icon name="warning" size={20} /></div>
@@ -487,10 +494,15 @@ export default function TwoFactorSettings() {
           </>
         ) : (
           <button className="btn btn-primary" onClick={generateRecoveryCodes} disabled={recoveryBusy}>
-            {recoveryBusy ? 'Generating...' : 'Generate recovery codes'}
+            {recoveryBusy
+              ? 'Generating...'
+              : status.recovery_codes_remaining
+                ? 'Generate new codes'
+                : 'Generate recovery codes'}
           </button>
         )}
       </div>
+      )}
     </div>
   )
 }
