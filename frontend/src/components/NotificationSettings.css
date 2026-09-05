@@ -142,3 +142,59 @@
 .ns-chip.is-unavailable {
   opacity: 0.45;
 }
+
+/* The chip and its explanation. Relative so the bubble can be positioned
+   against this chip rather than against the row - the message is about one
+   switch, and pointing at the wrong one is worse than not pointing. */
+.ns-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Floats above the rest of the list instead of taking space in it. A row
+   that grew and shrank would shove everything below it about each time
+   somebody pressed a locked chip, which reads as the page glitching rather
+   than as an answer. */
+.ns-hint {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  /* --card, not --bg: the bubble sits on top of a card, so matching the
+     page behind it would read as a hole rather than as something above. */
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: ns-hint-in 0.12s ease-out;
+}
+
+@keyframes ns-hint-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-hint {
+    animation: none;
+  }
+}
+
+/* On a narrow screen the chips sit near the right edge, so a bubble anchored
+   right would run off it. Anchored to the row instead, which is still beside
+   the chip that was pressed and no longer clipped. */
+@media (max-width: 560px) {
+  .ns-hint {
+    right: auto;
+    left: 0;
+    max-width: 70vw;
+  }
+}

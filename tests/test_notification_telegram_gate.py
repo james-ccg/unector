@@ -63,11 +63,44 @@ class TestTheSwitchesAreGated:
         fewer chip than the next."""
         assert "is-unavailable" in NOTIFICATIONS
 
-    def test_an_already_on_switch_is_not_gated(self):
-        """Somebody who connected, switched things on and then disconnected
-        still has those preferences. Blocking the toggle would leave them
-        unable to turn them off."""
-        assert "!state.enabled" in NOTIFICATIONS
+    def test_it_is_locked_in_both_directions(self):
+        """With nothing connected the switch means nothing either way: on
+        would save a preference that can never deliver, off would be turning
+        off something that was never going to arrive. An earlier version
+        gated only the on direction, which left a switch that could be moved
+        one way and not back."""
+        gate = NOTIFICATIONS[NOTIFICATIONS.index("if (channel === 'telegram'"):]
+        gate = gate[:gate.index("}")]
+        assert "state.enabled" not in gate, "the gate still checks which way it is moving"
+
+    def test_the_chip_is_not_disabled(self):
+        """A disabled button fires no click, so pressing it would explain
+        nothing and simply feel broken. It stays pressable and answers."""
+        assert "disabled={state.locked || busy === key}" in NOTIFICATIONS
+
+    def test_the_explanation_appears_beside_the_chip(self):
+        """It used to be a line at the top of the list, which somebody who
+        had scrolled down to a switch never saw."""
+        assert "ns-chip-wrap" in NOTIFICATIONS
+        assert "ns-hint" in NOTIFICATIONS
+
+    def test_the_explanation_clears_itself(self):
+        assert "setTimeout(() => setHint(null), 2600)" in NOTIFICATIONS
+
+    def test_the_timer_is_cleared_on_unmount(self):
+        """Otherwise it sets state on a component that is gone - a warning in
+        the console and a leak on a page somebody opens and closes often."""
+        assert "useEffect(() => () => {" in NOTIFICATIONS
+
+    def test_the_bubble_does_not_move_the_page(self):
+        """A row that grew and shrank would shove the rest of the list about
+        every time a locked chip was pressed, which reads as glitching."""
+        css = (
+            ROOT / "frontend" / "src" / "components" / "NotificationSettings.css"
+        ).read_text(encoding="utf-8")
+        hint = css[css.index(".ns-hint {"):]
+        hint = hint[:hint.index("}")]
+        assert "position: absolute" in hint
 
 
 class TestTheServerStillDecides:

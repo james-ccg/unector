@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   dashboardApi,
   errorMessage,
@@ -46,6 +46,25 @@ export default function NotificationSettings() {
     connected: true, username: null, blocked: false,
   })
 
+  // Which chip is explaining itself, as "event:channel". A bubble beside the
+  // thing that was pressed, rather than a line at the top of a list somebody
+  // has scrolled down past - the message is about the chip, so it belongs
+  // where the chip is.
+  const [hint, setHint] = useState<string | null>(null)
+  const hintTimer = useRef<number | null>(null)
+
+  const showHint = (event: string, channel: NotificationChannel) => {
+    if (hintTimer.current) window.clearTimeout(hintTimer.current)
+    setHint(`${event}:${channel}`)
+    // Long enough to read one sentence, short enough not to be dismissed
+    // furniture. Cleared on unmount too, or it sets state on a gone component.
+    hintTimer.current = window.setTimeout(() => setHint(null), 2600)
+  }
+
+  useEffect(() => () => {
+    if (hintTimer.current) window.clearTimeout(hintTimer.current)
+  }, [])
+
   const load = useCallback(async () => {
     try {
       const data = await dashboardApi.getNotificationPreferences()
@@ -68,11 +87,13 @@ export default function NotificationSettings() {
     const state = row.channels[channel]
     if (state.locked || !state.available) return
 
-    // Turning Telegram on while nothing is connected would save a preference
-    // that can never deliver, and look exactly like one that works. Say what
-    // is missing instead of storing a switch with nowhere to send to.
-    if (channel === 'telegram' && !telegram.connected && !state.enabled) {
-      setError('Connect Telegram in Integrations first - until then there is nowhere to send it.')
+    // With nothing connected the switch means nothing in either direction:
+    // on would save a preference that can never deliver, and off would be
+    // turning off something that was never going to arrive. So it is locked
+    // both ways, and says why beside the chip that was pressed rather than
+    // in a banner at the top the reader may have scrolled past.
+    if (channel === 'telegram' && !telegram.connected) {
+      showHint(row.event, channel)
       return
     }
 
@@ -174,30 +195,48 @@ export default function NotificationSettings() {
                 {CHANNEL_ORDER.filter((channel) => row.channels[channel]?.available).map(
                   (channel) => {
                     const state = row.channels[channel]
-                    const unreachable =
-                      channel === 'telegram' && !telegram.connected && !state.enabled
+                    // Unreachable in both directions: with nothing connected
+                    // there is no meaningful on and no meaningful off.
+                    const unreachable = channel === 'telegram' && !telegram.connected
+                    const key = `${row.event}:${channel}`
                     const classes = ['ns-chip']
                     if (state.enabled) classes.push('is-on')
                     if (state.locked) classes.push('is-locked')
                     if (unreachable) classes.push('is-unavailable')
                     return (
+                      <span className="ns-chip-wrap" key={channel}>
+                      {hint === key && (
+                        // Absolutely positioned, so appearing and going away
+                        // moves nothing else on the page - a row that grew
+                        // and shrank would shove the rest of the list about
+                        // every time somebody pressed a locked chip.
+                        <span className="ns-hint" role="status">
+                          Connect Telegram in Integrations first - until then there&apos;s nowhere
+                          to send it.
+                        </span>
+                      )}
                       <button
                         type="button"
-                        key={channel}
                         className={classes.join(' ')}
                         onClick={() => toggle(row, channel)}
-                        disabled={state.locked || busy === `${row.event}:${channel}`}
+                        // Not `disabled` for the unreachable case: a disabled
+                        // button fires no click, so pressing it would explain
+                        // nothing and feel broken instead.
+                        disabled={state.locked || busy === key}
                         aria-pressed={state.enabled}
                         title={
                           state.locked
                             ? channel === 'site'
                               ? "The dashboard list can't be turned off - it's the record."
                               : "This one can't be turned off - it has a consequence attached."
-                            : undefined
+                            : unreachable
+                              ? 'Connect Telegram in Integrations first.'
+                              : undefined
                         }
                       >
                         {labels[channel] ?? channel}
                       </button>
+                      </span>
                     )
                   }
                 )}
