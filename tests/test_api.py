@@ -1612,10 +1612,17 @@ class TestDispatcherBillingAccess:
         # by require_owner, not what Stripe itself does with the request.
         from services import stripe_service
 
-        monkeypatch.setattr(
-            stripe_service, "create_checkout_session",
-            lambda company_id, tier, interval: "https://checkout.stripe.com/fake",
-        )
+        # Captures who the endpoint says is buying. A company has one plan
+        # shared by everyone on the account, so the dispatcher who clicks has
+        # to be the one recorded - otherwise "who paid?" answers "the owner"
+        # for a purchase the owner had nothing to do with.
+        seen = {}
+
+        def fake_checkout(company_id, tier, interval, **kwargs):
+            seen.update(kwargs)
+            return "https://checkout.stripe.com/fake"
+
+        monkeypatch.setattr(stripe_service, "create_checkout_session", fake_checkout)
 
         self._register_owner_and_dispatcher(client, "742222", "billing_dispatcher_2")
         client.post("/api/auth/logout", headers=_csrf_headers(client))
@@ -1626,6 +1633,8 @@ class TestDispatcherBillingAccess:
         )
         assert response.status_code == 200, response.text
         assert response.json()["url"] == "https://checkout.stripe.com/fake"
+        assert seen["actor_type"] == "dispatcher"
+        assert seen["actor_label"] == "billing_dispatcher_2"
 
     def test_dispatcher_can_reach_billing_portal(self, client):
         self._register_owner_and_dispatcher(client, "743333", "billing_dispatcher_3")

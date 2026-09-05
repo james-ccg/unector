@@ -22,6 +22,8 @@ from config import FRONTEND_URL, PLAN_PRICE_IDS, STRIPE_SECRET_KEY, STRIPE_WEBHO
 from db.repository import (
     find_trial_redemption,
     get_company_billing_info,
+    get_company_by_subscription_id,
+    record_billing_event,
     set_company_stripe_customer,
     update_company_subscription,
     upsert_trial_redemption,
@@ -46,10 +48,21 @@ def check_trial_eligibility(
     return find_trial_redemption(email=email, mc_number=mc_number, gmail_address=gmail_address) is None
 
 
-def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
+def create_checkout_session(
+    company_id: int, tier: str, interval: str, *,
+    actor_type: str | None = None,
+    actor_id: int | None = None,
+    actor_label: str | None = None,
+) -> str:
     """Creates a Stripe Checkout Session for this company to subscribe to
     `tier` ("pro" | "max_5x" | "max_20x"), billed monthly or yearly.
-    Returns the URL to redirect the browser to."""
+    Returns the URL to redirect the browser to.
+
+    The actor is who clicked. A company has one plan shared by the owner and
+    every dispatcher, and any of them can be the one who pays, so this rides
+    along in the subscription's metadata and comes back on the webhook -
+    Stripe sees a card, not a login, so this is the only place the payer is
+    knowable."""
     _require_configured()
     if tier not in PLAN_PRICE_IDS:
         raise ValueError(f"Not a purchasable tier: {tier}")
@@ -85,7 +98,17 @@ def create_checkout_session(company_id: int, tier: str, interval: str) -> str:
 
     customer_id = _ensure_customer(company_id, company)
 
-    subscription_data = {"metadata": {"company_id": str(company_id), "tier": tier}}
+    # Stripe metadata values are strings, and it drops keys with a None
+    # value rather than storing a null - so anything absent is simply left
+    # out and read back as absent.
+    metadata = {"company_id": str(company_id), "tier": tier}
+    if actor_type:
+        metadata["actor_type"] = actor_type
+    if actor_id is not None:
+        metadata["actor_id"] = str(actor_id)
+    if actor_label:
+        metadata["actor_label"] = actor_label[:450]
+    subscription_data = {"metadata": metadata}
     if check_trial_eligibility(company["email"], company["mc_number"]):
         subscription_data["trial_period_days"] = 7
         # A safety net now rather than the usual path: checkout takes a card
@@ -301,12 +324,18 @@ def handle_webhook_event(payload: bytes, sig_header: str) -> None:
     event_type = event["type"]
     obj = event["data"]["object"]
 
+    # Stripe re-sends, on purpose, so anything written to the billing
+    # history carries this and is written at most once per event.
+    event_id = event.get("id")
+
     if event_type == "customer.subscription.created":
-        _handle_subscription_created(obj)
+        _handle_subscription_created(obj, event_id)
     elif event_type == "customer.subscription.updated":
-        _handle_subscription_updated(obj)
+        _handle_subscription_updated(obj, event_id)
     elif event_type == "customer.subscription.deleted":
-        _handle_subscription_deleted(obj)
+        _handle_subscription_deleted(obj, event_id)
+    elif event_type == "invoice.paid":
+        _handle_invoice_paid(obj, event_id)
     else:
         logging.info("Ignoring unhandled Stripe event type: %s", event_type)
 
@@ -314,6 +343,23 @@ def handle_webhook_event(payload: bytes, sig_header: str) -> None:
 def _company_id_from_subscription(sub: dict) -> int | None:
     company_id = (sub.get("metadata") or {}).get("company_id")
     return int(company_id) if company_id else None
+
+
+def _actor_from(sub: dict) -> dict:
+    """Who started this subscription, as recorded at checkout.
+
+    Absent for anything Stripe did by itself - a renewal, a change made in
+    the billing portal - which is a real answer rather than a gap, and why
+    the history distinguishes lines somebody caused from lines that simply
+    happened.
+    """
+    metadata = sub.get("metadata") or {}
+    actor_id = metadata.get("actor_id")
+    return {
+        "actor_type": metadata.get("actor_type"),
+        "actor_id": int(actor_id) if actor_id and str(actor_id).isdigit() else None,
+        "actor_label": metadata.get("actor_label"),
+    }
 
 
 def _get_card_fingerprint(sub: dict) -> str | None:
@@ -373,7 +419,7 @@ def sync_from_stripe(company_id: int) -> dict:
     }
 
 
-def _handle_subscription_created(sub: dict) -> None:
+def _handle_subscription_created(sub: dict, event_id: str | None = None) -> None:
     company_id = _company_id_from_subscription(sub)
     if not company_id:
         logging.warning("Stripe subscription %s has no company_id metadata - ignoring", sub.get("id"))
@@ -409,8 +455,23 @@ def _handle_subscription_created(sub: dict) -> None:
         card_fingerprint=card_fingerprint,
     )
 
+    actor = _actor_from(sub)
+    fresh = record_billing_event(
+        company_id, "subscribed",
+        tier=tier, billing_interval=interval,
+        stripe_event_id=event_id, **actor,
+    )
+    if fresh:
+        _announce_plan(
+            company_id,
+            title=f"{_plan_name(tier)} is now the company plan",
+            actor_label=actor["actor_label"],
+            detail=f"Everyone on this account is on {_plan_name(tier)}, billed "
+                   f"{'yearly' if interval == 'year' else 'monthly'}.",
+        )
 
-def _handle_subscription_updated(sub: dict) -> None:
+
+def _handle_subscription_updated(sub: dict, event_id: str | None = None) -> None:
     company_id = _company_id_from_subscription(sub)
     if not company_id:
         return
@@ -434,35 +495,71 @@ def _handle_subscription_updated(sub: dict) -> None:
 
     from services import notification_service
 
+    # The plan belongs to the company, so this goes to the owner and every
+    # dispatcher. A dispatcher can be the one paying for it, and one who
+    # arrives to find the account paused should not have to work out why
+    # from the driver cap.
+    everyone = ("owner", "dispatcher")
+
     if status in ("past_due", "unpaid"):
+        record_billing_event(
+            company_id, "payment_failed", tier=before.get("subscription_tier"),
+            billing_interval=interval, stripe_event_id=event_id,
+            note="A payment did not go through.",
+        )
         notification_service.notify(
             company_id, "billing.payment_failed",
             title="A payment did not go through",
             body="The plan stops at the end of this period unless it is paid. "
                  "Check the payment method in Settings.",
-            link="/settings", account_types=("owner",),
+            link="/settings", account_types=everyone,
         )
     elif status == "active" and was in ("trialing", "past_due", "unpaid", "incomplete"):
+        tier = before.get("subscription_tier")
+        record_billing_event(
+            company_id, "plan_changed", tier=tier, billing_interval=interval,
+            stripe_event_id=event_id, note="The subscription became active.",
+        )
         notification_service.notify(
             company_id, "billing.plan_changed",
-            title="Your plan is active",
-            body="The payment went through and the subscription is running.",
-            link="/settings", account_types=("owner",),
+            title=f"{_plan_name(tier)} is active",
+            body="The payment went through and the subscription is running for "
+                 "everyone on this account.",
+            link="/settings", account_types=everyone,
         )
     elif status == "paused":
+        record_billing_event(
+            company_id, "paused", tier=before.get("subscription_tier"),
+            billing_interval=interval, stripe_event_id=event_id,
+            note="The trial ended with no payment method on file.",
+        )
         notification_service.notify(
             company_id, "billing.plan_changed",
-            title="Your plan is paused",
+            title="The company plan is paused",
             body="The trial ended with no payment method on file. Add one in "
                  "Settings to pick up where you left off.",
-            link="/settings", account_types=("owner",),
+            link="/settings", account_types=everyone,
         )
 
 
-def _handle_subscription_deleted(sub: dict) -> None:
+def _handle_subscription_deleted(sub: dict, event_id: str | None = None) -> None:
     company_id = _company_id_from_subscription(sub)
     if not company_id:
         return
+    before = get_company_billing_info(company_id) or {}
+    if record_billing_event(
+        company_id, "canceled",
+        tier=before.get("subscription_tier"),
+        billing_interval=before.get("billing_interval"),
+        stripe_event_id=event_id,
+        note="The subscription ended. The company is back on the free plan.",
+    ):
+        _announce_plan(
+            company_id,
+            title="The company plan has ended",
+            actor_label=None,
+            detail="Everyone on this account is back on the free plan.",
+        )
     # Don't force-deactivate drivers over the free tier's cap - the
     # subscription-toggle endpoint already blocks new activations past
     # PLAN_LIMITS; existing ones ride until the owner adjusts them.
@@ -475,4 +572,73 @@ def _handle_subscription_deleted(sub: dict) -> None:
         title="Your plan has ended",
         body="The account is back on the free plan. Nothing further will be charged.",
         link="/settings", account_types=("owner",),
+    )
+
+
+# The plan is the company's, not one person's - the owner and every
+# dispatcher share it, and any of them can be the one who paid for it. So
+# news about it goes to all of them rather than to the owner alone, and it
+# says who did it: a dispatcher who arrives on Monday to find the company on
+# a different plan should be able to see whose doing that was without asking
+# anybody.
+_PLAN_NAMES = {
+    "free": "Free",
+    "pro": "Pro",
+    "max_5x": "Max 5x",
+    "max_20x": "Max 20x",
+}
+
+
+def _plan_name(tier: str | None) -> str:
+    return _PLAN_NAMES.get(tier or "", tier or "the plan")
+
+
+def _announce_plan(company_id: int, *, title: str, actor_label: str | None, detail: str) -> None:
+    from services import notification_service
+
+    body = f"{detail} Paid by {actor_label}." if actor_label else detail
+    notification_service.notify(
+        company_id, "billing.plan_changed",
+        title=title,
+        body=body,
+        link="/settings",
+        account_types=("owner", "dispatcher"),
+    )
+
+
+def _handle_invoice_paid(invoice: dict, event_id: str | None = None) -> None:
+    """Records a payment that actually went through.
+
+    This is the money half of the history. The subscription events say what
+    the plan is; only an invoice says what was taken and when, and a renewal
+    Stripe collects by itself produces no subscription event at all - so
+    without this, a company's history would stop after the first month.
+
+    No notification. A receipt every month, on three channels, is how a
+    sender gets filtered into a folder along with the messages that matter -
+    the dashboard's own history is where somebody goes to look this up.
+    """
+    subscription_id = invoice.get("subscription")
+    if not subscription_id:
+        # Not a subscription invoice - a one-off charge we do not create.
+        return
+
+    company = get_company_by_subscription_id(subscription_id)
+    if not company:
+        logging.info("invoice.paid for unknown subscription %s - ignoring", subscription_id)
+        return
+
+    amount = invoice.get("amount_paid")
+    if not amount:
+        # A zero invoice is what a trial produces. Nothing was taken, so
+        # there is nothing to record as a payment.
+        return
+
+    record_billing_event(
+        company["id"], "payment",
+        tier=company.get("subscription_tier"),
+        billing_interval=company.get("billing_interval"),
+        amount_cents=amount,
+        currency=(invoice.get("currency") or "usd").upper(),
+        stripe_event_id=event_id,
     )

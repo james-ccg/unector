@@ -34,8 +34,10 @@ async def test_faq_replies_with_every_question():
     message = AsyncMock()
     await handle_faq(message)
 
-    message.reply.assert_awaited_once()
-    text = message.reply.await_args.args[0]
+    # Sent in more than one message now - it outgrew Telegram's 4096-character
+    # limit, which refuses a long message rather than truncating it.
+    assert message.reply.await_count >= 1
+    text = "".join(call.args[0] for call in message.reply.await_args_list)
     for expected in [
         "What is Unector?",
         "How does billing work?",

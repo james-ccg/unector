@@ -915,6 +915,33 @@ export interface BillingStatus {
   dispatchers: number
 }
 
+/** One line of the company's billing history.
+ *
+ *  actor_label is stored rather than joined to, so a dispatcher who paid in
+ *  March and left in June is still the answer to who paid in March. It is
+ *  null for anything Stripe did by itself - a renewal, or a change made in
+ *  the billing portal - which is a real answer, not a gap. */
+export interface BillingHistoryEntry {
+  id: number
+  kind: 'subscribed' | 'plan_changed' | 'payment' | 'payment_failed' | 'paused' | 'canceled'
+  tier: string | null
+  billing_interval: 'month' | 'year' | null
+  amount_cents: number | null
+  currency: string | null
+  actor_type: 'owner' | 'dispatcher' | null
+  actor_label: string | null
+  note: string | null
+  created_at: string | null
+}
+
+export interface BillingPaidBy {
+  actor_type: 'owner' | 'dispatcher' | null
+  actor_label: string | null
+  tier: string | null
+  billing_interval: 'month' | 'year' | null
+  since: string | null
+}
+
 /** What the app is ever told about a saved payment method. Stripe holds the
  *  instrument; this is enough to tell one card from another and no more. */
 export interface SavedPaymentMethod {
@@ -929,6 +956,14 @@ export interface SavedPaymentMethod {
 
 export const billingApi = {
   getStatus: () => apiRequest<BillingStatus>('/api/billing'),
+
+  /** The company's billing history, and who is behind the current plan.
+   *  Open to dispatchers as well as the owner: they share one plan and any
+   *  of them may have paid for it. */
+  getHistory: () =>
+    apiRequest<{ paid_by: BillingPaidBy | null; events: BillingHistoryEntry[] }>(
+      '/api/billing/history'
+    ),
 
   listPaymentMethods: () =>
     apiRequest<{ payment_methods: SavedPaymentMethod[] }>('/api/billing/payment-methods'),

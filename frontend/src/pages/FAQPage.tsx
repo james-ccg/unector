@@ -1,4 +1,6 @@
-import { Lightbulb, CreditCard, Mail, Map, Bot, Users, Bell, MessagesSquare, ScanText, Image } from 'lucide-react'
+import {
+  Lightbulb, CreditCard, Mail, Map, Bot, Users, Bell, MessagesSquare, ScanText, Image, Receipt,
+} from 'lucide-react'
 import Layout from '../components/Layout'
 
 /** The questions, grouped, and closed until asked for.
@@ -132,6 +134,33 @@ const SECTIONS: Section[] = [
               removed - it is the only way the payment can be taken. Afterwards you can remove it
               whenever you like, and doing so ends the plan when the period you have paid for runs
               out.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'who-pays',
+        icon: <Receipt size={18} />,
+        question: 'Who pays, and who can see it?',
+        answer: (
+          <>
+            <p>
+              There is one plan per company, not one per person. Whoever pays for it - the owner or
+              any dispatcher - puts everybody on that plan at once, and there is no second bill to
+              settle: the driver and dispatcher allowances are the company&apos;s, shared by every
+              login.
+            </p>
+            <p>
+              Settings &rarr; Billing shows who bought the current plan and when, above a history
+              of what has been charged. Lines Stripe produced by itself, like a renewal, are shown
+              without a name against them, because nobody clicked anything. A dispatcher who paid
+              and later left the company still shows as having paid.
+            </p>
+            <p>
+              The owner and every dispatcher are told when the plan changes, and who did it - a
+              dispatcher arriving to find the account on a different plan shouldn&apos;t have to
+              ask around. The same goes for a payment that fails, since the person who needs to fix
+              it may not be the owner.
             </p>
           </>
         ),

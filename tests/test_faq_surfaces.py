@@ -22,13 +22,10 @@ BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 PAGE = (ROOT / "frontend" / "src" / "pages" / "FAQPage.tsx").read_text(encoding="utf-8")
 
 
-def _bot_faq() -> str:
-    start = BOT.index('Command("faq")')
-    end = BOT.index("@dp.", start + 1)
-    return BOT[start:end]
-
-
-BOT_FAQ = _bot_faq()
+# Imported rather than sliced out of the source: the text outgrew Telegram's
+# message limit and now lives in a constant that is split on the way out, so
+# it is no longer inside the handler to slice.
+from bot import FAQ_TEXT as BOT_FAQ  # noqa: E402
 
 
 # Each subject, and a word or phrase that has to appear in an answer about
@@ -40,6 +37,7 @@ SUBJECTS = {
     "reading the group description": ("readbio",),
     "the company logo": ("logo",),
     "the trial and what it costs": ("7-day", "trial", "payment method"),
+    "who pays for the shared plan": ("Who pays", "one plan", "history"),
     "notifications": ("Settings", "Telegram", "email"),
     "gmail": ("OAuth",),
     "gps": ("Samsara",),

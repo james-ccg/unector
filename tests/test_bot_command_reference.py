@@ -12,6 +12,7 @@ which commands exist, which is the part that goes wrong quietly.
 """
 import pathlib
 import re
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -81,28 +82,40 @@ def test_the_welcome_summary_only_promises_real_commands():
     assert not invented, sorted(invented)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("handler", ["start", "faq", "commands"])
-def test_a_reply_still_fits_in_a_telegram_message(handler):
+async def test_every_message_a_command_sends_fits(handler):
     """sendMessage refuses anything over 4096 characters, so a reply that
     grows past it does not get truncated - it does not arrive at all, and
-    the command looks broken rather than long. These three are the ones
-    that grow, because every new feature wants a line in them.
-    """
-    import ast
+    the command looks broken rather than long. These three are the ones that
+    grow, because every new feature wants a line in them.
 
-    tree = ast.parse(BOT)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == f"handle_{handler}":
-            # Implicit concatenation is already folded by the parser, so the
-            # longest constant in the function is the reply itself.
-            longest = max(
-                (n.value for n in ast.walk(node)
-                 if isinstance(n, ast.Constant) and isinstance(n.value, str)),
-                key=len,
-            )
-            assert len(longest) <= 4096, f"/{handler} is {len(longest)} characters"
-            return
-    pytest.fail(f"no handler found for /{handler}")
+    Checked by running the handler rather than by reading the source, since
+    /faq is long enough to be split into several messages now and it is the
+    messages that have to fit, not the text they were cut from.
+    """
+    import bot as bot_module
+
+    message = AsyncMock()
+    await getattr(bot_module, f"handle_{handler}")(message)
+
+    sent = [call.args[0] for call in message.reply.await_args_list]
+    assert sent, f"/{handler} sent nothing"
+    for part in sent:
+        assert len(part) <= 4096, f"/{handler} sent {len(part)} characters"
+
+
+@pytest.mark.asyncio
+async def test_a_split_reply_never_cuts_a_question_in_half():
+    """The split is between questions, so a heading always arrives with the
+    answer underneath it. Cutting at 4096 exactly would leave somebody
+    reading half an answer and then a heading with nothing after it."""
+    import bot as bot_module
+
+    chunks = bot_module.split_for_telegram(bot_module.FAQ_TEXT)
+    for chunk in chunks[1:]:
+        assert chunk.startswith("**"), chunk[:60]
+    assert "".join(chunks).replace("\n\n", "") == bot_module.FAQ_TEXT.replace("\n\n", "")
 
 
 def test_the_reference_says_what_rights_a_group_needs():

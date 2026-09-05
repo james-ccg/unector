@@ -1,6 +1,6 @@
 import {
   Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket,
-  UserRound, Bell, MessagesSquare, Tag, Link2, Pin as PinIcon,
+  UserRound, Bell, MessagesSquare, Tag, Link2, Receipt, Pin as PinIcon,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 
@@ -44,6 +44,39 @@ export default function UpdatesPage() {
                 <li>
                   Signing out does not yet revoke a session server-side. The cookie goes, but a
                   token captured beforehand stays valid until it expires.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">5 September 2026</div>
+              <h3 className="update-title"><Receipt size={20} /> One plan, and a record of who bought it</h3>
+              <ul className="update-list">
+                <li>
+                  The plan has always belonged to the company rather than to a person - whoever
+                  pays for it puts everyone on it - but nothing recorded which login actually did.
+                  Settings now says who bought the current plan and when, above a history of what
+                  has been charged.
+                </li>
+                <li>
+                  A renewal Stripe collects by itself is listed with no name against it, because
+                  nobody clicked anything. Crediting it to whoever last touched the account would
+                  be worse than saying nothing.
+                </li>
+                <li>
+                  The name is kept as it was at the time, so a dispatcher who paid in March and
+                  left in June still shows as having paid in March.
+                </li>
+                <li>
+                  Billing news now reaches every dispatcher and not only the owner. One who arrives
+                  to find the account paused shouldn&apos;t have to work that out from the driver
+                  cap, and the person who can fix a failed payment may not be the owner. They could
+                  already see the plan and start a checkout, so nothing new is on show.
+                </li>
+                <li>
+                  The bot&apos;s <code>/faq</code> had grown past what Telegram will accept in one
+                  message - which is refused outright rather than truncated, so the command would
+                  simply have stopped answering. It is sent in parts now, split between questions.
                 </li>
               </ul>
             </div>

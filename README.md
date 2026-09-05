@@ -228,6 +228,31 @@ Note that GPS proximity alerts and load dispatches to the driver's own group are
 see `LocationAlertRule` and bot.py. That is dispatch doing its job, not a notification anyone should
 be able to mute.
 
+## Billing
+
+One plan per company. The owner and every dispatcher share it, any of them can buy it, and there
+is no per-seat billing - the driver and dispatcher allowances belong to the company, not to a
+login. That makes "who paid?" a real question, and nothing else could answer it: Stripe knows the
+card but not which login clicked, and `companies` holds only the current state, so an upgrade that
+was later reversed left no trace of ever having happened.
+
+`billing_events` is the answer. Checkout puts the buying login into the subscription's Stripe
+metadata; the webhook reads it back and writes a line. The actor is stored as a type, an id **and**
+a label captured at the time - the label is the point, because a dispatcher who paid in March and
+left in June is still the answer to who paid in March, and joining to a row that no longer exists
+would either erase them or break the page. Lines Stripe produced by itself - a renewal, a change
+made in its portal - are recorded with no actor at all, which is a real answer rather than a gap.
+
+Every line carries the Stripe event id, under a unique constraint. Stripe re-sends webhooks on
+purpose, and without that one payment would appear in the history two or three times.
+`invoice.paid` is handled for the same reason the history would otherwise stop after the first
+month: a renewal Stripe collects by itself produces an invoice and no subscription event.
+
+All of it - the plan, the payment methods, the history - is open to dispatchers as well as the
+owner, and every billing notification goes to both. A dispatcher who arrives to find the account
+paused should not have to work that out from the driver cap, and the person who can fix a failed
+payment may not be the owner.
+
 ## Link previews
 
 The card Telegram, X and WhatsApp show when someone pastes a link comes from Open Graph tags in

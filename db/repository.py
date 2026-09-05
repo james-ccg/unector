@@ -8,6 +8,8 @@ so bot.py stays independent of DB implementation details.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
+
 from config import encrypt_value, decrypt_value
 from db.database import get_session
 from db import models
@@ -1067,6 +1069,30 @@ def get_driver_details(driver_id: int, company_id: int) -> dict | None:
             "total_gross": float(total_gross),
             "total_loads": total_loads,
             "loads": load_list,
+        }
+
+
+def get_company_by_subscription_id(stripe_subscription_id: str) -> dict | None:
+    """The company a Stripe subscription belongs to.
+
+    An invoice names its subscription but carries none of our metadata, so
+    this is the way back from a payment to the company that made it. Renewals
+    Stripe collects by itself arrive as invoices and nothing else, which is
+    why the history would otherwise stop after the first month.
+    """
+    with get_session() as session:
+        row = (
+            session.query(models.Company)
+            .filter(models.Company.stripe_subscription_id == stripe_subscription_id)
+            .first()
+        )
+        if not row:
+            return None
+        return {
+            "id": row.id,
+            "company_name": row.company_name,
+            "subscription_tier": row.subscription_tier,
+            "billing_interval": row.billing_interval,
         }
 
 
@@ -2804,3 +2830,127 @@ def proposal_driver_id(proposal_id: int) -> tuple[int, int] | None:
     with get_session() as session:
         row = session.get(models.GroupProfileProposal, proposal_id)
         return (row.company_id, row.driver_id) if row else None
+
+
+# ------------------------------------------------------------------
+# Billing history
+#
+# A company has one plan and any of its logins can be the one who pays for
+# it, so "who paid?" has a real answer that nothing else records. Stripe
+# knows the card and the amount but not which login clicked; the company row
+# holds only the current state, so an upgrade followed by a downgrade leaves
+# no trace of the first.
+# ------------------------------------------------------------------
+
+def record_billing_event(
+    company_id: int,
+    kind: str,
+    *,
+    tier: str | None = None,
+    billing_interval: str | None = None,
+    amount_cents: int | None = None,
+    currency: str | None = None,
+    actor_type: str | None = None,
+    actor_id: int | None = None,
+    actor_label: str | None = None,
+    stripe_event_id: str | None = None,
+    note: str | None = None,
+) -> bool:
+    """Adds one line to a company's billing history.
+
+    Returns False when the line was already there. Stripe re-sends webhooks
+    on purpose, so without the unique key on stripe_event_id one payment
+    would show up in the history two or three times - and the caller wants
+    to know, because it should not send a notification for the re-send
+    either.
+    """
+    with get_session() as session:
+        if stripe_event_id:
+            already = (
+                session.query(models.BillingEvent)
+                .filter(models.BillingEvent.stripe_event_id == stripe_event_id)
+                .first()
+            )
+            if already:
+                return False
+
+        session.add(models.BillingEvent(
+            company_id=company_id,
+            kind=kind,
+            tier=tier,
+            billing_interval=billing_interval,
+            amount_cents=amount_cents,
+            currency=currency,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_label=actor_label,
+            stripe_event_id=stripe_event_id,
+            note=note,
+        ))
+        try:
+            session.commit()
+        except IntegrityError:
+            # Two webhook deliveries landing at once. The check above is not
+            # a lock, so the unique constraint is what actually decides, and
+            # losing the race means the line is already recorded.
+            session.rollback()
+            return False
+        return True
+
+
+def list_billing_events(company_id: int, limit: int = 50) -> list[dict]:
+    """A company's billing history, newest first."""
+    with get_session() as session:
+        rows = (
+            session.query(models.BillingEvent)
+            .filter(models.BillingEvent.company_id == company_id)
+            .order_by(models.BillingEvent.created_at.desc(), models.BillingEvent.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": row.id,
+                "kind": row.kind,
+                "tier": row.tier,
+                "billing_interval": row.billing_interval,
+                "amount_cents": row.amount_cents,
+                "currency": row.currency,
+                "actor_type": row.actor_type,
+                "actor_label": row.actor_label,
+                "note": row.note,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in rows
+        ]
+
+
+def who_pays(company_id: int) -> dict | None:
+    """The login behind the current plan, or None if nobody has paid yet.
+
+    The most recent line that somebody actually caused - a payment Stripe
+    took by itself on renewal has no actor, and answering "who pays for
+    this?" with "nobody" every month after the first would be useless.
+    """
+    with get_session() as session:
+        row = (
+            session.query(models.BillingEvent)
+            .filter(
+                models.BillingEvent.company_id == company_id,
+                models.BillingEvent.actor_label.isnot(None),
+                models.BillingEvent.kind.in_(("subscribed", "plan_changed")),
+            )
+            .order_by(models.BillingEvent.created_at.desc(), models.BillingEvent.id.desc())
+            .first()
+        )
+        if not row:
+            return None
+        return {
+            "actor_type": row.actor_type,
+            "actor_label": row.actor_label,
+            "tier": row.tier,
+            "billing_interval": row.billing_interval,
+            "since": row.created_at.isoformat() if row.created_at else None,
+        }
+
+

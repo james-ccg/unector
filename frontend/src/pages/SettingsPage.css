@@ -638,3 +638,67 @@
   background: var(--card);
   border: 1px solid var(--border);
 }
+
+/* Billing history
+   Three columns - when, what, how much - because the eye reading this is
+   looking down one of them at a time, not across a sentence. The amount is
+   right-aligned and tabular so the figures line up on the decimal point;
+   the "what" takes the slack, since it is the only part with a variable
+   length worth giving room to. */
+.billing-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.billing-history-row {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.billing-history-row:last-child {
+  border-bottom: none;
+}
+
+.billing-history-when {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-history-what {
+  color: var(--text-primary);
+}
+
+/* Absent whenever Stripe did it by itself, so this is a detail rather than
+   a column - giving it one would leave a gap on every renewal. */
+.billing-history-who {
+  color: var(--text-muted);
+}
+
+.billing-history-amount {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.billing-since {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+@media (max-width: 560px) {
+  /* The date moves above the line rather than squeezing the description
+     into a column too narrow to read. */
+  .billing-history-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .billing-history-when {
+    grid-column: 1 / -1;
+  }
+}

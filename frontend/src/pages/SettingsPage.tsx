@@ -16,13 +16,14 @@ import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
   settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
-  type BillingStatus, type SavedPaymentMethod, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
+  type BillingStatus, type BillingPaidBy, type BillingHistoryEntry, type SavedPaymentMethod, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
   type Driver, type DriverLinkCode, type GroupProfileField, type GroupProfileProposal,
   type TeamMember, type Truck, type Trailer, type CompanyGroup,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import {
-  CARD_HELD_NOTICE, CARD_REMOVAL_ENDS_PLAN_NOTICE, chargeLabel, isAwaitingPayment, methodLabel,
+  CARD_HELD_NOTICE, CARD_REMOVAL_ENDS_PLAN_NOTICE, billingHistoryLabel, chargeLabel,
+  formatMoney, isAwaitingPayment, methodLabel,
 } from '../lib/billing'
 import './DashboardPage.css'
 import './SettingsPage.css'
@@ -49,6 +50,11 @@ export default function SettingsPage() {
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
 
   const [billing, setBilling] = useState<BillingStatus | null>(null)
+  // Who bought the plan everyone is on, and what has been charged for it.
+  // Loaded alongside the status rather than on demand: both answer the same
+  // question somebody opened this section to ask.
+  const [paidBy, setPaidBy] = useState<BillingPaidBy | null>(null)
+  const [billingHistory, setBillingHistory] = useState<BillingHistoryEntry[]>([])
   const [billingBusy, setBillingBusy] = useState(false)
 
   const [team, setTeam] = useState<TeamMember[]>([])
@@ -193,6 +199,9 @@ export default function SettingsPage() {
       // and manage the plan, so this loads regardless of role.
       const billingData = await billingApi.getStatus()
       setBilling(billingData)
+      const history = await billingApi.getHistory()
+      setPaidBy(history.paid_by)
+      setBillingHistory(history.events)
       const teamData = await teamApi.list()
       setTeam(teamData)
       // Fleet and drivers load for both roles - keeping the board current is
@@ -924,6 +933,23 @@ export default function SettingsPage() {
                   {billing.tier !== 'free' && ` — ${PLAN_PRICE_LABELS[billing.tier]}`}
                 </span>
               </div>
+              {/* One plan, shared by everyone on the account - so who bought
+                  it is a question with an answer, and this is where somebody
+                  looks for it. */}
+              {paidBy?.actor_label && (
+                <div className="billing-row">
+                  <span className="billing-label">Paid by</span>
+                  <span className="billing-value">
+                    {paidBy.actor_label}
+                    {paidBy.actor_type === 'dispatcher' && ' (dispatcher)'}
+                    {paidBy.since && (
+                      <span className="billing-since">
+                        {' '}since {new Date(paidBy.since).toLocaleDateString()}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )}
               <div className="billing-row billing-total">
                 <span className="billing-label">Active drivers</span>
                 <span className="billing-value">{billing.active_drivers} / {billing.max_drivers}</span>
@@ -1050,6 +1076,41 @@ export default function SettingsPage() {
                 <p className="billing-hint">
                   Card details go straight to Stripe and are never seen or stored by Unector.
                 </p>
+              </div>
+            )}
+
+            {/* What has actually been charged, and who caused each change.
+                The plan row above says where the account stands today; this
+                is the only place an upgrade that was later reversed leaves
+                any trace. */}
+            {billingHistory.length > 0 && (
+              <div className="card" style={{ marginTop: 12 }}>
+                <h3 className="settings-subtitle">Billing history</h3>
+                <ul className="billing-history">
+                  {billingHistory.map((entry) => (
+                    <li className="billing-history-row" key={entry.id}>
+                      <span className="billing-history-when">
+                        {entry.created_at
+                          ? new Date(entry.created_at).toLocaleDateString()
+                          : ''}
+                      </span>
+                      <span className="billing-history-what">
+                        {billingHistoryLabel(entry)}
+                        {/* Absent for anything Stripe did by itself - a
+                            renewal, or a change made in its portal - so the
+                            line simply does not claim anybody did it. */}
+                        {entry.actor_label && (
+                          <span className="billing-history-who"> · {entry.actor_label}</span>
+                        )}
+                      </span>
+                      <span className="billing-history-amount">
+                        {entry.amount_cents !== null
+                          ? formatMoney(entry.amount_cents, entry.currency)
+                          : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </section>

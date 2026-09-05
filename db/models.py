@@ -588,3 +588,49 @@ class NotificationPreference(Base):
     channel: Mapped[str] = mapped_column(String(20))        # site | telegram | email
     enabled: Mapped[bool] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
+
+
+class BillingEvent(Base):
+    """One line of a company's billing history, and who caused it.
+
+    A company has one plan, shared by the owner and every dispatcher, and
+    any of them can be the one who pays for it. That makes "who paid?" a
+    real question with a real answer, and one nothing else records: Stripe
+    knows the card and the amount but not which login clicked the button,
+    and the company row only ever holds the current state, so an upgrade
+    followed by a downgrade leaves no trace that the first one happened.
+
+    The actor is stored as a type, an id AND a label captured at the time.
+    The label is the reason: a dispatcher who paid in March and left in June
+    should still be the answer to who paid in March, and joining to a row
+    that no longer exists would either erase them or break the page.
+
+    stripe_event_id is what makes this safe to write from a webhook. Stripe
+    re-sends, and it re-sends on purpose - without a unique key on it, one
+    payment would appear in the history two or three times.
+    """
+    __tablename__ = "billing_events"
+    __table_args__ = (
+        UniqueConstraint("stripe_event_id", name="uq_billing_event_stripe_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True)
+
+    # subscribed | plan_changed | payment | trial_started | canceled | paused
+    kind: Mapped[str] = mapped_column(String(30))
+    tier: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # Money in the smallest unit, the way Stripe reports it - storing
+    # dollars as a float is how a cent goes missing.
+    amount_cents: Mapped[int | None] = mapped_column(nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    actor_type: Mapped[str | None] = mapped_column(String(20), nullable=True)   # owner | dispatcher
+    actor_id: Mapped[int | None] = mapped_column(nullable=True)
+    actor_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    stripe_event_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)

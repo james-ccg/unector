@@ -2274,6 +2274,23 @@ def get_billing(user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/api/billing/history")
+def get_billing_history(user: dict = Depends(get_current_user)):
+    """The company's billing history, and who is behind the current plan.
+
+    Open to dispatchers as well as the owner, for the same reason the rest
+    of billing is: they share one plan and any of them may have paid for it.
+    Answering "who pays for this?" only for the owner would leave the person
+    who actually clicked unable to see their own payment.
+    """
+    from db.repository import list_billing_events, who_pays
+
+    return {
+        "paid_by": who_pays(user["company_id"]),
+        "events": list_billing_events(user["company_id"]),
+    }
+
+
 @app.post("/api/billing/checkout")
 def create_billing_checkout(
     body: CheckoutRequest, user: dict = Depends(get_current_user), _csrf: None = Depends(verify_csrf),
@@ -2283,7 +2300,17 @@ def create_billing_checkout(
     from services import stripe_service
 
     try:
-        url = stripe_service.create_checkout_session(user["company_id"], body.tier, body.interval)
+        # Who clicked. A company has one plan and any of its logins can be
+        # the one paying for it, so this travels to Stripe as metadata and
+        # comes back on the webhook - it is the only point at which the
+        # payer is known, since Stripe sees a card and not a login.
+        actor_type, actor_id = _self_account(user)
+        url = stripe_service.create_checkout_session(
+            user["company_id"], body.tier, body.interval,
+            actor_type=actor_type,
+            actor_id=actor_id,
+            actor_label=_actor_label(user),
+        )
         return {"url": url}
     except (ValueError, RuntimeError) as e:
         raise HTTPException(400, str(e))
@@ -2689,6 +2716,20 @@ def _self_account(user: dict) -> tuple[str, int]:
     if user["role"] == "owner":
         return "owner", user["company_id"]
     return "dispatcher", user["dispatcher_id"]
+
+
+def _actor_label(user: dict) -> str:
+    """How a login is named in a record that outlives it.
+
+    Billing history keeps this alongside the id, because a dispatcher who
+    paid in March and left in June is still the answer to who paid in
+    March - and joining to a row that no longer exists would either erase
+    them or break the page."""
+    for key in ("username", "email"):
+        value = user.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:200]
+    return "the owner" if user.get("role") == "owner" else "a dispatcher"
 
 
 @app.get("/api/2fa/status", response_model=TwoFaStatusResponse)

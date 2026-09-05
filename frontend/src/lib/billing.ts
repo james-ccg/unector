@@ -99,3 +99,63 @@ export function methodLabel(type: string, brand: string | null): string {
   if (brand) return `${brand[0].toUpperCase()}${brand.slice(1)}`
   return METHOD_LABELS[type] ?? type.replace(/_/g, ' ')
 }
+
+/**
+ * A billing-history line in words.
+ *
+ * Here rather than in the page because the same lines will be wanted in a
+ * receipt email before long, and the version that gets rewritten is always
+ * the copy nobody could find.
+ */
+export const PLAN_NAMES: Record<string, string> = {
+  free: 'Free',
+  pro: 'Pro',
+  max_5x: 'Max 5x',
+  max_20x: 'Max 20x',
+}
+
+export function planName(tier: string | null): string {
+  if (!tier) return 'the plan'
+  return PLAN_NAMES[tier] ?? tier
+}
+
+export function billingHistoryLabel(entry: {
+  kind: string
+  tier: string | null
+  billing_interval: string | null
+}): string {
+  const plan = planName(entry.tier)
+  const every = entry.billing_interval === 'year' ? 'yearly' : 'monthly'
+  switch (entry.kind) {
+    case 'subscribed':
+      return `Subscribed to ${plan}, billed ${every}`
+    case 'plan_changed':
+      return `${plan} became active`
+    case 'payment':
+      return `Payment for ${plan}`
+    case 'payment_failed':
+      return 'A payment did not go through'
+    case 'paused':
+      return 'The plan was paused'
+    case 'canceled':
+      return 'The plan ended'
+    default:
+      return entry.kind.replace(/_/g, ' ')
+  }
+}
+
+/**
+ * Stripe reports money in the smallest unit, so this is the only place it
+ * turns back into something with a decimal point - doing that arithmetic
+ * per call site is how one of them ends up off by a factor of a hundred.
+ */
+export function formatMoney(amountCents: number, currency: string | null): string {
+  const code = (currency || 'USD').toUpperCase()
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code })
+      .format(amountCents / 100)
+  } catch {
+    // An unrecognised currency code throws rather than falling back.
+    return `${(amountCents / 100).toFixed(2)} ${code}`
+  }
+}

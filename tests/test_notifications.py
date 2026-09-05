@@ -91,13 +91,23 @@ def test_money_and_access_events_cannot_be_switched_off():
 
 def test_a_receipt_is_not_dressed_up_as_a_warning():
     """The other half of the rule above: an event on that list has to be one
-    the owner caused, so the list cannot quietly grow to cover things that
-    merely felt noisy."""
+    somebody at the company caused, so the list cannot quietly grow to cover
+    things that merely felt noisy."""
     for key in SELF_INFLICTED:
         event = events.get(key)
         assert event is not None, key
         assert event.mandatory is False, key
-        assert event.audience == events.OWNER_ONLY, key
+
+
+def test_the_whole_company_hears_about_the_plan():
+    """A company has one plan, shared by the owner and every dispatcher, and
+    any of them can be the one who paid for it. Addressing this to the owner
+    alone left a dispatcher to work out from the driver cap why the account
+    had paused. They can already see the plan and start a checkout, so this
+    exposes nothing new."""
+    for event in events.EVENTS:
+        if event.category == "billing":
+            assert event.audience == events.EVERYONE, event.key
 
 
 # ------------------------------------------------------------------

@@ -159,10 +159,15 @@ async def handle_start(message: Message):
     )
 
 
-@dp.message(Command("faq"))
-async def handle_faq(message: Message):
-    """Frequently asked questions - mirrors the web dashboard's FAQ page."""
-    await message.reply(
+# Telegram refuses a message over 4096 characters outright - it does not
+# truncate - so a growing FAQ does not get shorter, it stops arriving. The
+# text lives here as one constant and is split at question boundaries on the
+# way out, which keeps the writing in one readable place and keeps the limit
+# from being something anybody has to remember while editing it.
+TELEGRAM_MESSAGE_LIMIT = 4096
+
+FAQ_TEXT = (
+
         "**Frequently Asked Questions**\n\n"
         "**What is Unector?**\n"
         "An AI-powered dispatch management system that automates load management through "
@@ -224,10 +229,56 @@ async def handle_faq(message: Message):
         "Each one gets their own dashboard login. Free includes one, Pro three and "
         "Max 5x ten; Max 20x has no limit. Changing plan never removes a login you "
         "already have - going over the allowance only stops you adding another.\n\n"
+        "**Who pays, and who can see it?**\n"
+        "One plan per company, not one per person. Whoever pays for it - the owner "
+        "or any dispatcher - puts everybody on that plan at once, and the driver "
+        "and dispatcher allowances are the company's, shared by every login. "
+        "Settings > Billing shows who bought the current plan and when, above a "
+        "history of what has been charged; a renewal Stripe collected by itself is "
+        "listed with no name against it, because nobody clicked. Everyone is told "
+        "when the plan changes and who did it - and when a payment fails, since "
+        "the person who can fix it may not be the owner.\n\n"
         "For the full command list, use /commands. For anything else, use /dashboard to reach "
-        "the web dashboard, or /link for the direct URL.",
-        parse_mode="Markdown",
-    )
+        "the web dashboard, or /link for the direct URL."
+)
+
+
+def split_for_telegram(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
+    """Breaks a long reply into messages Telegram will accept.
+
+    Splits between questions - the blank line before a bold heading - so a
+    question and its answer are never torn across two messages. A single
+    section longer than the limit is a real possibility as this grows, so it
+    falls back to splitting on paragraphs and then, failing that, on the
+    limit itself: an ugly break beats no message at all.
+    """
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current = ""
+    separator = "\n\n"
+    for section in text.split(separator):
+        candidate = f"{current}{separator}{section}" if current else section
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        while len(section) > limit:
+            chunks.append(section[:limit])
+            section = section[limit:]
+        current = section
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+@dp.message(Command("faq"))
+async def handle_faq(message: Message):
+    """Frequently asked questions - mirrors the web dashboard's FAQ page."""
+    for chunk in split_for_telegram(FAQ_TEXT):
+        await message.reply(chunk, parse_mode="Markdown")
 
 
 @dp.message(Command("commands"))

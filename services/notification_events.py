@@ -194,7 +194,13 @@ EVENTS: tuple[Event, ...] = (
         audience=OWNER_ONLY,
     ),
     # ------------------------------------------------------------------
-    # Billing - the owner's business, and mostly not optional
+    # Billing - the company's business, and mostly not optional
+    #
+    # A company has one plan. The owner and every dispatcher share it, and
+    # any of them can be the one who paid for it, so all of them hear about
+    # it - a dispatcher who arrives to find the account paused should not
+    # have to work that out from the driver cap. They can already see the
+    # plan and start a checkout, so this exposes nothing new.
     # ------------------------------------------------------------------
     Event(
         key="billing.trial_ending",
@@ -203,7 +209,7 @@ EVENTS: tuple[Event, ...] = (
         description="Two days before the first payment is taken.",
         channels=CHANNELS,
         defaults=(SITE, EMAIL),
-        audience=OWNER_ONLY,
+        audience=EVERYONE,
         mandatory=True,
     ),
     Event(
@@ -213,7 +219,7 @@ EVENTS: tuple[Event, ...] = (
         description="The plan lapses if this is not put right.",
         channels=CHANNELS,
         defaults=(SITE, EMAIL, TELEGRAM),
-        audience=OWNER_ONLY,
+        audience=EVERYONE,
         mandatory=True,
     ),
     Event(
@@ -226,7 +232,7 @@ EVENTS: tuple[Event, ...] = (
         ),
         channels=CHANNELS,
         defaults=(SITE, EMAIL),
-        audience=OWNER_ONLY,
+        audience=EVERYONE,
     ),
     Event(
         key="billing.plan_changed",
@@ -235,7 +241,7 @@ EVENTS: tuple[Event, ...] = (
         description="Upgraded, downgraded, or cancelled.",
         channels=CHANNELS,
         defaults=(SITE,),
-        audience=OWNER_ONLY,
+        audience=EVERYONE,
     ),
     # ------------------------------------------------------------------
     # Security and access - none of it optional
