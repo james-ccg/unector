@@ -76,7 +76,9 @@ export default function UpdatesPage() {
                 <li>
                   The bot&apos;s <code>/faq</code> had grown past what Telegram will accept in one
                   message - which is refused outright rather than truncated, so the command would
-                  simply have stopped answering. It is sent in parts now, split between questions.
+                  simply have stopped answering. It now carries what you would ask from inside
+                  Telegram - what this is, how to set up a truck&apos;s group, what it costs and
+                  who pays - and links to the full FAQ on the site for the rest.
                 </li>
               </ul>
             </div>

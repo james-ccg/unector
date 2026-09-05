@@ -105,17 +105,42 @@ async def test_every_message_a_command_sends_fits(handler):
         assert len(part) <= 4096, f"/{handler} sent {len(part)} characters"
 
 
-@pytest.mark.asyncio
-async def test_a_split_reply_never_cuts_a_question_in_half():
+def test_a_split_reply_never_cuts_a_question_in_half():
     """The split is between questions, so a heading always arrives with the
-    answer underneath it. Cutting at 4096 exactly would leave somebody
-    reading half an answer and then a heading with nothing after it."""
+    answer underneath it - cutting at the limit exactly would leave somebody
+    reading half an answer, then a heading with nothing after it.
+
+    Driven with a small limit rather than the real one: the FAQ is short
+    enough to fit in one message today, so testing it at 4096 would exercise
+    nothing and quietly keep passing if the splitter broke.
+
+    The limit has to stay above the longest single answer, which is what the
+    first assertion pins. Below it, the fallback in the next test takes over
+    and a mid-sentence break is the correct behaviour rather than a bug.
+    """
     import bot as bot_module
 
-    chunks = bot_module.split_for_telegram(bot_module.FAQ_TEXT)
+    limit = 900
+    sections = bot_module.FAQ_TEXT.split("\n\n")
+    assert max(len(s) for s in sections) <= limit, "an answer outgrew this test's limit"
+
+    chunks = bot_module.split_for_telegram(bot_module.FAQ_TEXT, limit=limit)
+    assert len(chunks) > 1, "the limit was not small enough to force a split"
+    for chunk in chunks:
+        assert len(chunk) <= limit
     for chunk in chunks[1:]:
         assert chunk.startswith("**"), chunk[:60]
-    assert "".join(chunks).replace("\n\n", "") == bot_module.FAQ_TEXT.replace("\n\n", "")
+    assert "".join(chunks).replace("\n", "") == bot_module.FAQ_TEXT.replace("\n", "")
+
+
+def test_a_section_longer_than_the_limit_still_gets_sent():
+    """An ugly break beats no message at all. One answer growing past the
+    limit on its own is a real possibility, and the fallback is what stops
+    that turning into a command that silently stops replying."""
+    import bot as bot_module
+
+    chunks = bot_module.split_for_telegram("x" * 250, limit=100)
+    assert [len(c) for c in chunks] == [100, 100, 50]
 
 
 def test_the_reference_says_what_rights_a_group_needs():

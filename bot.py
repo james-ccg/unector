@@ -166,80 +166,60 @@ async def handle_start(message: Message):
 # from being something anybody has to remember while editing it.
 TELEGRAM_MESSAGE_LIMIT = 4096
 
-FAQ_TEXT = (
+# Where the rest of the answers are. An empty MINIAPP_URL is an ordinary
+# local-dev state, and printing "https:///pages/faq" would be worse than
+# naming the page and letting /dashboard get them there.
+FAQ_MORE_LINK = (
+    f"{MINIAPP_URL.rstrip('/')}/pages/faq"
+    if MINIAPP_URL
+    else "the FAQ page on the dashboard (/dashboard opens it)"
+)
 
-        "**Frequently Asked Questions**\n\n"
-        "**What is Unector?**\n"
-        "An AI-powered dispatch management system that automates load management through "
-        "Telegram - connects Gmail, extracts load details with AI, tracks GPS, and gives "
-        "owners/dispatchers a real-time web dashboard.\n\n"
-        "**How does billing work?**\n"
-        "Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers. Max 5x "
-        "is $100/mo for up to 25 drivers, and Max 20x is $200/mo for up to 100 drivers. Every "
-        "paid plan starts with a 7-day free trial. Starting one asks for a payment "
-        "method - card, PayPal or a wallet - but nothing is charged while the trial "
-        "runs. The plan then renews by itself: the price is charged on the day the "
-        "trial ends and every period after, until it is cancelled from Settings. "
-        "Until that first payment goes through the last payment method cannot be "
-        "removed, since it is the only way to take it. Afterwards it can be removed "
-        "whenever you like, and doing so ends the plan when the paid period runs "
-        "out.\n\n"
-        "**How do notifications work?**\n"
-        "Three places: a bell in the dashboard, a Telegram message, and email. "
-        "Settings > Notifications is where you choose which of them each kind of "
-        "news reaches you on. The dashboard list always gets everything, and a few "
-        "things - a failed payment, a sign-in you did not make, an integration that "
-        "stopped working - stay on whatever you choose.\n\n"
-        "**How do I set up a truck's group?**\n"
-        "Add the bot to the group, then send the linking code from Settings > Drivers "
-        "inside that group. While you are there make the bot an admin with "
-        # Kept on one line each: a rights name broken across two literals is
-        # invisible to any search for it, which is exactly how the old
-        # product name survived a find-and-replace twice.
-        "*Change group info* and *Pin messages*. "
-        "With those two it keeps the group's name, description and picture "
-        "matching the confirmed record, and pins the load everyone keeps "
-        "scrolling back to. Without them nothing breaks; those writes are "
-        "just skipped.\n\n"
-        "**The group description already has the truck and driver in it.**\n"
-        "Then the bot reads it. Most carriers keep the unit number, trailer, driver "
-        "and phone in there, and no two groups are laid out the same way, so it is "
-        "read rather than parsed. What it found is shown for someone to confirm - "
-        "from the group or from Settings, whichever comes first - and nothing reaches "
-        "your records until a person says yes. Anything that disagrees with what is "
-        "on file is pointed out rather than applied quietly. /readbio reads it again "
-        "after an edit.\n\n"
-        "**Which logo ends up on the group?**\n"
-        "The company's. The picture in Settings on the owner's login is the carrier's "
-        "mark, not a personal photo - one per company - and it goes on each truck's "
-        "group so a dispatcher sees who they work for in every one. If you have never "
-        "uploaded one and the group already has a picture, the bot takes that instead "
-        "of asking. A dispatcher's own picture stays their own.\n\n"
-        "**How does Gmail integration work?**\n"
-        "A secure OAuth 2.0 connection - the owner authorizes it once from the dashboard. "
-        "The bot then automatically finds rate confirmations in that inbox.\n\n"
-        "**How does GPS tracking work?**\n"
-        "Through a Samsara integration - it checks each vehicle's GPS position every "
-        "couple of minutes and automatically notifies the driver's group when they're "
-        "near pickup or delivery.\n\n"
-        "**What does the AI do?**\n"
-        "Google Gemini extracts every load detail from a rate confirmation - load ID, "
-        "addresses, dates, broker, rate, and more - eliminating manual data entry.\n\n"
-        "**How many dispatchers can I have?**\n"
-        "Each one gets their own dashboard login. Free includes one, Pro three and "
-        "Max 5x ten; Max 20x has no limit. Changing plan never removes a login you "
-        "already have - going over the allowance only stops you adding another.\n\n"
-        "**Who pays, and who can see it?**\n"
-        "One plan per company, not one per person. Whoever pays for it - the owner "
-        "or any dispatcher - puts everybody on that plan at once, and the driver "
-        "and dispatcher allowances are the company's, shared by every login. "
-        "Settings > Billing shows who bought the current plan and when, above a "
-        "history of what has been charged; a renewal Stripe collected by itself is "
-        "listed with no name against it, because nobody clicked. Everyone is told "
-        "when the plan changes and who did it - and when a payment fails, since "
-        "the person who can fix it may not be the owner.\n\n"
-        "For the full command list, use /commands. For anything else, use /dashboard to reach "
-        "the web dashboard, or /link for the direct URL."
+# Kept to the questions somebody asks *from inside Telegram*: what this is,
+# how to wire up a truck's group, and what it costs. Everything else is on
+# the site, and the last line says so.
+#
+# The billing answer is long on purpose and is not a candidate for trimming.
+# A free trial that turns into a charge is a negative-option offer: ROSCA
+# wants the material terms - that it renews by itself, when, how much, and
+# how to stop - given clearly before billing details are taken, and plenty
+# of owners only ever see the bot. tests/test_trial_disclosure.py pins the
+# phrases.
+FAQ_TEXT = (
+    "**Frequently Asked Questions**\n\n"
+    "**What is Unector?**\n"
+    "Dispatch management for trucking companies, run through Telegram. It reads "
+    "rate confirmations out of your inbox, posts each load to the driver's group, "
+    "checks BOL and POD photos, watches GPS for arrivals, and keeps a dashboard "
+    "for the office.\n\n"
+    "**How do I set up a truck's group?**\n"
+    "Add the bot to the group, then send the linking code from Settings > Drivers "
+    "inside that group. While you are there make the bot an admin with "
+    "*Change group info* and *Pin messages*. "
+    "With those two it keeps the group's name, description and picture matching "
+    "the confirmed record, and pins the load everyone keeps scrolling back to. "
+    "Without them nothing breaks; those writes are just skipped.\n\n"
+    "**How does billing work?**\n"
+    "Free to look around. Pro is $20/mo (or $200/yr) for up to 5 active drivers. "
+    "Max 5x is $100/mo for up to 25 drivers, and Max 20x is $200/mo for up to 100. "
+    "Every paid plan starts with a 7-day free trial. Starting one asks for a "
+    "payment method - card, PayPal or a wallet - but nothing is charged while the "
+    "trial runs. The plan then renews by itself: the price is charged on the day "
+    "the trial ends and every period after, until it is cancelled from Settings. "
+    "Until that first payment goes through the last payment method cannot be "
+    "removed, since it is the only way to take it. Afterwards it can be removed "
+    "whenever you like, and doing so ends the plan when the paid period runs "
+    "out.\n\n"
+    "**Who pays?**\n"
+    "One plan per company, not one per person - whoever pays for it puts everybody "
+    "on that plan at once. Settings > Billing shows who bought it and what has "
+    "been charged, and the owner and every dispatcher are told when it changes.\n\n"
+    "**Everything else**\n"
+    "The group description the bot reads, the company logo, notifications, Gmail, "
+    "GPS, what the AI does and how many dispatchers a plan allows are all "
+    f"answered at {FAQ_MORE_LINK}\n\n"
+    "For the full command list, use /commands. /dashboard opens the web "
+    "dashboard, and /link gives the direct URL."
 )
 
 

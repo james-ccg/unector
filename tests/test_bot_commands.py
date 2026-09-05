@@ -34,18 +34,18 @@ async def test_faq_replies_with_every_question():
     message = AsyncMock()
     await handle_faq(message)
 
-    # Sent in more than one message now - it outgrew Telegram's 4096-character
-    # limit, which refuses a long message rather than truncating it.
+    # Joined rather than read from a single call: the reply is split when it
+    # has to be, and this test is about the words rather than the packaging.
     assert message.reply.await_count >= 1
     text = "".join(call.args[0] for call in message.reply.await_args_list)
+
+    # The bot answers what somebody asks from inside Telegram and links to
+    # the site for the rest - which questions belong on which surface is
+    # tests/test_faq_surfaces.py's business.
     for expected in [
         "What is Unector?",
-        "How does billing work?",
         "How do I set up a truck's group?",
-        "Which logo ends up on the group?",
-        "How does Gmail integration work?",
-        "How does GPS tracking work?",
-        "What does the AI do?",
-        "How many dispatchers can I have?",
+        "How does billing work?",
+        "Who pays?",
     ]:
         assert expected in text
