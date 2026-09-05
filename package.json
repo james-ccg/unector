@@ -4,6 +4,7 @@
   "description": "A Telegram dispatch bot for trucking companies: pulls Rate Confirmations from email, extracts load details with AI, checks load pictures and BOLs, forwards PODs, tracks GPS proximity to pickup/delivery, and gives owners a Mini App dashboard to manage drivers and dispatchers.",
   "main": "index.js",
   "scripts": {
+    "dev": "python scripts/dev.py",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -184,6 +184,34 @@ The bot process also runs two background jobs: the GPS location monitor, and an 
 that emails owners two days before their trial ends. Both live inside `bot.py`, so nothing is
 sent while only the API is running - worth knowing before wondering where a reminder went.
 
+## Running everything at once
+
+```
+npm run dev
+```
+
+Starts the API, the Vite dev server, the Telegram bot, the public tunnel and Stripe's webhook
+forwarder, under one prefix each. Ctrl+C stops the lot. `scripts/dev.py` is the launcher; the
+individual commands still work on their own if you only want one of them.
+
+Three things it does that are worth knowing about, because each of them was a real afternoon:
+
+**Nothing survives it.** On Windows, killing a process does not kill what that process started -
+uvicorn's reloader leaves its worker, `npx localtunnel` leaves the node process holding the
+subdomain. The next run then finds the port busy and the subdomain taken, and comes up on a random
+address while `MINIAPP_URL`, the bot's links and Google's redirect URIs all still point at the old
+one. Everything started goes into a Job Object with `KILL_ON_JOB_CLOSE`, so the whole tree dies
+with the launcher even when it is killed outright. Leftovers from a previous run are cleared first.
+
+**Order.** The tunnel attaches to the API's port, so it waits until that port actually accepts a
+connection. Started early it answers 503 indefinitely, which reads as the tunnel being broken.
+
+**It says what cannot work rather than starting it.** A Stripe forwarder running against an expired
+CLI login is indistinguishable from a working one until a payment goes missing, so the login is
+checked first, along with the venv, `node_modules`, the bot token, the subdomain, and whether
+`STRIPE_WEBHOOK_SECRET` matches what `stripe listen` will actually sign with. Anything that cannot
+work is skipped with a reason and everything else still starts.
+
 ## Notifications
 
 Three channels: the bell in the dashboard, a Telegram DM, and email. `services/notification_events.py`
