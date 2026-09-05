@@ -83,7 +83,7 @@ export default function TrustPage() {
             </p>
             <div className="testimonial-grid">
               <div className="testimonial-card card">
-                <Icon name="email" size={22} />
+                <Icon name="gmail" size={22} />
                 <p className="testimonial-text" style={{ marginTop: 12 }}>
                   Rate Confirmations are found automatically by searching the connected inbox, and
                   every field - broker, pickup/delivery, weight, rate - is extracted by AI in seconds.

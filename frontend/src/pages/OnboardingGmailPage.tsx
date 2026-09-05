@@ -79,7 +79,7 @@ export default function OnboardingGmailPage() {
         <div className="container" style={{ maxWidth: '500px' }}>
           <div className="card form">
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <Icon name="email" size={22} />
+              <Icon name="gmail" size={22} />
               <div>
                 <p style={{ margin: 0, color: 'var(--text-primary)', fontWeight: 600 }}>
                   Secure OAuth connection

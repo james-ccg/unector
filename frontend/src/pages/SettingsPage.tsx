@@ -1127,7 +1127,7 @@ export default function SettingsPage() {
 
           <div className="card integration-card" id="gmail">
             <div className="integration-header">
-              <div className="integration-icon"><Icon name="email" size={22} /></div>
+              <div className="integration-icon"><Icon name="gmail" size={22} /></div>
               <div className="integration-info">
                 <h3>Gmail</h3>
                 <p>Automatically finds rate confirmations in this inbox and sends PODs to brokers.</p>

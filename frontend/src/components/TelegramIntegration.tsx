@@ -85,7 +85,7 @@ export default function TelegramIntegration() {
   return (
     <div className="card integration-card" id="telegram">
       <div className="integration-header">
-        <div className="integration-icon"><Icon name="phone" size={22} /></div>
+        <div className="integration-icon"><Icon name="telegram" size={22} /></div>
         <div className="integration-info">
           <h3>Telegram</h3>
           <p>

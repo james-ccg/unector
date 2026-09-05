@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'layers' | 'phone' | 'refresh' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
+type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'gmail' | 'telegram' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'layers' | 'phone' | 'refresh' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   'arrow-left': <path d="m15 18-6-6 6-6M9 12h12" />,
@@ -12,6 +12,17 @@ const paths: Record<IconName, ReactNode> = {
   close: <path d="m6 6 12 12M18 6 6 18" />,
   drivers: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
   email: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></>,
+  // The two brand marks, drawn in the same line weight as everything else
+  // rather than dropped in as coloured logos: an integration list reads as a
+  // list when its rows look alike, and a full-colour logo beside a stroked
+  // icon reads as one row shouting.
+  //
+  // Gmail is the envelope whose inner fold makes an M - the M is the whole
+  // mark, so the flap is drawn as the letter rather than as a plain crease.
+  gmail: <><rect x="2" y="5" width="20" height="14" rx="2.5" /><path d="M2 7.5 12 15l10-7.5" /><path d="M2 19V8l10 7.2L22 8v11" /></>,
+  // Telegram is the paper plane. The second stroke is the fold along the
+  // underside of the wing, which is what stops it reading as a solid arrow.
+  telegram: <><path d="M21.6 4.1 2.9 11a.6.6 0 0 0 .05 1.13l4.66 1.4 1.75 5.24a.6.6 0 0 0 1.04.2l2.4-2.77 4.72 3.46a.6.6 0 0 0 .94-.35l3.85-14.5a.6.6 0 0 0-.7-.72Z" /><path d="m7.6 13.5 11.6-7.9-8.7 9.4V19" /></>,
   eye: <><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></>,
   'eye-off': <><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" /><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" /><path d="M2 2l20 20" /></>,
   load: <><path d="M3 6h18v12H3z" /><path d="M7 10h6M7 14h10" /></>,
