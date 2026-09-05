@@ -36,6 +36,7 @@ from config import (
     IS_PRODUCTION,
     MAPBOX_TOKEN,
     PLAN_LIMITS,
+    DISPATCHER_LIMITS,
     SAMSARA_TEST_MODE,
     TURNSTILE_SECRET_KEY,
     TURNSTILE_SITE_KEY,
@@ -1663,6 +1664,18 @@ def list_dispatchers(user: dict = Depends(require_owner)):
 def add_dispatcher(
     body: CreateDispatcherRequest, user: dict = Depends(require_owner), _csrf: None = Depends(verify_csrf),
 ):
+    # Same shape as the driver cap above, and for the same reason: the tier
+    # alone is not enough, because a subscription that has fallen out of
+    # good standing drops back to the free allowance until it is put right.
+    # A company already over its cap keeps every login it has - this only
+    # stops another being added.
+    info = get_company_billing_info(user["company_id"])
+    in_good_standing = bool(info and info["subscription_status"] in ("active", "trialing"))
+    tier = info["subscription_tier"] if info and in_good_standing else "free"
+    limit = DISPATCHER_LIMITS.get(tier, 1)
+    if limit is not None and len(get_dispatchers_by_company(user["company_id"])) >= limit:
+        raise HTTPException(402, f"Your {tier} plan allows up to {limit} dispatcher login(s). Upgrade your plan to add more.")
+
     username = body.username.strip()
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters.")
@@ -2240,8 +2253,8 @@ def delete_alert_rule_endpoint(
 # ------------------------------------------------------------------
 @app.get("/api/billing")
 def get_billing(user: dict = Depends(get_current_user)):
-    """Returns the company's current plan, subscription status, and how
-    many of its PLAN_LIMITS driver cap is in use."""
+    """Returns the company's current plan, subscription status, and how much
+    of its driver and dispatcher allowance is in use."""
     info = get_company_billing_info(user["company_id"])
     if info is None:
         raise HTTPException(404, "Company not found.")
@@ -2253,6 +2266,11 @@ def get_billing(user: dict = Depends(get_current_user)):
         "billing_interval": info["billing_interval"],
         "max_drivers": PLAN_LIMITS.get(tier, 1),
         "active_drivers": info["active_drivers"],
+        # null means no cap, which is a real answer on the largest plan -
+        # a number would have to be invented, and the UI can say
+        # "unlimited" from the null rather than from a magic figure.
+        "max_dispatchers": DISPATCHER_LIMITS.get(tier, 1),
+        "dispatchers": len(get_dispatchers_by_company(user["company_id"])),
     }
 
 

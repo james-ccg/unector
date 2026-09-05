@@ -66,7 +66,7 @@ const FEATURES: { icon: LucideIcon; title: string; description: string }[] = [
   {
     icon: Users,
     title: 'Multi-Dispatcher',
-    description: 'Add unlimited dispatchers - each with their own secure login',
+    description: 'Give each dispatcher their own secure login - up to 10 on Max, unlimited on Max 20x',
   },
 ]
 

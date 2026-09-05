@@ -185,6 +185,31 @@ async def handle_faq(message: Message):
         "news reaches you on. The dashboard list always gets everything, and a few "
         "things - a failed payment, a sign-in you did not make, an integration that "
         "stopped working - stay on whatever you choose.\n\n"
+        "**How do I set up a truck's group?**\n"
+        "Add the bot to the group, then send the linking code from Settings > Drivers "
+        "inside that group. While you are there make the bot an admin with "
+        # Kept on one line each: a rights name broken across two literals is
+        # invisible to any search for it, which is exactly how the old
+        # product name survived a find-and-replace twice.
+        "*Change group info* and *Pin messages*. "
+        "With those two it keeps the group's name, description and picture "
+        "matching the confirmed record, and pins the load everyone keeps "
+        "scrolling back to. Without them nothing breaks; those writes are "
+        "just skipped.\n\n"
+        "**The group description already has the truck and driver in it.**\n"
+        "Then the bot reads it. Most carriers keep the unit number, trailer, driver "
+        "and phone in there, and no two groups are laid out the same way, so it is "
+        "read rather than parsed. What it found is shown for someone to confirm - "
+        "from the group or from Settings, whichever comes first - and nothing reaches "
+        "your records until a person says yes. Anything that disagrees with what is "
+        "on file is pointed out rather than applied quietly. /readbio reads it again "
+        "after an edit.\n\n"
+        "**Which logo ends up on the group?**\n"
+        "The company's. The picture in Settings on the owner's login is the carrier's "
+        "mark, not a personal photo - one per company - and it goes on each truck's "
+        "group so a dispatcher sees who they work for in every one. If you have never "
+        "uploaded one and the group already has a picture, the bot takes that instead "
+        "of asking. A dispatcher's own picture stays their own.\n\n"
         "**How does Gmail integration work?**\n"
         "A secure OAuth 2.0 connection - the owner authorizes it once from the dashboard. "
         "The bot then automatically finds rate confirmations in that inbox.\n\n"
@@ -195,9 +220,10 @@ async def handle_faq(message: Message):
         "**What does the AI do?**\n"
         "Google Gemini extracts every load detail from a rate confirmation - load ID, "
         "addresses, dates, broker, rate, and more - eliminating manual data entry.\n\n"
-        "**Can I add dispatchers?**\n"
-        "Yes - add as many dispatchers as you need, each with their own dashboard login "
-        "and permissions.\n\n"
+        "**How many dispatchers can I have?**\n"
+        "Each one gets their own dashboard login. Free includes one, Pro three and "
+        "Max 5x ten; Max 20x has no limit. Changing plan never removes a login you "
+        "already have - going over the allowance only stops you adding another.\n\n"
         "For the full command list, use /commands. For anything else, use /dashboard to reach "
         "the web dashboard, or /link for the direct URL.",
         parse_mode="Markdown",
@@ -228,7 +254,14 @@ async def handle_commands(message: Message):
         "/pod - (photo/document caption) forwards the POD straight to the broker\n"
         "/detention - sends a detention/layover request to the broker, citing the RC's "
         "terms, and notifies the dispatcher - send it when the driver is actually held\n"
-        "/setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts",
+        "/setvehicle <id> - links this group's driver to a Samsara vehicle for GPS alerts\n"
+        "/readbio - re-reads this group's description after you edit it, and offers "
+        "the truck and driver details it finds for confirmation\n\n"
+        "**What the bot needs in a group**\n"
+        "Make it an admin with *Change group info* and *Pin messages*. With those it "
+        "keeps the group's name, description and picture matching the confirmed record, "
+        "and pins the current load card. Without them everything else still works - the "
+        "writes are skipped, not retried.",
         parse_mode="Markdown",
     )
 

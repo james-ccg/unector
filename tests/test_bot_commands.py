@@ -25,7 +25,12 @@ async def test_start_replies_with_welcome_and_command_list():
 
 
 @pytest.mark.asyncio
-async def test_faq_replies_with_all_six_questions():
+async def test_faq_replies_with_every_question():
+    """Which subjects the FAQ has to cover - on this surface and on the
+    site's - is held in tests/test_faq_surfaces.py, which compares the two
+    against each other. This one is here because it actually runs the
+    handler: it catches a reply that never gets sent, which reading the
+    source cannot."""
     message = AsyncMock()
     await handle_faq(message)
 
@@ -34,9 +39,11 @@ async def test_faq_replies_with_all_six_questions():
     for expected in [
         "What is Unector?",
         "How does billing work?",
+        "How do I set up a truck's group?",
+        "Which logo ends up on the group?",
         "How does Gmail integration work?",
         "How does GPS tracking work?",
         "What does the AI do?",
-        "Can I add dispatchers?",
+        "How many dispatchers can I have?",
     ]:
         assert expected in text

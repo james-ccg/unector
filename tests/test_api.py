@@ -813,10 +813,29 @@ class TestDispatcherAccountManagement:
 
     def test_update_rejects_username_already_taken(self, client):
         dispatcher_id = self._register_owner_with_dispatcher(client, "752222", "mgmt_dispatcher_2")
-        client.post(
+
+        # Two dispatchers, so the company needs a plan that allows two - the
+        # free one allows a single login. The create used to be fired and its
+        # response ignored, which meant that once a cap existed this test
+        # passed its rename against a username nobody actually held.
+        from db.database import get_session
+        from db import models
+
+        with get_session() as session:
+            company = (
+                session.query(models.Company)
+                .filter(models.Company.mc_number == "752222")
+                .first()
+            )
+            company.subscription_tier = "pro"
+            company.subscription_status = "active"
+            session.commit()
+
+        second = client.post(
             "/api/dispatchers", json={"username": "mgmt_dispatcher_2b", "password": "dispatcherpass123"},
             headers=_csrf_headers(client),
         )
+        assert second.status_code == 200, second.text
 
         response = client.patch(
             f"/api/dispatchers/{dispatcher_id}", json={"username": "mgmt_dispatcher_2b"},

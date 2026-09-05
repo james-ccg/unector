@@ -928,6 +928,12 @@ export default function SettingsPage() {
                 <span className="billing-label">Active drivers</span>
                 <span className="billing-value">{billing.active_drivers} / {billing.max_drivers}</span>
               </div>
+              <div className="billing-row billing-total">
+                <span className="billing-label">Dispatcher logins</span>
+                <span className="billing-value">
+                  {billing.dispatchers} / {billing.max_dispatchers ?? 'unlimited'}
+                </span>
+              </div>
               {billing.status === 'trialing' && billing.trial_ends_at && (
                 <p className="billing-hint billing-notice">
                   <strong>Your trial ends {new Date(billing.trial_ends_at).toLocaleDateString()}.</strong>{' '}
@@ -1559,6 +1565,14 @@ export default function SettingsPage() {
 
             <div className="card" style={{ marginTop: 12 }}>
               <h3 className="settings-subtitle">Add a dispatcher</h3>
+              {billing && billing.max_dispatchers !== null &&
+                billing.dispatchers >= billing.max_dispatchers && (
+                <p className="settings-hint">
+                  You&apos;re at your plan&apos;s dispatcher limit ({billing.dispatchers}/
+                  {billing.max_dispatchers}). <Link to="/pages/pricing">Upgrade your plan</Link> to
+                  add more. Nobody loses a login they already have.
+                </p>
+              )}
               <form className="form" onSubmit={handleAddDispatcher}>
                 <label>
                   <span>Username</span>

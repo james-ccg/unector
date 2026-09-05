@@ -909,6 +909,10 @@ export interface BillingStatus {
   billing_interval: 'month' | 'year' | null
   max_drivers: number
   active_drivers: number
+  /** null means no cap, which is the honest answer on the largest plan -
+   *  the alternative is inventing a number that eventually gets shown. */
+  max_dispatchers: number | null
+  dispatchers: number
 }
 
 /** What the app is ever told about a saved payment method. Stripe holds the

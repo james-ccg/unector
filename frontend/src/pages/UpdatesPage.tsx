@@ -1,4 +1,7 @@
-import { Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket, UserRound, Bell } from 'lucide-react'
+import {
+  Newspaper, Construction, Palette, Gamepad2, ShieldCheck, Map, CreditCard, Rocket,
+  UserRound, Bell, MessagesSquare, Tag, Link2, Pin as PinIcon,
+} from 'lucide-react'
 import Layout from '../components/Layout'
 
 /** The changelog, and only what actually happened.
@@ -41,6 +44,106 @@ export default function UpdatesPage() {
                 <li>
                   Signing out does not yet revoke a session server-side. The cookie goes, but a
                   token captured beforehand stays valid until it expires.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">5 September 2026</div>
+              <h3 className="update-title"><MessagesSquare size={20} /> A truck&apos;s group is something you manage</h3>
+              <ul className="update-list">
+                <li>
+                  Confirming a reading now renames the group as well as rewriting its description.
+                  The unit number leads, because that is what you scan a crowded chat list for and
+                  the half that survives when Telegram truncates. The trailer stays out - it
+                  changes week to week, and a name that has to be rewritten every time it does is
+                  a name that ends up wrong.
+                </li>
+                <li>
+                  Your logo goes on each truck&apos;s group, so a dispatcher looking at forty of
+                  them sees who they work for in every one. It reads the other way too: if you
+                  have never uploaded one and a group already has a picture, that becomes the
+                  company logo instead of us asking. It only ever fills a gap - a mark you chose
+                  yourself is never overwritten.
+                </li>
+                <li>
+                  The picture in Settings was labelled &ldquo;profile picture&rdquo; on the
+                  owner&apos;s login and never was one - it is stored against the company, one per
+                  carrier. It now says <strong>Company logo</strong> and says where it ends up. A
+                  dispatcher&apos;s stays personal.
+                </li>
+                <li>
+                  Settings can move a group between drivers, or unlink one - the case that matters
+                  most when a truck is sold on a Sunday and nobody can get into the group to run a
+                  command. What it deliberately cannot do is claim a group by typing an id:
+                  sending the code inside a group is what proves you are in it.
+                </li>
+                <li>
+                  Six new kinds of news cover what was never announced before - the bot&apos;s own
+                  writes to a group, edits to truck and driver details, the fleet list, settings
+                  and integrations, who is on the team, and payment methods. Almost all of them
+                  arrive in the dashboard and nowhere else unless you ask for more.
+                </li>
+                <li>
+                  Dispatcher logins now have a per-plan allowance: one on Free, three on Pro, ten
+                  on Max 5x, and no limit on Max 20x. The pricing page had been calling them
+                  unlimited on one plan and saying nothing on the others while the code capped
+                  none of them. Changing plan never removes a login you already have - going over
+                  the allowance only stops you adding another.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">4 September 2026</div>
+              <h3 className="update-title"><Tag size={20} /> A new name</h3>
+              <ul className="update-list">
+                <li>
+                  The product is called <strong>Unector</strong>. The old name turned out to be in
+                  use by other companies, and a trademark argument is not a thing to spend a first
+                  year on.
+                </li>
+                <li>
+                  It is built from <em>unus</em>, one, and <em>rector</em>, one who steers - which
+                  is what the product does with a load. Being invented rather than assembled out
+                  of freight words, it also sits somewhere nobody else is standing.
+                </li>
+                <li>
+                  Everything moved with it: the site, the bot, the Telegram channel and group, the
+                  repository, and the address our email comes from.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">4 September 2026</div>
+              <h3 className="update-title"><PinIcon size={20} /> What the bot writes back</h3>
+              <ul className="update-list">
+                <li>
+                  Once a reading is confirmed, the group&apos;s description is rewritten from it,
+                  so the two stop disagreeing. It goes back in the shape carriers already use,
+                  which means <code>/readbio</code> can still read it afterwards without the round
+                  trip losing anything.
+                </li>
+                <li>
+                  The load card is pinned in the driver&apos;s group and the one it replaces is
+                  unpinned. Exactly one load stays pinned: a stack of finished jobs is worse than
+                  no pin at all, because then the driver has to work out which is today&apos;s.
+                </li>
+                <li>
+                  Both need the bot to be an admin with <strong>Change group info</strong> and{' '}
+                  <strong>Pin messages</strong>. Without them the writes are skipped and the load
+                  still lands - nothing about dispatch depends on it.
+                </li>
+                <li>
+                  A public endpoint was totalling every load&apos;s rate and serving the figure to
+                  anyone, signed in or not. Counts stay anonymous however few carriers are signed
+                  up; a sum of money does not. It has been removed - and no page was drawing it.
+                </li>
+                <li>
+                  <code>/commands</code> was missing <code>/readbio</code>, so the only people who
+                  found it were the ones who already knew. The three places a command is written
+                  down are now checked against each other.
                 </li>
               </ul>
             </div>
@@ -108,6 +211,29 @@ export default function UpdatesPage() {
                   payment method now ends the plan when the period you already paid for runs out:
                   you keep everything until then and nothing is charged again, instead of a failed
                   renewal dropping the account into a run of dunning emails.
+                </li>
+              </ul>
+            </div>
+
+            <div className="update-card card">
+              <div className="update-date">3 September 2026</div>
+              <h3 className="update-title"><Link2 size={20} /> What a shared link looks like</h3>
+              <ul className="update-list">
+                <li>
+                  Pasting a link to the site into Telegram, Slack or a message showed the host
+                  name and a thumbnail. It now shows the product, a description and a full-width
+                  card - the crawlers that build those previews never run JavaScript, so the tags
+                  have to be in the HTML that arrives, resolved against whichever address the
+                  request came in on.
+                </li>
+                <li>
+                  Safari and iOS never got a usable icon: they ignore the SVG one, and iOS puts a
+                  transparent background on black. Both now have their own, and the tab icon
+                  follows your system theme where the browser supports it.
+                </li>
+                <li>
+                  The site is installable, with an icon that survives being cropped into whatever
+                  shape a phone uses.
                 </li>
               </ul>
             </div>

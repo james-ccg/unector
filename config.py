@@ -160,6 +160,24 @@ STRIPE_PRICE_MAX_20X_YEARLY = os.getenv("STRIPE_PRICE_MAX_20X_YEARLY", "").strip
 # adds tax at checkout, same as the reference pricing pages).
 PLAN_LIMITS = {"free": 1, "pro": 5, "max_5x": 25, "max_20x": 100}
 
+# How many dispatcher logins a tier may have. A dispatcher is a seat in the
+# office rather than a truck on the road, so these are deliberately smaller
+# than the driver caps and scale with them: one person can run a lot of
+# trucks, and the carriers who need a room full of dispatchers are the ones
+# on the largest plan. None means no cap.
+#
+# A downgrade never deletes a login. Like the driver cap, going over it
+# stops you adding another rather than taking one away - see
+# services/stripe_service.py, where existing drivers "ride until the owner
+# adjusts them". Locking somebody out of an account they still pay for,
+# because a card expired, is not a thing to do automatically.
+DISPATCHER_LIMITS: dict[str, int | None] = {
+    "free": 1,
+    "pro": 3,
+    "max_5x": 10,
+    "max_20x": None,
+}
+
 PLAN_PRICES = {
     "pro": {"month": 20, "year": 200},
     "max_5x": {"month": 100, "year": 1000},

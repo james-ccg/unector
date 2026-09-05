@@ -33,27 +33,66 @@
   margin: 0 auto;
 }
 
-/* FAQ Styles */
-.faq-list {
+/* FAQ - grouped questions, closed until asked for.
+   Built on <details>/<summary>, so the open/closed state, the keyboard and
+   find-in-page all come from the browser rather than from a state hook. */
+.faq-sections {
   max-width: 800px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 40px;
+}
+
+.faq-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .faq-item {
   text-align: left;
+  padding: 0;
+  overflow: hidden;
 }
 
 .faq-question {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 18px;
+  padding: 18px 20px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 12px;
+  cursor: pointer;
+  /* Safari still paints its own triangle without this, next to ours. */
+  list-style: none;
+}
+
+.faq-question::-webkit-details-marker {
+  display: none;
+}
+
+.faq-question:hover {
+  color: var(--primary);
+}
+
+/* The whole row is the control, so the ring belongs round the whole row -
+   Safari otherwise draws it round the text alone and it reads as a stray
+   underline. */
+.faq-question:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: inherit;
 }
 
 .faq-question svg {
@@ -61,10 +100,54 @@
   flex-shrink: 0;
 }
 
+.faq-question span {
+  flex: 1;
+}
+
+/* The chevron, drawn rather than imported: one more lucide icon for a
+   caret is a component and a re-render where two borders will do. */
+.faq-question::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+
+.faq-item[open] .faq-question::after {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faq-question::after {
+    transition: none;
+  }
+}
+
 .faq-answer {
   color: var(--text-muted);
   line-height: 1.7;
-  margin: 0;
+  padding: 0 20px 20px;
+  /* Clears the icon, so the answer lines up with the question text above
+     it rather than with the icon. */
+  padding-left: 48px;
+}
+
+.faq-answer p {
+  margin: 0 0 12px;
+}
+
+.faq-answer p:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .faq-answer {
+    padding-left: 20px;
+  }
 }
 
 /* Content Grid Styles */
@@ -369,17 +452,63 @@
   font-size: 14px;
 }
 
-/* Updates Timeline */
+/* Updates Timeline
+   The class has claimed to be a timeline since it was written, while
+   rendering a plain stack of cards. The rail below is that promise kept:
+   one line down the gutter with a marker per release, so the shape of the
+   history reads before any of the words do. It sits beside the cards rather
+   than behind them, since a card has its own background and would hide it.
+
+   The gutter is the first thing to go on a narrow screen - 24px of rail is
+   24px not spent on the text. */
 .updates-timeline {
   max-width: 800px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  position: relative;
+  padding-left: 32px;
+}
+
+.updates-timeline::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--border);
 }
 
 .update-card {
   text-align: left;
+  position: relative;
+}
+
+/* The marker. Ringed in the page background so the rail appears to pass
+   behind it rather than through it. */
+.update-card::before {
+  content: '';
+  position: absolute;
+  left: -32px;
+  top: 22px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px var(--bg);
+}
+
+@media (max-width: 640px) {
+  .updates-timeline {
+    padding-left: 0;
+  }
+
+  .updates-timeline::before,
+  .update-card::before {
+    display: none;
+  }
 }
 
 .update-date {

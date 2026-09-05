@@ -22,9 +22,22 @@ function priceDisplay(tier: Tier, interval: Interval) {
   return { amount: `$${perMonth}`, note: `$${YEARLY_PRICE[tier]} billed yearly` }
 }
 
-const MAX_FEATURES: Record<Multiplier, { tagline: string; drivers: string; everything: string }> = {
-  '5x': { tagline: '5x more drivers than Pro', drivers: 'Up to 25 active drivers', everything: 'Everything in Pro' },
-  '20x': { tagline: '20x more drivers than Pro', drivers: 'Up to 100 active drivers', everything: 'Everything in Max 5x' },
+const MAX_FEATURES: Record<
+  Multiplier,
+  { tagline: string; drivers: string; dispatchers: string; everything: string }
+> = {
+  '5x': {
+    tagline: '5x more drivers than Pro',
+    drivers: 'Up to 25 active drivers',
+    dispatchers: 'Up to 10 dispatcher logins',
+    everything: 'Everything in Pro',
+  },
+  '20x': {
+    tagline: '20x more drivers than Pro',
+    drivers: 'Up to 100 active drivers',
+    dispatchers: 'Unlimited dispatcher logins',
+    everything: 'Everything in Max 5x',
+  },
 }
 
 function IntervalToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
@@ -127,6 +140,7 @@ export default function PricingPage() {
               <ul className="pricing-features">
                 <li><Check size={16} /> Full access to the dashboard and all pages</li>
                 <li><Check size={16} /> Up to 1 active driver</li>
+                <li><Check size={16} /> 1 dispatcher login</li>
                 <li><Check size={16} /> No credit card required</li>
               </ul>
               <button type="button" onClick={handleFreeClick} className="pricing-cta btn-secondary">
@@ -154,7 +168,7 @@ export default function PricingPage() {
                 <li><Check size={16} /> AI load extraction from Gmail</li>
                 <li><Check size={16} /> GPS tracking via Samsara</li>
                 <li><Check size={16} /> Telegram bot for drivers</li>
-                <li><Check size={16} /> Unlimited dispatchers</li>
+                <li><Check size={16} /> Up to 3 dispatcher logins</li>
                 <li><Check size={16} /> 7-day free trial</li>
               </ul>
               <button
@@ -199,6 +213,7 @@ export default function PricingPage() {
               <p className="pricing-description">{maxInfo.tagline}</p>
               <ul className="pricing-features">
                 <li><Check size={16} /> {maxInfo.drivers}</li>
+                <li><Check size={16} /> {maxInfo.dispatchers}</li>
                 <li><Check size={16} /> {maxInfo.everything}</li>
                 <li><Check size={16} /> Priority support</li>
                 <li><Check size={16} /> 7-day free trial</li>
