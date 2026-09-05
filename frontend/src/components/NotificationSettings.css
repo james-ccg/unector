@@ -117,52 +117,28 @@
   cursor: default;
 }
 
-/* Connecting Telegram.
-   Sits above the switches on purpose: it is the thing that decides whether
-   any of them below can do anything, and finding that out after choosing is
-   the wrong order. */
-.ns-connect {
+/* Why a switch below cannot be used, and where to fix it. Placed above the
+   groups because finding out after choosing is the wrong order. */
+.ns-notice {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-/* Once it is connected this is a statement rather than a task, so it drops
-   back to the quieter treatment the rest of the panel uses. */
-.ns-connect.is-done {
-  border-style: dashed;
-}
-
-.ns-connect-text {
-  margin: 0;
+  padding: 12px 14px;
+  margin: 0 0 16px;
   color: var(--text-muted);
   line-height: 1.6;
 }
 
-.ns-connect-text strong {
+.ns-notice strong {
   color: var(--text-primary);
 }
 
-.ns-connect-ready {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
+.ns-notice a {
+  color: var(--primary);
 }
 
-.ns-connect-ready .settings-hint {
-  margin: 0;
-}
-
-/* Blocked is its own state: connected, and delivering nothing. Marked
-   rather than styled as an error, because it is reversible by the person
-   reading it and nothing is broken on our side. */
-.ns-connect.is-blocked {
-  border-style: solid;
-  border-color: var(--primary);
+/* A channel with nowhere to send to. Dimmed rather than hidden: the reader
+   should see that Telegram exists as an option and is not available yet,
+   not wonder why this row has two chips and the next has three. */
+.ns-chip.is-unavailable {
+  opacity: 0.45;
 }

@@ -13,13 +13,6 @@ type TelegramPresence = {
   blocked: boolean
 }
 
-type TelegramLink = {
-  code: string
-  url: string | null
-  bot_command: string
-  expires_in_minutes: number
-}
-
 /**
  * What you get told about, and where.
  *
@@ -45,16 +38,13 @@ export default function NotificationSettings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
-  // Whether the bot can reach this person at all, and the link that fixes
-  // it when it cannot. Kept here rather than on the Security screen because
-  // this is where somebody switches Telegram on and would otherwise never
-  // learn that switching it on is not enough.
+  // Whether the bot can reach this person at all. Needed here even though
+  // connecting happens in Integrations: this is where somebody turns
+  // Telegram on, and a switch that can never deliver has to say so at the
+  // moment it is reached for.
   const [telegram, setTelegram] = useState<TelegramPresence>({
     connected: true, username: null, blocked: false,
   })
-  const [link, setLink] = useState<TelegramLink | null>(null)
-  const [linking, setLinking] = useState(false)
-  const [linkError, setLinkError] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -62,9 +52,6 @@ export default function NotificationSettings() {
       setRows(data.events)
       setLabels(Object.fromEntries(data.channels.map((c) => [c.key, c.label])))
       setTelegram(data.telegram)
-      // Clears a stale link once the connection has actually happened, so
-      // the panel does not keep offering a code that has been spent.
-      if (data.telegram.connected) setLink(null)
       setError('')
     } catch (err) {
       setError(errorMessage(err, "Couldn't load your notification settings."))
@@ -80,6 +67,14 @@ export default function NotificationSettings() {
   const toggle = async (row: NotificationEventPreference, channel: NotificationChannel) => {
     const state = row.channels[channel]
     if (state.locked || !state.available) return
+
+    // Turning Telegram on while nothing is connected would save a preference
+    // that can never deliver, and look exactly like one that works. Say what
+    // is missing instead of storing a switch with nowhere to send to.
+    if (channel === 'telegram' && !telegram.connected && !state.enabled) {
+      setError('Connect Telegram in Integrations first - until then there is nowhere to send it.')
+      return
+    }
 
     const key = `${row.event}:${channel}`
     setBusy(key)
@@ -112,34 +107,6 @@ export default function NotificationSettings() {
     }
   }
 
-  const connect = async () => {
-    setLinking(true)
-    setLinkError('')
-    try {
-      setLink(await dashboardApi.startTelegramLink())
-    } catch (err) {
-      setLinkError(errorMessage(err, "Couldn't prepare a Telegram link."))
-    } finally {
-      setLinking(false)
-    }
-  }
-
-  const disconnect = async () => {
-    setLinking(true)
-    setLinkError('')
-    try {
-      await dashboardApi.stopTelegramLink()
-      await load()
-    } catch (err) {
-      // 409 while Telegram is also a two-factor method - the message says
-      // which screen to turn that off on, so it is shown rather than
-      // flattened into "couldn't do that".
-      setLinkError(errorMessage(err, "Couldn't disconnect Telegram."))
-    } finally {
-      setLinking(false)
-    }
-  }
-
   if (loading) {
     return <p className="settings-hint">Loading your notification settings...</p>
   }
@@ -164,79 +131,27 @@ export default function NotificationSettings() {
         there&apos;s money or account access involved.
       </p>
 
-      {/* Telegram cannot be delivered to until the person has opened a chat
-          with the bot - Telegram refuses to let a bot message a stranger,
-          and nothing on our side can grant that. So a switch turned on
-          without it is indistinguishable from a working one, right up until
-          the message somebody needed never arrives. This says so, and makes
-          the one required step a single tap. */}
-      {!telegram.connected && (
-        <div className="ns-connect">
-          <p className="ns-connect-text">
-            <strong>Telegram isn&apos;t connected.</strong> Anything set to Telegram below
-            won&apos;t arrive until it is. Telegram doesn&apos;t let a bot message someone who
-            hasn&apos;t opened a chat with it, so it takes one tap - the link opens the bot, and
-            pressing Start connects this account.
-          </p>
-          {linkError && <p className="ns-error">{linkError}</p>}
-          {link ? (
-            <div className="ns-connect-ready">
-              {link.url && (
-                <a
-                  className="btn btn-primary btn-sm"
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open Telegram and connect
-                </a>
-              )}
-              <p className="settings-hint">
-                {link.url
-                  ? 'No Telegram on this device? Send '
-                  : "Couldn't build a link to the bot. Send "}
-                <code className="mono">{link.bot_command}</code> to the bot instead. Good for{' '}
-                {link.expires_in_minutes} minutes.
-              </p>
-              <button className="btn btn-ghost btn-sm" onClick={load}>
-                I&apos;ve done it - check now
-              </button>
-            </div>
-          ) : (
-            <button className="btn btn-primary btn-sm" onClick={connect} disabled={linking}>
-              {linking ? 'Preparing...' : 'Connect Telegram'}
-            </button>
-          )}
-        </div>
-      )}
+      {/* Connecting lives in Integrations, beside Gmail and Samsara - it is
+          a connection to an outside account, which is what that tab is for.
+          This is the pointer, in the shape of the one the dashboard uses to
+          send people to the Gmail card.
 
-      {telegram.connected && (
-        <div className={`ns-connect is-done${telegram.blocked ? ' is-blocked' : ''}`}>
-          {/* Blocked is a third state, not a fourth kind of disconnected.
-              The link is deliberately kept - unblocking resumes delivery on
-              its own, and making somebody reconnect after every block is a
-              chore they would skip, leaving the channel dead while still
-              reading as connected. */}
-          {telegram.blocked ? (
-            <p className="ns-connect-text">
-              <strong>You&apos;ve blocked the bot on Telegram.</strong> The connection is still
-              here{telegram.username ? ` (${telegram.username})` : ''}, so unblocking it in
-              Telegram is all it takes - nothing needs reconnecting, and messages start arriving
-              again by themselves.
-            </p>
-          ) : (
-            <p className="ns-connect-text">
-              <strong>
-                Telegram is connected{telegram.username ? ` as ${telegram.username}` : ''}.
-              </strong>{' '}
-              Anything set to Telegram below arrives in your chat with the bot.
-            </p>
-          )}
-          {linkError && <p className="ns-error">{linkError}</p>}
-          <button className="btn btn-ghost btn-sm" onClick={disconnect} disabled={linking}>
-            {linking ? 'Working...' : 'Disconnect Telegram'}
-          </button>
-        </div>
+          A bare #telegram href is enough: the tabs hide sections rather
+          than unmounting them, and SettingsPage listens for hashchange to
+          switch to the tab that holds the target. */}
+      {!telegram.connected && (
+        <p className="ns-notice">
+          <strong>Telegram isn&apos;t connected</strong>, so the Telegram switches below are
+          unavailable. <a href="#telegram">Connect it in Integrations</a>{' '}
+          and they turn on.
+        </p>
+      )}
+      {telegram.connected && telegram.blocked && (
+        <p className="ns-notice">
+          <strong>You&apos;ve blocked the bot in Telegram</strong>, so nothing set to Telegram is
+          arriving. Unblocking it is all it takes -{' '}
+          <a href="#telegram">see Integrations</a>.
+        </p>
       )}
 
       {error && <p className="ns-error">{error}</p>}
@@ -259,9 +174,12 @@ export default function NotificationSettings() {
                 {CHANNEL_ORDER.filter((channel) => row.channels[channel]?.available).map(
                   (channel) => {
                     const state = row.channels[channel]
+                    const unreachable =
+                      channel === 'telegram' && !telegram.connected && !state.enabled
                     const classes = ['ns-chip']
                     if (state.enabled) classes.push('is-on')
                     if (state.locked) classes.push('is-locked')
+                    if (unreachable) classes.push('is-unavailable')
                     return (
                       <button
                         type="button"

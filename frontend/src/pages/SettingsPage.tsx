@@ -12,6 +12,7 @@ import AvatarPicker from '../components/AvatarPicker'
 import Alert from '../components/Alert'
 import GroupProfileReview, { FieldGrid } from '../components/GroupProfileReview'
 import NotificationSettings from '../components/NotificationSettings'
+import TelegramIntegration from '../components/TelegramIntegration'
 import { useAuth } from '../context/AuthContext'
 import { usePreferences } from '../context/PreferencesContext'
 import {
@@ -162,6 +163,7 @@ export default function SettingsPage() {
   const TAB_FOR_HASH: Record<string, SettingsTab> = {
     gmail: 'integrations',
     samsara: 'integrations',
+    telegram: 'integrations',
   }
 
   const initialTab = TAB_FOR_HASH[window.location.hash.slice(1)] ?? 'general'
@@ -1223,6 +1225,8 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          <TelegramIntegration />
 
           <div className="card integration-card" id="samsara">
             <div className="integration-header">
