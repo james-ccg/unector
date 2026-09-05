@@ -40,7 +40,7 @@ class TestAuth:
         if response.status_code == 200:
             assert response.json()["company_id"]
             assert "token" not in response.json()  # session lives in an httpOnly cookie, not the body
-            assert client.cookies.get("fp_session")
+            assert client.cookies.get("un_session")
             assert client.cookies.get(CSRF_COOKIE_NAME)
 
     def test_register_password_mismatch(self, client):
@@ -128,7 +128,7 @@ class TestAuth:
             "password": "password123",
             "confirm_password": "password123",
         })
-        assert client.cookies.get("fp_session")
+        assert client.cookies.get("un_session")
 
         logout = client.post("/api/auth/logout", headers=_csrf_headers(client))
         assert logout.status_code == 200

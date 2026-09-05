@@ -3,7 +3,7 @@ import { readStored, storeIfAllowed } from '../lib/consent'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 
-const STORAGE_KEY = 'fp-theme'
+const STORAGE_KEY = 'un-theme'
 
 // "Auto" (preference === 'system') follows the device's setting, and only
 // that. It used to also flip to dark after 7pm on a device that hadn't

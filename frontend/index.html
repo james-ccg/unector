@@ -74,7 +74,7 @@
           }
         }
 
-        var theme = stored('fp-theme');
+        var theme = stored('un-theme');
         if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
           theme = 'system';
         }
@@ -87,12 +87,12 @@
         }
         document.documentElement.setAttribute('data-theme', theme);
 
-        var font = stored('fp-font');
+        var font = stored('un-font');
         if (font === 'system' || font === 'serif') {
           document.documentElement.setAttribute('data-font', font);
         }
 
-        var reduceMotion = stored('fp-reduce-motion');
+        var reduceMotion = stored('un-reduce-motion');
         if (reduceMotion === null) {
           reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'true' : 'false';
         }

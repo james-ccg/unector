@@ -6,7 +6,7 @@ const API_BASE = ''
 // overwrite it - the attack the CSRF double-submit pattern otherwise falls
 // to. The prefix requires Secure, so plain-http local dev cannot use it and
 // gets the bare name. Read whichever is actually there.
-const CSRF_COOKIE_NAMES = ['__Host-fp_csrf', 'fp_csrf']
+const CSRF_COOKIE_NAMES = ['__Host-un_csrf', 'un_csrf']
 const CSRF_HEADER_NAME = 'X-CSRF-Token'
 
 function readCookie(name: string): string | null {
@@ -149,7 +149,7 @@ export async function apiRequest<T>(
             // Lets AuthContext clear its stale user state and redirect - it
             // ignores this while already logged out (e.g. the routine
             // session check on a public page), so no redirect loop.
-            window.dispatchEvent(new Event('fp:session-expired'))
+            window.dispatchEvent(new Event('un:session-expired'))
           }
           break
         case 403:

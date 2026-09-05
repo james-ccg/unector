@@ -34,8 +34,8 @@ SHORT_LIVED_SECONDS = 60 * 10  # 10 minutes - 2FA handshake / OAuth state tokens
 # The prefix requires Secure and Path=/, so it can only be used where the
 # app is actually on HTTPS, which is why local dev keeps the bare names.
 _HOST_PREFIX = "__Host-" if IS_PRODUCTION else ""
-SESSION_COOKIE_NAME = f"{_HOST_PREFIX}fp_session"
-CSRF_COOKIE_NAME = f"{_HOST_PREFIX}fp_csrf"
+SESSION_COOKIE_NAME = f"{_HOST_PREFIX}un_session"
+CSRF_COOKIE_NAME = f"{_HOST_PREFIX}un_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
 # Every token this module mints carries one of these in its `purpose` claim,
@@ -45,7 +45,7 @@ CSRF_HEADER_NAME = "X-CSRF-Token"
 # one job is a valid token for another. The 2FA handshake token was the
 # dangerous case: the login endpoint returns it to the caller *before* any
 # second factor has been given, and the session check only verified the
-# signature - so setting it as fp_session skipped 2FA outright. The OAuth
+# signature - so setting it as un_session skipped 2FA outright. The OAuth
 # `state` tokens are the same shape of problem, and they travel through a
 # third party in a URL.
 SESSION_PURPOSE = "session"
@@ -167,7 +167,7 @@ def set_session_cookies(response, token: str) -> None:
 # that no script can reach is one an XSS payload cannot harvest either. It
 # is a convenience, so it expires on its own - a browser nobody has signed
 # in from for a month should not still be volunteering who used it.
-LAST_ACCOUNT_COOKIE_NAME = f"{_HOST_PREFIX}fp_last_account"
+LAST_ACCOUNT_COOKIE_NAME = f"{_HOST_PREFIX}un_last_account"
 LAST_ACCOUNT_LIFETIME_SECONDS = 60 * 60 * 24 * 30
 
 

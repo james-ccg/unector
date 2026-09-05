@@ -884,7 +884,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={() => window.dispatchEvent(new CustomEvent('fp:open-consent'))}
+                onClick={() => window.dispatchEvent(new CustomEvent('un:open-consent'))}
               >
                 Review
               </button>

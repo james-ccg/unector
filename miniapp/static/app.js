@@ -23,12 +23,12 @@ if (tg) {
 
 // --- Simple session storage (survives reloads within the same WebView) ---
 const session = {
-  get token() { return localStorage.getItem("fp_token"); },
-  set token(v) { v ? localStorage.setItem("fp_token", v) : localStorage.removeItem("fp_token"); },
-  get role() { return localStorage.getItem("fp_role"); },
-  set role(v) { v ? localStorage.setItem("fp_role", v) : localStorage.removeItem("fp_role"); },
-  get companyName() { return localStorage.getItem("fp_company"); },
-  set companyName(v) { v ? localStorage.setItem("fp_company", v) : localStorage.removeItem("fp_company"); },
+  get token() { return localStorage.getItem("un_token"); },
+  set token(v) { v ? localStorage.setItem("un_token", v) : localStorage.removeItem("un_token"); },
+  get role() { return localStorage.getItem("un_role"); },
+  set role(v) { v ? localStorage.setItem("un_role", v) : localStorage.removeItem("un_role"); },
+  get companyName() { return localStorage.getItem("un_company"); },
+  set companyName(v) { v ? localStorage.setItem("un_company", v) : localStorage.removeItem("un_company"); },
 };
 
 async function api(path, options = {}) {

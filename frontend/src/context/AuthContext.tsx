@@ -68,8 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       navigate('/login')
     }
-    window.addEventListener('fp:session-expired', onSessionExpired)
-    return () => window.removeEventListener('fp:session-expired', onSessionExpired)
+    window.addEventListener('un:session-expired', onSessionExpired)
+    return () => window.removeEventListener('un:session-expired', onSessionExpired)
   }, [navigate])
 
   const login = (session: LoginSuccess) => {

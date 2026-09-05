@@ -4,8 +4,8 @@ import { readStored, storeIfAllowed } from '../lib/consent'
 
 export type FontChoice = 'default' | 'system' | 'serif'
 
-const FONT_KEY = 'fp-font'
-const REDUCE_MOTION_KEY = 'fp-reduce-motion'
+const FONT_KEY = 'un-font'
+const REDUCE_MOTION_KEY = 'un-reduce-motion'
 
 // Storage can throw outright, not just come back empty - a private window or
 // a browser set to block site data - so every read/write here is guarded.

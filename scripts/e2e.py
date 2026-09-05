@@ -89,7 +89,7 @@ def wait_for_server(timeout: float = 60.0) -> bool:
 
 def csrf(client: httpx.Client) -> dict:
     """The header a mutating request has to carry alongside the cookie."""
-    for name in ("__Host-fp_csrf", "fp_csrf"):
+    for name in ("__Host-un_csrf", "un_csrf"):
         token = client.cookies.get(name)
         if token:
             return {"X-CSRF-Token": token}
@@ -146,7 +146,7 @@ def run() -> None:
     a = httpx.Client(base_url=BASE, timeout=20)
     r = register(a, mc_a)
     check("register succeeds", r.status_code == 200, r.text[:200])
-    check("session cookie is set", any("fp_session" in c for c in a.cookies.keys()),
+    check("session cookie is set", any("un_session" in c for c in a.cookies.keys()),
           str(list(a.cookies.keys())))
     check("csrf cookie is set", bool(csrf(a)), str(list(a.cookies.keys())))
 
@@ -190,7 +190,7 @@ def run() -> None:
     # to the caller before any second factor, and used to be accepted as a
     # session cookie outright.
     attacker = httpx.Client(base_url=BASE, timeout=20)
-    attacker.cookies.set("fp_session", pending)
+    attacker.cookies.set("un_session", pending)
     r = attacker.get("/api/me")
     check("the 2FA handshake token is NOT a session", r.status_code == 401,
           f"got {r.status_code} - 2FA can be skipped")
@@ -286,7 +286,7 @@ def run() -> None:
 
 def main() -> int:
     keep = "--keep" in sys.argv
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix="fp-e2e-")) / "e2e.db"
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="un-e2e-")) / "e2e.db"
 
     print(f"database : {tmp}")
     print(f"server   : {BASE}")

@@ -86,16 +86,16 @@ export default function PrivacyPolicyPage() {
               </p>
               <p><strong>Required, and not optional</strong> &mdash; the site cannot work without these:</p>
               <ul>
-                <li><code>fp_session</code> &mdash; keeps you signed in. Set by the server and not readable by page scripts.</li>
-                <li><code>fp_csrf</code> &mdash; stops other sites making requests as you.</li>
-                <li><code>fp-register-plan</code> &mdash; carries the plan you picked through signup.</li>
-                <li><code>fp-consent</code> &mdash; remembers your answer to the question below, so you aren&apos;t asked repeatedly.</li>
+                <li><code>un_session</code> &mdash; keeps you signed in. Set by the server and not readable by page scripts.</li>
+                <li><code>un_csrf</code> &mdash; stops other sites making requests as you.</li>
+                <li><code>un-register-plan</code> &mdash; carries the plan you picked through signup.</li>
+                <li><code>un-consent</code> &mdash; remembers your answer to the question below, so you aren&apos;t asked repeatedly.</li>
               </ul>
               <p><strong>Optional, off until you allow them</strong> &mdash; grouped under a single
                 &ldquo;Remember my settings&rdquo; choice:</p>
               <ul>
-                <li><code>fp-theme</code>, <code>fp-font</code>, <code>fp-reduce-motion</code> &mdash; your theme, interface font and reduced-motion setting. Declined, the app still follows your device settings; it just won&apos;t remember changes you make here.</li>
-                <li><code>fp-game-tickets</code>, <code>fp-game-queue</code> &mdash; progress on the offline page at <code>/play</code>, held until it can be uploaded.</li>
+                <li><code>un-theme</code>, <code>un-font</code>, <code>un-reduce-motion</code> &mdash; your theme, interface font and reduced-motion setting. Declined, the app still follows your device settings; it just won&apos;t remember changes you make here.</li>
+                <li><code>un-game-tickets</code>, <code>un-game-queue</code> &mdash; progress on the offline page at <code>/play</code>, held until it can be uploaded.</li>
               </ul>
             </section>
 

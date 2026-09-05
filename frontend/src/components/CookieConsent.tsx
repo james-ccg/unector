@@ -59,8 +59,8 @@ export default function CookieConsent() {
       setShowDetail(true)
       setOpen(true)
     }
-    window.addEventListener('fp:open-consent', reopen)
-    return () => window.removeEventListener('fp:open-consent', reopen)
+    window.addEventListener('un:open-consent', reopen)
+    return () => window.removeEventListener('un:open-consent', reopen)
   }, [])
 
   const decide = (record: Record<ConsentCategory, boolean>) => {

@@ -16,8 +16,8 @@ import { allows } from '../lib/consent'
  * handled either way.
  */
 
-const TICKETS_KEY = 'fp-game-tickets'
-const QUEUE_KEY = 'fp-game-queue'
+const TICKETS_KEY = 'un-game-tickets'
+const QUEUE_KEY = 'un-game-queue'
 
 export interface Ticket {
   token: string

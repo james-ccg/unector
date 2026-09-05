@@ -12,7 +12,7 @@
  * the single key it costs.
  */
 
-const CONSENT_KEY = 'fp-consent'
+const CONSENT_KEY = 'un-consent'
 const CONSENT_VERSION = 1
 
 export type ConsentCategory = 'preferences' | 'game'
@@ -29,8 +29,8 @@ export interface ConsentRecord {
 /** Keys grouped by what they're for, so the banner can describe them
  *  accurately and revoking consent can actually clear them. */
 export const STORAGE_BY_CATEGORY: Record<ConsentCategory, string[]> = {
-  preferences: ['fp-theme', 'fp-font', 'fp-reduce-motion'],
-  game: ['fp-game-tickets', 'fp-game-queue'],
+  preferences: ['un-theme', 'un-font', 'un-reduce-motion'],
+  game: ['un-game-tickets', 'un-game-queue'],
 }
 
 /** Set by the server as a direct result of signing in with Google, and only
@@ -43,7 +43,7 @@ export const STORAGE_BY_CATEGORY: Record<ConsentCategory, string[]> = {
  *  names everything it stores. */
 export const SIGN_IN_STORAGE = [
   {
-    name: 'fp_last_account',
+    name: 'un_last_account',
     purpose:
       'Remembers which Google account signed in here last, so returning after signing out takes one click. Expires after 30 days.',
   },
@@ -53,10 +53,10 @@ export const SIGN_IN_STORAGE = [
  *  without it. Listed so the privacy page and the banner can name it rather
  *  than gesturing at "essential cookies". */
 export const ESSENTIAL_STORAGE = [
-  { name: 'fp_session', purpose: 'Keeps you signed in. Set by the server and not readable by page scripts.' },
-  { name: 'fp_csrf', purpose: 'Stops other sites making requests as you.' },
-  { name: 'fp-register-plan', purpose: 'Carries the plan you picked through signup.' },
-  { name: 'fp-consent', purpose: 'Remembers this choice, so you are not asked again.' },
+  { name: 'un_session', purpose: 'Keeps you signed in. Set by the server and not readable by page scripts.' },
+  { name: 'un_csrf', purpose: 'Stops other sites making requests as you.' },
+  { name: 'un-register-plan', purpose: 'Carries the plan you picked through signup.' },
+  { name: 'un-consent', purpose: 'Remembers this choice, so you are not asked again.' },
 ]
 
 function readRaw(): ConsentRecord | null {
@@ -102,7 +102,7 @@ export function saveConsent(choice: Record<ConsentCategory, boolean>): ConsentRe
   for (const category of ['preferences', 'game'] as ConsentCategory[]) {
     if (!record[category]) clearCategory(category)
   }
-  window.dispatchEvent(new CustomEvent('fp:consent-changed'))
+  window.dispatchEvent(new CustomEvent('un:consent-changed'))
   return record
 }
 

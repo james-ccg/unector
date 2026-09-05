@@ -18,7 +18,7 @@ type Step = 'connect-gmail' | 'verify-email' | 'company-details'
 // callback puts in the URL (pending_token, or an error flag) - a ?plan=
 // picked on the Pricing page would otherwise be lost across that round
 // trip, so it's stashed here instead and read back on return.
-const PLAN_STORAGE_KEY = 'fp-register-plan'
+const PLAN_STORAGE_KEY = 'un-register-plan'
 
 export default function RegisterPage() {
   const [loading, setLoading] = useState(false)
@@ -90,7 +90,7 @@ export default function RegisterPage() {
     }
     sessionStorage.removeItem(PLAN_STORAGE_KEY)
 
-    const interval = (sessionStorage.getItem('fp-register-interval') === 'year' ? 'year' : 'month') as 'month' | 'year'
+    const interval = (sessionStorage.getItem('un-register-interval') === 'year' ? 'year' : 'month') as 'month' | 'year'
     billingApi
       .checkout(plan as 'pro' | 'max_5x' | 'max_20x', interval)
       .then(({ url }) => {
@@ -111,7 +111,7 @@ export default function RegisterPage() {
     const planParam = searchParams.get('plan')
     if (planParam) {
       sessionStorage.setItem(PLAN_STORAGE_KEY, planParam)
-      sessionStorage.setItem('fp-register-interval', searchParams.get('interval') === 'year' ? 'year' : 'month')
+      sessionStorage.setItem('un-register-interval', searchParams.get('interval') === 'year' ? 'year' : 'month')
     }
     try {
       const { auth_url } = await authApi.registerGmailStart()

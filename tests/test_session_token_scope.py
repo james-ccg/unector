@@ -3,7 +3,7 @@
 miniapp.auth.create_token mints JWTs for several jobs - the login session
 itself, the 2FA handshake, OAuth `state`, password reset - all signed with
 the same key. get_current_user only checked the signature and the expiry,
-so any of those was accepted as `fp_session`.
+so any of those was accepted as `un_session`.
 
 The 2FA handshake token is the dangerous one: the login endpoint hands it
 straight back to the caller in the "requires_2fa" response body, before any
