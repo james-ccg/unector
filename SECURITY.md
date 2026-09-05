@@ -57,9 +57,13 @@ type and size.
 policy, and a permissions policy. HTTPS redirection is available behind
 `FORCE_HTTPS`, and session cookies take the `__Host-` prefix in production.
 
-**Supply chain.** Dependency updates arrive weekly; CI runs the test suite,
-`pip-audit`, `npm audit` and a gitleaks history scan on every push and again
-on a weekly schedule.
+**Supply chain.** Dependency versions are pinned and updated by hand. The CI
+workflow runs the test suite, `pip-audit`, `npm audit` and a gitleaks history
+scan on every push and again on a weekly schedule - but no run has ever
+completed. Every one stops within seconds against this account's Actions
+billing limit, so the scheduled scanning does not exist in practice. Until
+that clears, those checks are run locally before a push, which means they
+depend on someone remembering rather than on a schedule.
 
 ## Deploying safely
 

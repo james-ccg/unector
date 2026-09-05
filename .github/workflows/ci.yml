@@ -1,10 +1,10 @@
 # Tests and dependency scanning on every push and pull request.
 #
-# Version bumps were already arriving on their own, but nothing ran
-# against them: a bump could be merged without the suite ever executing,
-# and a newly-disclosed advisory in a pinned dependency went unnoticed
-# until someone happened to look. The audit jobs are the standing check;
-# the bumps are what act on what they find.
+# Version bumps used to arrive on their own, but nothing ran against
+# them: a bump could be merged without the suite ever executing, and a
+# newly-disclosed advisory in a pinned dependency went unnoticed until
+# someone happened to look. The audit jobs are the standing check; the
+# bumps themselves are now made by hand, from what those jobs report.
 name: CI
 
 on:
