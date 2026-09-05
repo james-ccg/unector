@@ -740,6 +740,20 @@ export const dashboardApi = {
       body: JSON.stringify(fields),
     }),
 
+  /** Every Telegram group this company has linked, and who holds each.
+   *  The picker can only offer these: a group becomes the company's by
+   *  somebody running /linkdriver inside it, which is what proves they are
+   *  actually in it. */
+  listGroups: () =>
+    apiRequest<{ groups: CompanyGroup[] }>('/api/groups'),
+
+  /** Moves one of the company's groups onto a driver, or unlinks with null. */
+  setDriverGroup: (driverId: number, telegramGroupId: number | null) =>
+    apiRequest<{ success: boolean }>(`/api/drivers/${driverId}/group`, {
+      method: 'PUT',
+      body: JSON.stringify({ telegram_group_id: telegramGroupId }),
+    }),
+
   listNotifications: (options: { limit?: number; unreadOnly?: boolean } = {}) => {
     const query = new URLSearchParams()
     if (options.limit) query.set('limit', String(options.limit))
@@ -878,6 +892,14 @@ export const publicApi = {
     apiRequest<{ turnstile_site_key: string | null; mapbox_token: string | null }>(
       '/api/public/config'
     ),
+}
+
+export interface CompanyGroup {
+  telegram_group_id: number
+  telegram_group_title: string | null
+  driver_id: number
+  driver_bot_id: string
+  full_name: string | null
 }
 
 export interface BillingStatus {

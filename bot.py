@@ -450,9 +450,10 @@ async def handle_group_profile_button(callback: CallbackQuery):
         owner = proposal_driver_id(proposal_id)
         ok, reason = apply_group_profile_proposal(proposal_id, "telegram")
         if ok and owner:
-            # Rewrites this group's own description from what was just
-            # confirmed, so the text everyone sees matches the record.
+            # Rewrites this group's own name and description from what
+            # was just confirmed, so what everyone sees matches the record.
             await asyncio.to_thread(group_profile.publish_bio, *owner)
+            await asyncio.to_thread(group_profile.publish_title, *owner)
         done_text = "✅ Saved to the dashboard."
     elif action == "skip":
         ok, reason = dismiss_group_profile_proposal(proposal_id, "telegram")

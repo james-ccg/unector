@@ -2447,6 +2447,96 @@ def update_driver_details(driver_id: int, company_id: int, fields: dict) -> tupl
         return True, "ok"
 
 
+def set_driver_group(
+    driver_id: int, company_id: int, telegram_group_id: int | None
+) -> tuple[bool, str]:
+    """Points a driver at one of the company's groups, or at none.
+
+    Passing None unlinks: the driver keeps their record, the group keeps its
+    messages, and nothing is dispatched there any more. That is the case a
+    dashboard needs most - a truck sold or a driver gone, on a Sunday, with
+    nobody able to get into the group to run a command.
+
+    Passing an id moves an existing group from whichever driver in this
+    company currently holds it. Deliberately only that: a group becomes the
+    company's in the first place by somebody running /linkdriver inside it
+    with a code, which is what proves they are actually in the group. If an
+    arbitrary id were accepted here, any company could type any number and
+    start posting loads into a stranger's chat. So this reassigns what is
+    already theirs and refuses everything else.
+    """
+    with get_session() as session:
+        driver = session.get(models.Driver, driver_id)
+        if not driver or driver.company_id != company_id:
+            return False, "not_found"
+
+        if telegram_group_id is None:
+            if driver.telegram_group_id is None:
+                return True, "ok"
+            driver.telegram_group_id = None
+            driver.telegram_group_title = None
+            session.commit()
+            return True, "ok"
+
+        holder = (
+            session.query(models.Driver)
+            .filter(
+                models.Driver.company_id == company_id,
+                models.Driver.telegram_group_id == telegram_group_id,
+            )
+            .first()
+        )
+        if not holder:
+            return False, "not_this_company"
+        if holder.id == driver.id:
+            return True, "ok"
+
+        # The title travels with the group, because it describes the chat
+        # rather than whoever is currently assigned to it.
+        title = holder.telegram_group_title
+
+        # drivers.telegram_group_id is unique, so the old holder has to let
+        # go before the new one takes it - and the flush has to be forced
+        # between the two, or SQLAlchemy is free to order the UPDATEs the
+        # other way round and trip the constraint on a move that is
+        # perfectly legal.
+        holder.telegram_group_id = None
+        holder.telegram_group_title = None
+        session.flush()
+
+        driver.telegram_group_id = telegram_group_id
+        driver.telegram_group_title = title
+        session.commit()
+        return True, "ok"
+
+
+def company_groups(company_id: int) -> list[dict]:
+    """Every Telegram group this company has linked, and who holds each.
+
+    The dashboard needs this to offer a choice at all: the only groups it
+    may offer are ones the company has already proved it is in.
+    """
+    with get_session() as session:
+        rows = (
+            session.query(models.Driver)
+            .filter(
+                models.Driver.company_id == company_id,
+                models.Driver.telegram_group_id.isnot(None),
+            )
+            .all()
+        )
+        return [
+            {
+                "telegram_group_id": r.telegram_group_id,
+                "telegram_group_title": r.telegram_group_title,
+                "driver_id": r.id,
+                "driver_bot_id": r.driver_bot_id,
+                "full_name": r.full_name,
+            }
+            for r in rows
+        ]
+
+
 def dismiss_group_profile_proposal(
     proposal_id: int, via: str, *, company_id: int | None = None
 ) -> tuple[bool, str]:

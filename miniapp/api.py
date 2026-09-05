@@ -1290,11 +1290,12 @@ def confirm_group_profile(
         proposal_id, "dashboard", company_id=user["company_id"], edits=body.fields
     )
     if ok:
-        # The record is now the confirmed one, so the group's description
-        # is written to match it. Failure here is logged inside and does
-        # not undo the confirmation.
+        # The record is now the confirmed one, so the group's name and
+        # description are written to match it. Failure in either is logged
+        # inside and does not undo the confirmation.
         if owner:
             group_profile.publish_bio(*owner)
+            group_profile.publish_title(*owner)
         return {"success": True}
     if reason == "already_resolved":
         raise HTTPException(409, "This was already confirmed - from Telegram, or from another tab.")
@@ -1338,9 +1339,58 @@ def save_driver_details(
     )
     if ok:
         group_profile.publish_bio(user["company_id"], driver_id)
+        group_profile.publish_title(user["company_id"], driver_id)
         return {"success": True}
     if reason == "nothing_to_save":
         raise HTTPException(400, "No details were sent.")
+    raise HTTPException(404, "Driver not found.")
+
+
+# ------------------------------------------------------------------
+# Which Telegram group a driver's loads go to.
+#
+# Open to owner AND dispatcher, for the same reason the fleet endpoints
+# are: drivers move between trucks and groups constantly, and routing every
+# one of those through the owner would stall the board.
+#
+# A group becomes a company's by somebody running /linkdriver inside it
+# with a code from Settings, which is what proves they are in the group.
+# These endpoints move a group the company already holds - they cannot
+# claim a new one, because a typed-in chat id would let anyone start
+# posting loads into a stranger's chat.
+# ------------------------------------------------------------------
+class DriverGroupRequest(BaseModel):
+    # None is a real value - it means unlink - so it has to be sent
+    # explicitly rather than left out.
+    telegram_group_id: int | None = None
+
+
+@app.get("/api/groups")
+def list_company_groups(user: dict = Depends(get_current_user)):
+    """The company's linked groups, and which driver holds each one."""
+    from db.repository import company_groups
+
+    return {"groups": company_groups(user["company_id"])}
+
+
+@app.put("/api/drivers/{driver_id}/group")
+def set_driver_group_endpoint(
+    driver_id: int,
+    body: DriverGroupRequest,
+    user: dict = Depends(get_current_user),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Moves one of the company's groups onto this driver, or unlinks."""
+    from db.repository import set_driver_group
+
+    ok, reason = set_driver_group(driver_id, user["company_id"], body.telegram_group_id)
+    if ok:
+        return {"success": True}
+    if reason == "not_this_company":
+        # One string literal, not two adjacent ones: the house-style check
+        # in tests/test_error_message_style.py reads these out of the source
+        # and only sees the first fragment of a split message.
+        raise HTTPException(403, "That group isn't linked to this company - add the bot to it, then run /linkdriver there with a code from Settings.")
     raise HTTPException(404, "Driver not found.")
 
 

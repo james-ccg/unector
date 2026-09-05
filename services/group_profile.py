@@ -267,8 +267,46 @@ def compose_bio(details: dict) -> str:
     return "\n".join(kept)
 
 
-def publish_bio(company_id: int, driver_id: int) -> dict:
-    """Writes the driver's confirmed details into their group description.
+# setChatTitle accepts 1-128 characters. Titles are read in a crowded chat
+# list, usually truncated, so this stays far shorter than the limit allows.
+TITLE_LIMIT = 128
+
+
+def compose_title(details: dict) -> str:
+    """The confirmed details as a group title.
+
+    The unit number leads, because that is what a dispatcher scans a chat
+    list for and what survives when Telegram truncates. The driver follows
+    it, and nothing else goes in: a trailer changes week to week, and a
+    title that has to be rewritten every time it does is a title that will
+    end up wrong.
+
+    Like compose_bio, this is a shape extract_group_profile can read back,
+    so a group this renamed still yields its unit number to /readbio."""
+
+    def value(key: str) -> str | None:
+        raw = details.get(key)
+        if raw is None:
+            return None
+        text = str(raw).strip()
+        return text or None
+
+    truck, driver = value("truck_unit_number"), value("full_name")
+    if truck and driver:
+        title = f"{truck} - {driver}"
+    else:
+        title = truck or driver or ""
+
+    if len(title) > TITLE_LIMIT:
+        # Trim the driver rather than the unit number, which is the half a
+        # dispatcher is actually looking for.
+        title = title[:TITLE_LIMIT].rstrip(" -")
+    return title
+
+
+def _write_group_field(company_id: int, driver_id: int, *, method: str,
+                       key: str, text: str, what: str) -> dict:
+    """Sends one setChat* call for a driver's linked group.
 
     Reached over plain HTTP rather than through aiogram, because this runs
     in the API process as often as in the bot's and those share neither a
@@ -289,16 +327,15 @@ def publish_bio(company_id: int, driver_id: int) -> dict:
     if not chat_id:
         return {"written": False, "reason": "no group linked"}
 
-    text = compose_bio(details)
     if not text:
-        # Nothing confirmed yet. Blanking a description somebody wrote by
-        # hand because our own record is empty would be pure loss.
+        # Nothing confirmed yet. Blanking something somebody wrote by hand
+        # because our own record is empty would be pure loss.
         return {"written": False, "reason": "nothing to write"}
 
     try:
         response = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setChatDescription",
-            json={"chat_id": chat_id, "description": text},
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}",
+            json={"chat_id": chat_id, key: text},
             timeout=TELEGRAM_TIMEOUT_SECONDS,
         )
         if not response.ok:
@@ -306,16 +343,42 @@ def publish_bio(company_id: int, driver_id: int) -> dict:
             # "Change group info", which is a setup problem in Telegram
             # rather than a bug here.
             logger.warning(
-                "Couldn't write the description of group %s: HTTP %s: %s",
-                chat_id, response.status_code, response.text[:200],
+                "Couldn't write the %s of group %s: HTTP %s: %s",
+                what, chat_id, response.status_code, response.text[:200],
             )
             return {"written": False, "reason": f"HTTP {response.status_code}"}
     except Exception as e:  # noqa: BLE001 - reported, not swallowed silently
         logger.warning(
-            "Couldn't write the description of group %s: %s: %s",
-            chat_id, type(e).__name__, e,
+            "Couldn't write the %s of group %s: %s: %s",
+            what, chat_id, type(e).__name__, e,
         )
         return {"written": False, "reason": type(e).__name__}
 
-    logger.info("Wrote the description of group %s (%s chars).", chat_id, len(text))
+    logger.info("Wrote the %s of group %s (%s chars).", what, chat_id, len(text))
     return {"written": True, "text": text}
+
+
+def publish_bio(company_id: int, driver_id: int) -> dict:
+    """Writes the driver's confirmed details into their group description."""
+    details = repository.get_driver_identity(driver_id, company_id)
+    return _write_group_field(
+        company_id, driver_id,
+        method="setChatDescription", key="description",
+        text=compose_bio(details) if details else "",
+        what="description",
+    )
+
+
+def publish_title(company_id: int, driver_id: int) -> dict:
+    """Renames the driver's group after their confirmed unit and name.
+
+    Kept separate from publish_bio so a group can take one and refuse the
+    other: renaming and re-describing are the same Telegram right, but they
+    are two calls, and the second failing should not undo the first."""
+    details = repository.get_driver_identity(driver_id, company_id)
+    return _write_group_field(
+        company_id, driver_id,
+        method="setChatTitle", key="title",
+        text=compose_title(details) if details else "",
+        what="title",
+    )

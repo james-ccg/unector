@@ -18,7 +18,7 @@ import {
   settingsApi, dashboardApi, billingApi, teamApi, errorMessage,
   type BillingStatus, type SavedPaymentMethod, type AlertRule, type AlertScenario, type CompanySettings, type Dispatcher,
   type Driver, type DriverLinkCode, type GroupProfileField, type GroupProfileProposal,
-  type TeamMember, type Truck, type Trailer,
+  type TeamMember, type Truck, type Trailer, type CompanyGroup,
 } from '../services/api'
 import { PLAN_LABELS, PLAN_PRICE_LABELS } from '../lib/plans'
 import {
@@ -94,6 +94,13 @@ export default function SettingsPage() {
   const [detailsValues, setDetailsValues] = useState<Partial<Record<GroupProfileField, string>>>({})
   const [detailsBusy, setDetailsBusy] = useState(false)
   const [detailsError, setDetailsError] = useState('')
+  // Which Telegram group a driver's loads go to. Only groups the company
+  // has already linked can be offered here - claiming a new one still means
+  // running /linkdriver inside it, which is what proves you are in it.
+  const [groupDriverId, setGroupDriverId] = useState<number | null>(null)
+  const [companyGroups, setCompanyGroups] = useState<CompanyGroup[]>([])
+  const [groupBusy, setGroupBusy] = useState(false)
+  const [groupError, setGroupError] = useState('')
   const [newDriverName, setNewDriverName] = useState('')
   const [addDriverError, setAddDriverError] = useState('')
   const [addDriverBusy, setAddDriverBusy] = useState(false)
@@ -584,6 +591,50 @@ export default function SettingsPage() {
       // The save itself went through; only the refresh failed, so say that
       // rather than implying the details were lost.
       setBanner({ kind: 'error', text: errorMessage(err, "Saved, but the page couldn't refresh.") })
+    }
+  }
+
+  // Opening the panel is what loads the group list - it is only useful
+  // while the panel is open, and a company with one truck should not pay
+  // for the request on every visit to Settings.
+  const openDriverGroup = async (driver: Driver) => {
+    if (groupDriverId === driver.id) {
+      setGroupDriverId(null)
+      return
+    }
+    setGroupError('')
+    setGroupDriverId(driver.id)
+    setGroupBusy(true)
+    try {
+      const { groups } = await dashboardApi.listGroups()
+      setCompanyGroups(groups)
+    } catch (err) {
+      setGroupError(errorMessage(err, "Couldn't load this company's groups."))
+    } finally {
+      setGroupBusy(false)
+    }
+  }
+
+  const applyDriverGroup = async (driverId: number, telegramGroupId: number | null) => {
+    setGroupBusy(true)
+    setGroupError('')
+    try {
+      await dashboardApi.setDriverGroup(driverId, telegramGroupId)
+      const [fresh, { groups }] = await Promise.all([
+        dashboardApi.listDrivers(),
+        dashboardApi.listGroups(),
+      ])
+      setDrivers(fresh)
+      setCompanyGroups(groups)
+      setBanner({
+        kind: 'success',
+        text: telegramGroupId === null ? 'Group unlinked.' : 'Group moved.',
+      })
+      setGroupDriverId(null)
+    } catch (err) {
+      setGroupError(errorMessage(err, "Couldn't change that driver's group."))
+    } finally {
+      setGroupBusy(false)
     }
   }
 
@@ -1334,6 +1385,12 @@ export default function SettingsPage() {
                         )}
                         <button
                           className="btn btn-ghost btn-sm"
+                          onClick={() => openDriverGroup(d)}
+                        >
+                          {groupDriverId === d.id ? 'Close' : 'Group'}
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
                           onClick={() => openDriverDetails(d)}
                         >
                           {detailsDriverId === d.id ? 'Close' : 'Details'}
@@ -1346,6 +1403,49 @@ export default function SettingsPage() {
                           Remove
                         </button>
                       </div>
+                      {groupDriverId === d.id && (
+                        <div className="twofa-enroll">
+                          <p className="method-hint">
+                            Which Telegram group {d.full_name || d.driver_bot_id}'s loads are
+                            posted to. Only groups this company has already linked can be chosen
+                            here - to use a new one, add the bot to it and run the linking code
+                            inside it, which is what proves you are in that group.
+                          </p>
+                          {d.telegram_group_id ? (
+                            <p className="settings-hint">
+                              Currently: <strong>{d.telegram_group_title || 'Linked group'}</strong>
+                            </p>
+                          ) : (
+                            <p className="settings-hint">Not linked to a group yet.</p>
+                          )}
+                          {groupError && <ErrorMessage className="form-error" text={groupError} />}
+                          <div className="settings-row" style={{ marginTop: 12, gap: 8 }}>
+                            <select
+                              className="input"
+                              value={d.telegram_group_id ?? ''}
+                              disabled={groupBusy}
+                              onChange={(e) =>
+                                applyDriverGroup(d.id, e.target.value ? Number(e.target.value) : null)
+                              }
+                            >
+                              <option value="">Not linked</option>
+                              {companyGroups.map((g) => (
+                                <option key={g.telegram_group_id} value={g.telegram_group_id}>
+                                  {g.telegram_group_title || `Group ${g.telegram_group_id}`}
+                                  {g.driver_id !== d.id &&
+                                    ` - currently ${g.full_name || g.driver_bot_id}'s`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          {companyGroups.some((g) => g.driver_id !== d.id) && (
+                            <p className="settings-hint" style={{ marginTop: 8 }}>
+                              Choosing a group that belongs to another driver moves it: they are
+                              left unlinked, and their loads stop going there.
+                            </p>
+                          )}
+                        </div>
+                      )}
                       {detailsDriverId === d.id && (
                         <div className="twofa-enroll">
                           <p className="method-hint">

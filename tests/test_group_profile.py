@@ -337,3 +337,102 @@ def test_telegram_refusing_does_not_raise(company_and_driver):
 
     assert result["written"] is False
     assert "400" in result["reason"]
+
+
+# ------------------------------------------------------------------
+# Renaming the group
+#
+# The same right as writing the description, but a separate call, so a
+# group can take one and refuse the other.
+# ------------------------------------------------------------------
+
+def test_the_title_leads_with_the_unit_number():
+    """What a dispatcher scans a crowded chat list for, and the half that
+    survives when Telegram truncates."""
+    title = group_profile.compose_title({
+        "truck_unit_number": "1001", "full_name": "Driver One",
+    })
+    assert title == "1001 - Driver One"
+
+
+def test_a_title_can_be_built_from_either_half_alone():
+    assert group_profile.compose_title({"truck_unit_number": "1001"}) == "1001"
+    assert group_profile.compose_title({"full_name": "Driver One"}) == "Driver One"
+
+
+def test_the_trailer_stays_out_of_the_title():
+    """It changes week to week, and a title that has to be rewritten every
+    time it does is a title that will end up wrong."""
+    title = group_profile.compose_title({
+        "truck_unit_number": "1001", "trailer_number": "A000123",
+        "full_name": "Driver One",
+    })
+    assert "A000123" not in title
+
+
+def test_the_written_title_fits_what_telegram_accepts():
+    """setChatTitle takes 1-128 characters."""
+    title = group_profile.compose_title({
+        "truck_unit_number": "1001", "full_name": "Driver One" * 40,
+    })
+    assert len(title) <= group_profile.TITLE_LIMIT
+    assert title.startswith("1001")
+
+
+def test_nothing_confirmed_means_the_group_keeps_its_name():
+    assert group_profile.compose_title({}) == ""
+
+
+def test_a_driver_with_no_group_is_not_renamed(company_and_driver):
+    company_id, driver_id = company_and_driver
+    result = group_profile.publish_title(company_id, driver_id)
+    assert result["written"] is False
+    assert result["reason"] == "no group linked"
+
+
+def test_confirming_renames_the_group(company_and_driver):
+    company_id, driver_id = company_and_driver
+    with get_session() as session:
+        session.get(models.Driver, driver_id).telegram_group_id = -100900779
+        session.commit()
+
+    repository.update_driver_details(driver_id, company_id, {
+        "truck_number": "1001", "driver_name": "Driver One",
+    })
+
+    with patch("services.group_profile.requests.post") as post:
+        post.return_value.ok = True
+        result = group_profile.publish_title(company_id, driver_id)
+
+    assert result["written"] is True
+    sent = post.call_args.kwargs["json"]
+    assert sent["chat_id"] == -100900779
+    assert sent["title"] == "1001 - Driver One"
+    assert post.call_args.args[0].endswith("/setChatTitle")
+
+
+def test_a_group_that_refuses_the_rename_does_not_raise(company_and_driver):
+    company_id, driver_id = company_and_driver
+    with get_session() as session:
+        session.get(models.Driver, driver_id).telegram_group_id = -100900780
+        session.commit()
+    repository.update_driver_details(driver_id, company_id, {"truck_number": "1001"})
+
+    with patch("services.group_profile.requests.post") as post:
+        post.return_value.ok = False
+        post.return_value.status_code = 400
+        post.return_value.text = "Bad Request: not enough rights"
+        result = group_profile.publish_title(company_id, driver_id)
+
+    assert result["written"] is False
+    assert "400" in result["reason"]
+
+
+def test_a_title_this_wrote_can_still_be_read_back():
+    """compose_title has to stay a shape extract_group_profile understands,
+    the same way compose_bio does - otherwise renaming a group quietly
+    costs /readbio the unit number it used to find there."""
+    title = group_profile.compose_title({
+        "truck_unit_number": "1001", "full_name": "Driver One",
+    })
+    assert "1001" in title and "Driver One" in title
