@@ -15,6 +15,8 @@ confirm - from the dashboard or from Telegram, either one.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import re
 
@@ -382,3 +384,224 @@ def publish_title(company_id: int, driver_id: int) -> dict:
         text=compose_title(details) if details else "",
         what="title",
     )
+
+
+# ------------------------------------------------------------------
+# The company's logo, on the group
+#
+# The picture on a truck's group is the carrier's, not the driver's - a
+# dispatcher looking at forty groups should see who they work for in every
+# one of them. So this is the third thing that travels with a confirmation,
+# alongside the description and the title.
+#
+# Two Telegram details shape the code. setChatPhoto will not take a file_id,
+# only a real upload as multipart/form-data, so the stored logo is decoded
+# and posted as bytes every time. And reading one back is two calls: getChat
+# gives a file id, getFile turns it into a path, and the bytes come from the
+# file endpoint rather than the API one.
+# ------------------------------------------------------------------
+
+# Chat photos come back at 640x640 at the largest, so this is far above what
+# is ever needed. It exists to stop a surprise from becoming a memory
+# problem, since the download is read into memory whole.
+LOGO_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+
+_DATA_URL = re.compile(r"^data:(image/[a-z.+-]+);base64,(.+)$", re.IGNORECASE | re.DOTALL)
+
+_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+
+def decode_logo(data_url: str | None) -> tuple[bytes, str] | None:
+    """Turns the stored data URI back into bytes and a MIME type.
+
+    Returns None for anything that is not a base64 image data URI - the
+    column is written by our own upload path, so a value that does not
+    match is a sign something else wrote it, not a case to guess at.
+    """
+    if not data_url:
+        return None
+    match = _DATA_URL.match(data_url.strip())
+    if not match:
+        return None
+    mime = match.group(1).lower()
+    try:
+        raw = base64.b64decode(match.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return (raw, mime) if raw else None
+
+
+def company_logo(company_id: int) -> str | None:
+    """The company's logo as a data URI.
+
+    Stored against ("owner", company_id) - keyed by the company rather than
+    by a person, which is what makes it the company's mark rather than
+    somebody's profile picture. A dispatcher's own picture is keyed by
+    dispatcher id and is deliberately not used here.
+    """
+    return repository.get_account_avatar("owner", company_id)
+
+
+def publish_logo(company_id: int, driver_id: int) -> dict:
+    """Puts the company's logo on the driver's group.
+
+    Same admin right as the description and the title, but a third call, so
+    a group can take some and refuse others. Failure is logged and swallowed
+    for the same reason: the confirmation already succeeded.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return {"written": False, "reason": "no bot token"}
+
+    details = repository.get_driver_identity(driver_id, company_id)
+    if not details:
+        return {"written": False, "reason": "driver not found"}
+
+    chat_id = details.get("telegram_group_id")
+    if not chat_id:
+        return {"written": False, "reason": "no group linked"}
+
+    decoded = decode_logo(company_logo(company_id))
+    if not decoded:
+        # No logo set. Deleting whatever picture the group already has,
+        # because we have nothing to put there, would be pure loss.
+        return {"written": False, "reason": "no logo set"}
+
+    raw, mime = decoded
+    filename = "logo." + _EXTENSIONS.get(mime, "png")
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setChatPhoto",
+            data={"chat_id": str(chat_id)},
+            files={"photo": (filename, raw, mime)},
+            timeout=TELEGRAM_TIMEOUT_SECONDS,
+        )
+        if not response.ok:
+            logger.warning(
+                "Couldn't set the photo of group %s: HTTP %s: %s",
+                chat_id, response.status_code, response.text[:200],
+            )
+            return {"written": False, "reason": f"HTTP {response.status_code}"}
+    except Exception as e:  # noqa: BLE001 - reported, not swallowed silently
+        logger.warning(
+            "Couldn't set the photo of group %s: %s: %s", chat_id, type(e).__name__, e,
+        )
+        return {"written": False, "reason": type(e).__name__}
+
+    logger.info("Set the photo of group %s (%s bytes).", chat_id, len(raw))
+    return {"written": True, "bytes": len(raw)}
+
+
+def adopt_group_logo(company_id: int, chat_id: int) -> dict:
+    """Takes a group's existing picture as the company logo, if there is none.
+
+    The other direction, and the reason it only fills a gap rather than
+    overwriting: a carrier who has uploaded their own mark on the dashboard
+    has said what they want, and the picture on one truck's group is not a
+    better source than that. But a carrier who has never uploaded anything
+    usually does have their logo sitting on the group already, and asking
+    them to go and find the file again is asking for nothing.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return {"adopted": False, "reason": "no bot token"}
+    if company_logo(company_id):
+        return {"adopted": False, "reason": "already set"}
+
+    base = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+    try:
+        chat = requests.get(
+            f"{base}/getChat", params={"chat_id": chat_id}, timeout=TELEGRAM_TIMEOUT_SECONDS,
+        )
+        if not chat.ok:
+            return {"adopted": False, "reason": f"HTTP {chat.status_code}"}
+        photo = (chat.json().get("result") or {}).get("photo") or {}
+        file_id = photo.get("big_file_id") or photo.get("small_file_id")
+        if not file_id:
+            return {"adopted": False, "reason": "no group photo"}
+
+        meta = requests.get(
+            f"{base}/getFile", params={"file_id": file_id}, timeout=TELEGRAM_TIMEOUT_SECONDS,
+        )
+        if not meta.ok:
+            return {"adopted": False, "reason": f"HTTP {meta.status_code}"}
+        file_path = (meta.json().get("result") or {}).get("file_path")
+        if not file_path:
+            return {"adopted": False, "reason": "no file path"}
+
+        # The bytes come from the file endpoint, not the API one.
+        download = requests.get(
+            f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}",
+            timeout=TELEGRAM_TIMEOUT_SECONDS,
+        )
+        if not download.ok:
+            return {"adopted": False, "reason": f"HTTP {download.status_code}"}
+        raw = download.content
+        if not raw or len(raw) > LOGO_DOWNLOAD_LIMIT_BYTES:
+            return {"adopted": False, "reason": "photo too large"}
+    except Exception as e:  # noqa: BLE001 - reported, not swallowed silently
+        logger.warning(
+            "Couldn't read the photo of group %s: %s: %s", chat_id, type(e).__name__, e,
+        )
+        return {"adopted": False, "reason": type(e).__name__}
+
+    # Telegram serves chat photos as JPEG whatever was originally uploaded.
+    data_url = "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
+    repository.set_account_avatar("owner", company_id, data_url)
+    logger.info("Adopted the photo of group %s as company %s's logo.", chat_id, company_id)
+    return {"adopted": True, "bytes": len(raw)}
+
+
+def publish_all(company_id: int, driver_id: int) -> dict:
+    """Writes the confirmed record onto the group: name, description, logo.
+
+    One call because they always travel together, and because what the
+    office wants to be told afterwards is "the bot changed this group",
+    not three separate messages about three Telegram methods.
+
+    Each is attempted independently. They need the same admin right, but
+    they are three requests, and one refusal should not stop the other two
+    - a group that will take a description and refuse a photo is a real
+    state, not a bug.
+
+    Returns what actually changed, so the caller can say so plainly and can
+    stay quiet when nothing did.
+    """
+    written: list[str] = []
+    refused: list[str] = []
+
+    for what, publish in (
+        ("name", publish_title),
+        ("description", publish_bio),
+        ("logo", publish_logo),
+    ):
+        try:
+            result = publish(company_id, driver_id)
+        except Exception as e:  # noqa: BLE001 - reported, not swallowed silently
+            logger.warning(
+                "Couldn't write the %s for driver %s: %s: %s",
+                what, driver_id, type(e).__name__, e,
+            )
+            refused.append(what)
+            continue
+        (written if result.get("written") else refused).append(what)
+
+    return {"written": tuple(written), "refused": tuple(refused)}
+
+
+def describe_changes(written) -> str | None:
+    """"the name and the description", for a notification body.
+
+    None when nothing was written, which is the caller's cue to say
+    nothing at all rather than announce an empty change.
+    """
+    parts = list(written)
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return f"the {parts[0]}"
+    return "the " + ", the ".join(parts[:-1]) + f" and the {parts[-1]}"

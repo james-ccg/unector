@@ -16,6 +16,7 @@ URL with @BotFather (see README's Mini App section) and set MINIAPP_URL in .env.
 """
 import os
 import hmac
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -83,6 +84,9 @@ from miniapp.auth import (
     set_session_cookies,
     verify_password,
 )
+# Imported at module level, not inside a function, because the change-recording
+# middleware below runs on every request and cannot pay for an import each time.
+from services import change_log, notification_service
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -168,6 +172,56 @@ async def limit_request_size(request: Request, call_next):
             content={"detail": f"Request body too large (max {MAX_REQUEST_BODY_BYTES // (1024 * 1024)}MB)"},
         )
     return await call_next(request)
+
+
+@app.middleware("http")
+async def record_changes(request: Request, call_next):
+    """Tells the company about any request that changed one of its records.
+
+    Here rather than in each endpoint on purpose - see services/change_log.py
+    for why. The short version: a notify() call per endpoint is a promise
+    that quietly stops being true the first time somebody adds an endpoint
+    and forgets, and "we will tell you when anything changes" is a bad
+    promise to keep only most of the time.
+
+    Only successful requests count. A 4xx changed nothing, and telling
+    somebody their record was edited when it was not is worse than silence.
+    Nothing in here may fail the request either: the change has already been
+    made and answered for by the time this runs, so a notification that
+    cannot be sent is logged and dropped.
+    """
+    response = await call_next(request)
+
+    if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return response
+    if not (200 <= response.status_code < 300):
+        return response
+
+    try:
+        matched = change_log.match(request.method, request.url.path)
+        if not matched:
+            return response
+
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+        claims = decode_token(token, purpose=SESSION_PURPOSE) if token else None
+        company_id = (claims or {}).get("company_id")
+        if not company_id:
+            return response
+
+        event_key, title, link = matched
+        who = change_log.actor_name(claims)
+        notification_service.notify(
+            company_id, event_key,
+            title=title,
+            body=f"Changed by {who}." if who else None,
+            link=link,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Couldn't record a change for %s %s", request.method, request.url.path
+        )
+
+    return response
 
 
 @app.middleware("http")
@@ -1290,12 +1344,11 @@ def confirm_group_profile(
         proposal_id, "dashboard", company_id=user["company_id"], edits=body.fields
     )
     if ok:
-        # The record is now the confirmed one, so the group's name and
-        # description are written to match it. Failure in either is logged
-        # inside and does not undo the confirmation.
+        # The record is now the confirmed one, so the group's name,
+        # description and picture are written to match it. Failure in any of
+        # them is logged inside and does not undo the confirmation.
         if owner:
-            group_profile.publish_bio(*owner)
-            group_profile.publish_title(*owner)
+            _publish_and_announce(*owner)
         return {"success": True}
     if reason == "already_resolved":
         raise HTTPException(409, "This was already confirmed - from Telegram, or from another tab.")
@@ -1322,6 +1375,27 @@ def dismiss_group_profile(
     raise HTTPException(404, "That reading no longer exists.")
 
 
+def _publish_and_announce(company_id: int, driver_id: int) -> None:
+    """Writes the confirmed record onto the group, then says what changed.
+
+    Silent when nothing was written - a group where the bot is not an admin
+    refuses all three, and announcing an empty change trains people to skip
+    the messages that do say something.
+    """
+    from services import group_profile, notification_service
+
+    changed = group_profile.publish_all(company_id, driver_id)
+    described = group_profile.describe_changes(changed.get("written") or ())
+    if not described:
+        return
+    notification_service.notify(
+        company_id, "fleet.group_updated",
+        title=f"The bot updated a driver's group ({described})",
+        body="Written from the details somebody confirmed.",
+        link="/settings",
+    )
+
+
 @app.patch("/api/drivers/{driver_id}/details")
 def save_driver_details(
     driver_id: int,
@@ -1331,15 +1405,19 @@ def save_driver_details(
 ):
     """Typed in by hand, for a driver whose group bio says nothing useful."""
     from db.repository import update_driver_details
-
-    from services import group_profile
+    from services import notification_service
 
     ok, reason = update_driver_details(
         driver_id, user["company_id"], body.model_dump(exclude_none=True)
     )
     if ok:
-        group_profile.publish_bio(user["company_id"], driver_id)
-        group_profile.publish_title(user["company_id"], driver_id)
+        _publish_and_announce(user["company_id"], driver_id)
+        notification_service.notify(
+            user["company_id"], "fleet.details_changed",
+            title="Truck and driver details were edited",
+            body=", ".join(sorted(body.model_dump(exclude_none=True))) or None,
+            link="/settings",
+        )
         return {"success": True}
     if reason == "nothing_to_save":
         raise HTTPException(400, "No details were sent.")

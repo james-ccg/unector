@@ -73,10 +73,31 @@ def test_the_site_is_a_default_everywhere():
         assert events.SITE in event.defaults, event.key
 
 
+# Changes the owner made deliberately, from their own dashboard. They were
+# there when it happened, so the message is a receipt rather than a warning,
+# and a receipt is exactly the kind of thing somebody should be able to
+# switch off. Everything else under billing and security is something that
+# happened TO them - a charge failing, a sign-in they did not make - and
+# whoever silenced one of those a year ago will not remember doing so on the
+# day it matters.
+SELF_INFLICTED = {"billing.plan_changed", "billing.payment_method_changed"}
+
+
 def test_money_and_access_events_cannot_be_switched_off():
     for event in events.EVENTS:
         if event.category in ("billing", "security"):
-            assert event.mandatory or event.key == "billing.plan_changed", event.key
+            assert event.mandatory or event.key in SELF_INFLICTED, event.key
+
+
+def test_a_receipt_is_not_dressed_up_as_a_warning():
+    """The other half of the rule above: an event on that list has to be one
+    the owner caused, so the list cannot quietly grow to cover things that
+    merely felt noisy."""
+    for key in SELF_INFLICTED:
+        event = events.get(key)
+        assert event is not None, key
+        assert event.mandatory is False, key
+        assert event.audience == events.OWNER_ONLY, key
 
 
 # ------------------------------------------------------------------

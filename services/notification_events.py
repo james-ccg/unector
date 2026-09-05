@@ -51,10 +51,11 @@ DISPATCHER = "dispatcher"
 EVERYONE = (OWNER, DISPATCHER)
 OWNER_ONLY = (OWNER,)
 
-CATEGORIES = ("loads", "fleet", "billing", "security")
+CATEGORIES = ("loads", "fleet", "account", "billing", "security")
 CATEGORY_LABELS = {
     "loads": "Loads",
     "fleet": "Drivers and trucks",
+    "account": "Changes and edits",
     "billing": "Billing",
     "security": "Security and access",
 }
@@ -134,6 +135,64 @@ EVENTS: tuple[Event, ...] = (
         channels=CHANNELS,
         defaults=(SITE,),
     ),
+    Event(
+        key="fleet.group_updated",
+        category="fleet",
+        label="The bot changes a group",
+        description=(
+            "After a confirmation, the bot writes the group's name, description "
+            "and the company logo. This says what it changed."
+        ),
+        channels=CHANNELS,
+        defaults=(SITE,),
+    ),
+    Event(
+        key="fleet.details_changed",
+        category="fleet",
+        label="Truck or driver details change",
+        description="Somebody edited a unit number, a name, a phone or a VIN.",
+        channels=CHANNELS,
+        defaults=(SITE,),
+    ),
+    Event(
+        key="fleet.roster_changed",
+        category="fleet",
+        label="A driver, truck or trailer is added or removed",
+        description="The fleet list itself changed, rather than a detail on it.",
+        channels=CHANNELS,
+        defaults=(SITE,),
+    ),
+    # ------------------------------------------------------------------
+    # Changes and edits - the record of what was altered, and by whom
+    #
+    # These exist because "who changed this?" is a question that gets asked
+    # after the fact, and the site feed is the answer. Guidance on audit
+    # trails is consistent about the four things worth recording - who, what,
+    # when, and to which record - and consistent that the record should be
+    # written whether or not anyone is being notified. So the site channel
+    # keeps them all; Telegram and email are off until asked for, because a
+    # message per edit is how a carrier learns to ignore the sender.
+    # ------------------------------------------------------------------
+    Event(
+        key="account.settings_changed",
+        category="account",
+        label="Settings change",
+        description="An alert rule was edited, or an integration connected or disconnected.",
+        channels=CHANNELS,
+        defaults=(SITE,),
+    ),
+    Event(
+        key="account.team_changed",
+        category="account",
+        label="Someone joins or leaves the team",
+        description=(
+            "A dispatcher was added, renamed or removed. This one defaults to "
+            "email as well, because it changes who can get in."
+        ),
+        channels=CHANNELS,
+        defaults=(SITE, EMAIL),
+        audience=OWNER_ONLY,
+    ),
     # ------------------------------------------------------------------
     # Billing - the owner's business, and mostly not optional
     # ------------------------------------------------------------------
@@ -156,6 +215,18 @@ EVENTS: tuple[Event, ...] = (
         defaults=(SITE, EMAIL, TELEGRAM),
         audience=OWNER_ONLY,
         mandatory=True,
+    ),
+    Event(
+        key="billing.payment_method_changed",
+        category="billing",
+        label="A payment method is added or removed",
+        description=(
+            "Email as well as the dashboard: a method disappearing is how a plan "
+            "quietly stops renewing, and the owner should hear about it either way."
+        ),
+        channels=CHANNELS,
+        defaults=(SITE, EMAIL),
+        audience=OWNER_ONLY,
     ),
     Event(
         key="billing.plan_changed",

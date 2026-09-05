@@ -853,8 +853,14 @@ export default function SettingsPage() {
           <div className="card">
             <div className="pref-row">
               <div>
-                <p className="settings-row-label">Profile picture</p>
-                <p className="settings-row-hint">Shown in your profile menu and to your teammates.</p>
+                <p className="settings-row-label">
+                  {user?.role === 'owner' ? 'Company logo' : 'Profile picture'}
+                </p>
+                <p className="settings-row-hint">
+                  {user?.role === 'owner'
+                    ? "Your carrier's mark. It appears in the dashboard, and the bot puts it on each truck's Telegram group."
+                    : 'Shown in your profile menu and to your teammates.'}
+                </p>
               </div>
               <AvatarPicker />
             </div>
