@@ -1203,14 +1203,11 @@ export default function SettingsPage() {
                       Reconnect Gmail
                     </button>
                   )}
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => handleConnectGmail(true)}
-                    disabled={!isOwner}
-                    title="Connect a different mailbox instead of this one"
-                  >
-                    Use a different account
-                  </button>
+                  {/* No "use a different account" here. Changing mailbox is
+                      Disconnect then Connect, which is one more click and one
+                      fewer way to replace a working connection by accident -
+                      the same reason Reconnect is not offered on a healthy
+                      one either. */}
                   <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
                     Disconnect
                   </button>
