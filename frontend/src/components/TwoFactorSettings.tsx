@@ -427,13 +427,18 @@ export default function TwoFactorSettings() {
       {/* ---------------- Security keys ---------------- */}
       <div className="card twofa-card">
         <div className="twofa-card-head">
-          <div className="twofa-icon"><Icon name="check" size={20} /></div>
+          <div className="twofa-icon"><Icon name="key" size={20} /></div>
           <div className="twofa-info">
             <h3>Security keys</h3>
             <p>YubiKey, Touch ID, Windows Hello, or any FIDO2/WebAuthn device.</p>
           </div>
+          {/* "0 registered" was a count where every other card gives a state,
+              and it read as a broken value rather than as "none yet". A count
+              is only worth showing once there is something to count. */}
           <span className={`status-badge ${webauthnCreds.length ? 'is-connected' : 'is-disconnected'}`}>
-            {webauthnCreds.length} registered
+            {webauthnCreds.length
+              ? `${webauthnCreds.length} registered`
+              : 'Not enabled'}
           </span>
         </div>
 

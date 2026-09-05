@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'gmail' | 'telegram' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'layers' | 'phone' | 'refresh' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
+type IconName = 'arrow-left' | 'arrow-right' | 'briefcase' | 'check' | 'gmail' | 'key' | 'telegram' | 'chevron-right' | 'clock' | 'close' | 'drivers' | 'email' | 'eye' | 'eye-off' | 'load' | 'location' | 'logout' | 'menu' | 'money' | 'monitor' | 'moon' | 'layers' | 'phone' | 'refresh' | 'settings' | 'shield' | 'sun' | 'truck' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   'arrow-left': <path d="m15 18-6-6 6-6M9 12h12" />,
@@ -32,6 +32,10 @@ const paths: Record<IconName, ReactNode> = {
   money: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M7 12h.01M17 12h.01M12 9v6M14 10.5a2 2 0 0 0-4 0c0 2 4 1 4 3a2 2 0 0 1-4 0" /></>,
   monitor: <><rect x="2" y="4" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" /></>,
   moon: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />,
+  // A key, for security keys. The card used to wear a tick, which reads as
+  // "this is done" - the one thing it must not say on an account that has
+  // registered none.
+  key: <><circle cx="7.5" cy="12" r="3.5" /><path d="M11 12h9.5M17 12v3.5M20.5 12v2.5" /></>,
   layers: <><path d="m12 2 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 17l9 5 9-5" /></>,
   refresh: <><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></>,
   phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z" />,
