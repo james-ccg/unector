@@ -200,7 +200,12 @@ def _build_web_flow(redirect_uri: str):
     return Flow.from_client_config(client_config, scopes=SCOPES, redirect_uri=redirect_uri)
 
 
-def build_authorization_url(redirect_uri: str, state: str, login_hint: str | None = None) -> str:
+def build_authorization_url(
+    redirect_uri: str,
+    state: str,
+    login_hint: str | None = None,
+    force_picker: bool = False,
+) -> str:
     """Builds the Google consent-screen URL the owner is sent to when they
     click "Connect Gmail". `state` should be a signed, verifiable token
     (not a raw company_id) so the callback can't be spoofed.
@@ -210,13 +215,21 @@ def build_authorization_url(redirect_uri: str, state: str, login_hint: str | Non
     Google goes straight to that account instead of asking which one, which
     is the moment someone with two addresses picks the wrong one and
     silently connects the wrong inbox. It is a hint, not an instruction:
-    Google still shows the picker if that account is not signed in here."""
+    Google still shows the picker if that account is not signed in here.
+
+    `force_picker` is the way back out of that, and it is needed because the
+    hint is only right for a reconnect. An owner whose rate confirmations
+    arrive somewhere other than the address they signed up with had no way
+    to say so: while the hinted account is signed in, Google walks straight
+    past the chooser and the wrong inbox is the only one on offer."""
     flow = _build_web_flow(redirect_uri)
     extra = {"login_hint": login_hint} if login_hint else {}
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
-        prompt="consent",  # forces a refresh_token every time, even on reconnect
+        # consent forces a refresh_token every time, even on reconnect;
+        # select_account additionally makes Google ask which one.
+        prompt="consent select_account" if force_picker else "consent",
         state=state,
         **extra,
     )
@@ -226,9 +239,37 @@ def build_authorization_url(redirect_uri: str, state: str, login_hint: str | Non
 def exchange_code_for_refresh_token(code: str, redirect_uri: str) -> str | None:
     """Exchanges the authorization code Google sends back to our callback
     for a long-lived refresh token."""
+    token, _missing = exchange_code(code, redirect_uri)
+    return token
+
+
+def exchange_code(code: str, redirect_uri: str) -> tuple[str | None, list[str]]:
+    """The refresh token, and any scope the owner did not actually grant.
+
+    Google's consent screen lists each permission with its own checkbox, so
+    approving the app and approving everything it asked for are different
+    events. Someone can tick "read my mail" and leave "send mail on my
+    behalf" alone, and the flow still completes with a usable token.
+
+    Without this the connection was saved and shown as working, and the
+    missing half surfaced later - at the moment a driver sends a POD and the
+    broker never receives it, which is the worst place to find out.
+    """
     flow = _build_web_flow(redirect_uri)
     flow.fetch_token(code=code)
-    return flow.credentials.refresh_token
+    credentials = flow.credentials
+
+    # Absent and empty are different answers and must not be collapsed.
+    # An older google-auth has no granted_scopes at all, which means "cannot
+    # tell" - refusing every connection on those versions would be worse
+    # than the problem. An empty list is Google saying nothing was granted,
+    # which is exactly the case worth catching.
+    granted = getattr(credentials, "granted_scopes", None)
+    if granted is None:
+        return credentials.refresh_token, []
+
+    missing = [scope for scope in SCOPES if scope not in set(granted)]
+    return credentials.refresh_token, missing
 
 
 def get_email_address(refresh_token: str) -> str:

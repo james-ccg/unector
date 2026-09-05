@@ -372,10 +372,13 @@ export default function SettingsPage() {
     }
   }
 
-  const handleConnectGmail = async () => {
+  // switchAccount drops the login hint, so Google asks which account rather
+  // than reopening the one the company signed up with. The hint is right for
+  // a reconnect and wrong when the rate confirmations arrive somewhere else.
+  const handleConnectGmail = async (switchAccount = false) => {
     if (!user) return
     try {
-      const { auth_url } = await settingsApi.getGmailAuthUrl()
+      const { auth_url } = await settingsApi.getGmailAuthUrl('settings', switchAccount)
       // Full-page redirect to Google's own consent screen - no code to copy/paste.
       window.location.href = auth_url
     } catch (err) {
@@ -1169,16 +1172,45 @@ export default function SettingsPage() {
                   healthy connection the only action is Disconnect, so the
                   card doesn't push a fix for a problem nobody has. */}
               {!settings?.gmail_connected ? (
-                <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
-                  Connect Gmail
-                </button>
+                <>
+                  {/* Wrapped rather than passed by reference: React hands
+                      onClick the MouseEvent, which is truthy, and would
+                      switch the account picker on for every click. */}
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleConnectGmail()}
+                    disabled={!isOwner}
+                  >
+                    Connect Gmail
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => handleConnectGmail(true)}
+                    disabled={!isOwner}
+                    title="Google otherwise reopens the address this company signed up with"
+                  >
+                    Use a different account
+                  </button>
+                </>
               ) : (
                 <>
                   {needsReconnect && (
-                    <button className="btn btn-primary" onClick={handleConnectGmail} disabled={!isOwner}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => handleConnectGmail()}
+                      disabled={!isOwner}
+                    >
                       Reconnect Gmail
                     </button>
                   )}
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => handleConnectGmail(true)}
+                    disabled={!isOwner}
+                    title="Connect a different mailbox instead of this one"
+                  >
+                    Use a different account
+                  </button>
                   <button className="btn btn-danger-ghost" onClick={handleDisconnectGmail} disabled={!isOwner}>
                     Disconnect
                   </button>

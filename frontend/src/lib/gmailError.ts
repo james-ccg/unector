@@ -20,6 +20,10 @@ const MESSAGES: Record<string, string> = {
     '- the new link is good for a few minutes.',
   error_incomplete:
     'Google sent you back without the code needed to finish the connection. Try again.',
+  error_partial_scopes:
+    'Some of the permissions were left unticked on the Google screen, so nothing was connected. ' +
+    'Both are needed: reading the inbox is how rate confirmations are found, and sending is how ' +
+    'PODs reach the broker. Try again and tick both boxes.',
   error_exchange:
     'Google approved the connection but the final step failed on our side. Try again - if it keeps ' +
     'happening, the problem is ours, not yours.',

@@ -856,8 +856,16 @@ export const settingsApi = {
   // URL, the browser is sent there directly (no codes to copy/paste).
   // returnTo tells the backend where to redirect after Google's consent
   // screen - "settings" (default) or "onboarding" (mandatory first connect).
-  getGmailAuthUrl: (returnTo: 'settings' | 'onboarding' = 'settings') =>
-    apiRequest<{ auth_url: string }>(`/api/settings/gmail/connect?return_to=${returnTo}`),
+  getGmailAuthUrl: (
+    returnTo: 'settings' | 'onboarding' = 'settings',
+    switchAccount = false,
+  ) =>
+    apiRequest<{ auth_url: string }>(
+      `/api/settings/gmail/connect?return_to=${returnTo}` +
+        // Drops the login hint, so Google asks which account instead of
+        // reopening the one the company signed up with.
+        (switchAccount ? '&switch_account=true' : '')
+    ),
 
   disconnectGmail: () =>
     apiRequest<{ success: boolean }>(

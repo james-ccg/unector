@@ -1861,7 +1861,11 @@ _GMAIL_RETURN_PATHS = {"settings": "/settings", "onboarding": "/onboarding/conne
 
 
 @app.get("/api/settings/gmail/connect")
-def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owner)):
+def gmail_connect(
+    return_to: str = "settings",
+    switch_account: bool = False,
+    user: dict = Depends(require_owner),
+):
     from services.gmail_service import build_authorization_url
 
     if return_to not in _GMAIL_RETURN_PATHS:
@@ -1880,10 +1884,17 @@ def gmail_connect(return_to: str = "settings", user: dict = Depends(require_owne
     # as the hint: Google reopens that account instead of asking. Without
     # it, an owner with two Google addresses can connect the wrong inbox on
     # a reconnect and nothing tells them until rate confirmations stop.
+    # switch_account drops the hint, so Google asks which account instead of
+    # reopening the one on file. The hint is right for a reconnect and wrong
+    # for an owner whose rate confirmations arrive somewhere other than the
+    # address they signed up with - and without this there was no way to say
+    # so: Google skips the picker whenever the hinted account is signed in.
+    # Same escape hatch the Google sign-in button already has.
     from db.repository import get_company_email
 
+    hint = None if switch_account else get_company_email(user["company_id"])
     auth_url = build_authorization_url(
-        GMAIL_REDIRECT_URI, state, login_hint=get_company_email(user["company_id"])
+        GMAIL_REDIRECT_URI, state, login_hint=hint, force_picker=switch_account
     )
     return {"auth_url": auth_url}
 
@@ -1902,7 +1913,7 @@ def _safe_oauth_reason(error: str) -> str:
 @app.get("/api/settings/gmail/callback")
 def gmail_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     from fastapi.responses import RedirectResponse
-    from services.gmail_service import exchange_code_for_refresh_token, mark_token_connected
+    from services.gmail_service import exchange_code, mark_token_connected
 
     # Best-effort recovery of where to send the owner back to, even on an
     # error/expired-state path - falls back to Settings, the safer default.
@@ -1928,7 +1939,13 @@ def gmail_callback(code: str | None = None, state: str | None = None, error: str
         return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_expired_link")
 
     try:
-        refresh_token = exchange_code_for_refresh_token(code, GMAIL_REDIRECT_URI)
+        refresh_token, missing_scopes = exchange_code(code, GMAIL_REDIRECT_URI)
+        if missing_scopes:
+            # Each permission has its own checkbox on Google's screen, so
+            # approving the app and approving everything it asked for are
+            # different events. Saving a half-granted connection would show
+            # it as working and fail at the moment a driver sends a POD.
+            return RedirectResponse(f"{FRONTEND_URL}{return_path}?gmail=error_partial_scopes")
         if not refresh_token:
             # Google only issues a refresh_token the FIRST time an account
             # approves this app - if this fails, they likely need to revoke
