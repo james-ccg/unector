@@ -85,12 +85,28 @@ class TestTheSwitchesAreGated:
         assert "ns-hint" in NOTIFICATIONS
 
     def test_the_explanation_clears_itself(self):
-        assert "setTimeout(() => setHint(null), 2600)" in NOTIFICATIONS
+        assert "const HINT_MS = 1000" in NOTIFICATIONS
+        assert "setTimeout(() => setHint(null), HINT_MS)" in NOTIFICATIONS
+
+    def test_the_countdown_is_held_while_it_is_being_looked_at(self):
+        """A second is not long enough to read a sentence - it is long enough
+        to notice one appeared. What makes it work is that the pointer is on
+        the chip at the moment of the click, and the countdown is held while
+        it stays there: the message lasts as long as somebody is looking at
+        it, and goes a second after they look away."""
+        assert "onMouseEnter={hint === key ? clearHintTimer : undefined}" in NOTIFICATIONS
+        assert "onMouseLeave={hint === key ? startHintTimer : undefined}" in NOTIFICATIONS
+
+    def test_a_keyboard_user_gets_the_same_hold(self):
+        """They have no pointer to hold it with, and would otherwise be the
+        one person the message flashes past."""
+        assert "onFocus={hint === key ? clearHintTimer : undefined}" in NOTIFICATIONS
+        assert "onBlur={hint === key ? startHintTimer : undefined}" in NOTIFICATIONS
 
     def test_the_timer_is_cleared_on_unmount(self):
         """Otherwise it sets state on a component that is gone - a warning in
         the console and a leak on a page somebody opens and closes often."""
-        assert "useEffect(() => () => {" in NOTIFICATIONS
+        assert "useEffect(() => clearHintTimer, [])" in NOTIFICATIONS
 
     def test_the_bubble_does_not_move_the_page(self):
         """A row that grew and shrank would shove the rest of the list about

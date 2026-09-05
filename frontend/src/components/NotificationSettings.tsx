@@ -53,17 +53,34 @@ export default function NotificationSettings() {
   const [hint, setHint] = useState<string | null>(null)
   const hintTimer = useRef<number | null>(null)
 
-  const showHint = (event: string, channel: NotificationChannel) => {
+  // A second on its own is not long enough to read a sentence - it is long
+  // enough to notice one appeared. What makes it work is that the pointer is
+  // already on the chip at the moment of the click, and the countdown is
+  // held while it stays there. So the message lasts exactly as long as
+  // somebody is looking at it, and goes a second after they look away.
+  //
+  // Touch has no hover, so there the plain second applies - which is right,
+  // because a tap is deliberate and the bubble is beside the thumb that made
+  // it.
+  const HINT_MS = 1000
+
+  const clearHintTimer = () => {
     if (hintTimer.current) window.clearTimeout(hintTimer.current)
-    setHint(`${event}:${channel}`)
-    // Long enough to read one sentence, short enough not to be dismissed
-    // furniture. Cleared on unmount too, or it sets state on a gone component.
-    hintTimer.current = window.setTimeout(() => setHint(null), 2600)
+    hintTimer.current = null
   }
 
-  useEffect(() => () => {
-    if (hintTimer.current) window.clearTimeout(hintTimer.current)
-  }, [])
+  const startHintTimer = () => {
+    clearHintTimer()
+    hintTimer.current = window.setTimeout(() => setHint(null), HINT_MS)
+  }
+
+  const showHint = (event: string, channel: NotificationChannel) => {
+    setHint(`${event}:${channel}`)
+    startHintTimer()
+  }
+
+  // Cleared on unmount, or it sets state on a component that is gone.
+  useEffect(() => clearHintTimer, [])
 
   const load = useCallback(async () => {
     try {
@@ -204,7 +221,18 @@ export default function NotificationSettings() {
                     if (state.locked) classes.push('is-locked')
                     if (unreachable) classes.push('is-unavailable')
                     return (
-                      <span className="ns-chip-wrap" key={channel}>
+                      <span
+                        className="ns-chip-wrap"
+                        key={channel}
+                        // Holding on hover is what the short timer relies on.
+                        // Focus gets the same treatment so a keyboard user,
+                        // who has no pointer to hold it with, is not the one
+                        // person the message flashes past.
+                        onMouseEnter={hint === key ? clearHintTimer : undefined}
+                        onMouseLeave={hint === key ? startHintTimer : undefined}
+                        onFocus={hint === key ? clearHintTimer : undefined}
+                        onBlur={hint === key ? startHintTimer : undefined}
+                      >
                       {hint === key && (
                         // Absolutely positioned, so appearing and going away
                         // moves nothing else on the page - a row that grew
