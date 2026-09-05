@@ -186,7 +186,7 @@ class TestOverHTTP:
         that is working, until the message nobody got."""
         self._owner(client)
         body = client.get("/api/notifications/preferences").json()
-        assert body["telegram_connected"] is False
+        assert body["telegram"] == {"connected": False, "username": None, "blocked": False}
 
     def test_a_link_can_be_issued_and_then_reports_connected(self, client, monkeypatch):
         monkeypatch.setattr(telegram_link, "bot_username", lambda refresh=False: "Unector_bot")
@@ -202,10 +202,13 @@ class TestOverHTTP:
 
         # What the bot does when Start is pressed.
         spent = repository.consume_telegram_link_token(body["code"])
-        repository.link_telegram_account(spent["account_type"], spent["account_id"], 777001)
+        repository.link_telegram_account(
+            spent["account_type"], spent["account_id"], 777001, "night_desk",
+        )
 
         prefs = client.get("/api/notifications/preferences").json()
-        assert prefs["telegram_connected"] is True
+        assert prefs["telegram"]["connected"] is True
+        assert prefs["telegram"]["blocked"] is False
 
     def test_disconnecting_is_refused_while_two_factor_needs_it(self, client, monkeypatch):
         monkeypatch.setattr(telegram_link, "bot_username", lambda refresh=False: "Unector_bot")

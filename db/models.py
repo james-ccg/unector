@@ -235,6 +235,18 @@ class TwoFactorSecret(Base):
 
     telegram_otp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Which Telegram account this is, as it was when they connected. Shown on
+    # the settings screen, because "Telegram: connected" answers a different
+    # question from "connected to whom" - and somebody with two accounts
+    # cannot tell from the first whether it is the one they meant.
+    telegram_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # When the person blocked the bot, per Telegram's my_chat_member update.
+    #
+    # Recorded rather than acted on: blocking must not undo the connection,
+    # because unblocking should just resume and re-linking after every block
+    # would be a chore nobody would do. It is here so the screen can say why
+    # nothing is arriving, and it is cleared the moment they unblock.
+    telegram_blocked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)

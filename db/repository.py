@@ -1416,7 +1416,9 @@ def set_sms_otp(account_type: str, account_id: int, phone_number: str | None, en
         session.commit()
 
 
-def link_telegram_account(account_type: str, account_id: int, telegram_user_id: int) -> None:
+def link_telegram_account(
+    account_type: str, account_id: int, telegram_user_id: int, username: str | None = None,
+) -> None:
     """Records where to reach this account on Telegram, and nothing else.
 
     Deliberately not set_telegram_otp with enabled=False: that would switch
@@ -1428,6 +1430,12 @@ def link_telegram_account(account_type: str, account_id: int, telegram_user_id: 
     with get_session() as session:
         row = _get_or_create_2fa_row(session, account_type, account_id)
         row.telegram_user_id = telegram_user_id
+        if username is not None:
+            row.telegram_username = username
+        # Connecting is the opposite of blocking, and somebody who blocked
+        # and then came back through the link should not still read as
+        # blocked afterwards.
+        row.telegram_blocked_at = None
         session.commit()
 
 
@@ -1457,6 +1465,57 @@ def unlink_telegram_account(account_type: str, account_id: int) -> tuple[bool, s
         row.telegram_user_id = None
         session.commit()
         return True, "ok"
+
+
+def set_telegram_blocked(telegram_user_id: int, blocked: bool) -> int:
+    """Records that this Telegram account has blocked or unblocked the bot.
+
+    Keyed by Telegram id rather than by account, because the my_chat_member
+    update that reports it knows who did it and nothing else - and one
+    person can be connected as both an owner and a dispatcher, in which case
+    both rows are theirs and both are equally unreachable.
+
+    The connection itself is never removed. Blocking is reversible, the
+    update that reports unblocking arrives the same way, and making somebody
+    re-link after every block would be a chore they would skip - leaving the
+    channel silently dead, which is the failure this whole feature exists to
+    stop.
+    """
+    with get_session() as session:
+        rows = (
+            session.query(models.TwoFactorSecret)
+            .filter(models.TwoFactorSecret.telegram_user_id == telegram_user_id)
+            .all()
+        )
+        for row in rows:
+            row.telegram_blocked_at = models.now_utc() if blocked else None
+        session.commit()
+        return len(rows)
+
+
+def telegram_presence(account_type: str, account_id: int) -> dict:
+    """Whether Telegram can reach this account, and who it reaches.
+
+    "Connected" on its own answers the wrong question twice: it does not say
+    which account, and it stays true after somebody blocks the bot - when
+    nothing will arrive at all.
+    """
+    with get_session() as session:
+        row = (
+            session.query(models.TwoFactorSecret)
+            .filter(
+                models.TwoFactorSecret.account_type == account_type,
+                models.TwoFactorSecret.account_id == account_id,
+            )
+            .first()
+        )
+        if not row or not row.telegram_user_id:
+            return {"connected": False, "username": None, "blocked": False}
+        return {
+            "connected": True,
+            "username": row.telegram_username,
+            "blocked": row.telegram_blocked_at is not None,
+        }
 
 
 def telegram_account_linked(account_type: str, account_id: int) -> bool:
@@ -2700,10 +2759,11 @@ def office_recipients(company_id: int) -> list[dict]:
     every dispatcher.
 
     Each comes back with whatever addresses exist for them, and any of them
-    may be None. Dispatchers have no email column at all - the only address
-    they ever give is the one for email two-factor - so the email channel
-    silently has no target for most of them. That is the reason the site
-    channel cannot be switched off: it is the one that always arrives."""
+    may be None. Email is the owner's alone: a company has one mailbox,
+    because that is the one broker email is sent from, and a dispatcher's
+    two-factor address is for getting in rather than for company news. So a
+    dispatcher is reachable by Telegram or by the dashboard, which is the
+    other reason the site channel cannot be switched off."""
     with get_session() as session:
         company = session.get(models.Company, company_id)
         if not company:
@@ -2736,7 +2796,14 @@ def office_recipients(company_id: int) -> list[dict]:
                 "account_type": "dispatcher",
                 "account_id": row.id,
                 "name": row.username,
-                "email": secret.contact_email if secret else None,
+                # Deliberately never an address. A company has exactly one
+                # mailbox - the owner's - because that is the one broker
+                # email is sent from, and giving dispatchers a second place
+                # for company mail to land would make "which address did
+                # that go to" a question with no good answer. A dispatcher
+                # who wants to be told something outside the dashboard
+                # connects Telegram.
+                "email": None,
                 "telegram_user_id": row.telegram_user_id or (
                     secret.telegram_user_id if secret else None
                 ),

@@ -7,6 +7,12 @@ import {
 } from '../services/api'
 import './NotificationSettings.css'
 
+type TelegramPresence = {
+  connected: boolean
+  username: string | null
+  blocked: boolean
+}
+
 type TelegramLink = {
   code: string
   url: string | null
@@ -43,7 +49,9 @@ export default function NotificationSettings() {
   // it when it cannot. Kept here rather than on the Security screen because
   // this is where somebody switches Telegram on and would otherwise never
   // learn that switching it on is not enough.
-  const [telegramConnected, setTelegramConnected] = useState(true)
+  const [telegram, setTelegram] = useState<TelegramPresence>({
+    connected: true, username: null, blocked: false,
+  })
   const [link, setLink] = useState<TelegramLink | null>(null)
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState('')
@@ -53,10 +61,10 @@ export default function NotificationSettings() {
       const data = await dashboardApi.getNotificationPreferences()
       setRows(data.events)
       setLabels(Object.fromEntries(data.channels.map((c) => [c.key, c.label])))
-      setTelegramConnected(data.telegram_connected)
+      setTelegram(data.telegram)
       // Clears a stale link once the connection has actually happened, so
       // the panel does not keep offering a code that has been spent.
-      if (data.telegram_connected) setLink(null)
+      if (data.telegram.connected) setLink(null)
       setError('')
     } catch (err) {
       setError(errorMessage(err, "Couldn't load your notification settings."))
@@ -162,7 +170,7 @@ export default function NotificationSettings() {
           without it is indistinguishable from a working one, right up until
           the message somebody needed never arrives. This says so, and makes
           the one required step a single tap. */}
-      {!telegramConnected && (
+      {!telegram.connected && (
         <div className="ns-connect">
           <p className="ns-connect-text">
             <strong>Telegram isn&apos;t connected.</strong> Anything set to Telegram below
@@ -202,12 +210,28 @@ export default function NotificationSettings() {
         </div>
       )}
 
-      {telegramConnected && (
-        <div className="ns-connect is-done">
-          <p className="ns-connect-text">
-            <strong>Telegram is connected.</strong> Anything set to Telegram below arrives in
-            your chat with the bot.
-          </p>
+      {telegram.connected && (
+        <div className={`ns-connect is-done${telegram.blocked ? ' is-blocked' : ''}`}>
+          {/* Blocked is a third state, not a fourth kind of disconnected.
+              The link is deliberately kept - unblocking resumes delivery on
+              its own, and making somebody reconnect after every block is a
+              chore they would skip, leaving the channel dead while still
+              reading as connected. */}
+          {telegram.blocked ? (
+            <p className="ns-connect-text">
+              <strong>You&apos;ve blocked the bot on Telegram.</strong> The connection is still
+              here{telegram.username ? ` (${telegram.username})` : ''}, so unblocking it in
+              Telegram is all it takes - nothing needs reconnecting, and messages start arriving
+              again by themselves.
+            </p>
+          ) : (
+            <p className="ns-connect-text">
+              <strong>
+                Telegram is connected{telegram.username ? ` as ${telegram.username}` : ''}.
+              </strong>{' '}
+              Anything set to Telegram below arrives in your chat with the bot.
+            </p>
+          )}
           {linkError && <p className="ns-error">{linkError}</p>}
           <button className="btn btn-ghost btn-sm" onClick={disconnect} disabled={linking}>
             {linking ? 'Working...' : 'Disconnect Telegram'}

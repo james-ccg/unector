@@ -1129,6 +1129,14 @@ export default function SettingsPage() {
               <div className="integration-info">
                 <h3>Gmail</h3>
                 <p>Automatically finds rate confirmations in this inbox and sends PODs to brokers.</p>
+                {/* Which inbox, not just that there is one. "Connected"
+                    reads identically whether it is the right mailbox or a
+                    personal one connected by mistake, and the way that gets
+                    noticed otherwise is rate confirmations never being
+                    found. */}
+                {settings?.gmail_connected && settings.gmail_address && (
+                  <p className="integration-account mono">{settings.gmail_address}</p>
+                )}
               </div>
               {/* Three states, not two: a stored token that Google has since
                   revoked still counts as "connected", but nothing works -

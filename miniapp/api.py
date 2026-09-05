@@ -1632,7 +1632,13 @@ def get_notification_preferences(user: dict = Depends(get_current_user)):
             "mandatory": event.mandatory,
             "channels": {
                 channel: {
-                    "available": event.allows(channel),
+                    # Email is the owner's alone: one company, one mailbox,
+                    # the one broker email goes out from. Offering the switch
+                    # to a dispatcher would be offering somewhere for mail to
+                    # land that does not exist.
+                    "available": event.allows(channel) and not (
+                        channel == events.EMAIL and account_type == "dispatcher"
+                    ),
                     "enabled": wants(account_type, account_id, event, channel, saved),
                     # The site channel is the record of what was sent, so it
                     # is never something to switch off.
@@ -1642,7 +1648,7 @@ def get_notification_preferences(user: dict = Depends(get_current_user)):
             },
         })
 
-    from db.repository import telegram_account_linked
+    from db.repository import telegram_presence
 
     return {
         "channels": [
@@ -1650,12 +1656,12 @@ def get_notification_preferences(user: dict = Depends(get_current_user)):
             for channel in events.CHANNELS
         ],
         "events": rows,
-        # Whether Telegram can be delivered to at all. Telegram refuses to
-        # let a bot message anyone who has not opened a chat with it, so a
-        # switch turned on without that looks identical to one that is
-        # working - right up until the message somebody needed never
-        # arrives. The screen says so instead.
-        "telegram_connected": telegram_account_linked(account_type, account_id),
+        # Whether Telegram can be delivered to, which account it reaches,
+        # and whether that account has since blocked the bot. All three are
+        # needed to avoid a switch that looks like it works: connected says
+        # nothing about *whose* Telegram, and a connection survives being
+        # blocked while delivering nothing at all.
+        "telegram": telegram_presence(account_type, account_id),
     }
 
 
@@ -1716,6 +1722,8 @@ def set_notification_preferences(
         raise HTTPException(403, "That notification isn't sent to this kind of account.")
     if not event.allows(body.channel):
         raise HTTPException(400, f"{event.label} is never sent by {body.channel}.")
+    if body.channel == events.EMAIL and account_type == "dispatcher":
+        raise HTTPException(400, "Email goes to the company's own address, which belongs to the owner - connect Telegram to be told things outside the dashboard.")
 
     # Refused rather than quietly ignored: a switch that appears to move and
     # then does nothing is worse than one that says why it cannot.
@@ -1883,6 +1891,11 @@ def get_settings(user: dict = Depends(get_current_user)):
         # Kept for the dashboard banner, which only cares about the hard
         # failure case.
         "gmail_needs_reconnect": gmail["state"] == "expired",
+        # Which mailbox, not just whether there is one. "Gmail: connected"
+        # is the same sentence whether it is the right inbox or somebody
+        # else's, and the way that gets noticed otherwise is rate
+        # confirmations quietly not being found.
+        "gmail_address": company.email if gmail_token else None,
         "samsara_connected": bool(samsara_key) or SAMSARA_TEST_MODE,
         "company_name": company.company_name,
         "mc_number": company.mc_number

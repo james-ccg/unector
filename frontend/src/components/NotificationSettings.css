@@ -158,3 +158,11 @@
 .ns-connect-ready .settings-hint {
   margin: 0;
 }
+
+/* Blocked is its own state: connected, and delivering nothing. Marked
+   rather than styled as an error, because it is reversible by the person
+   reading it and nothing is broken on our side. */
+.ns-connect.is-blocked {
+  border-style: solid;
+  border-color: var(--primary);
+}

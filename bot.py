@@ -47,6 +47,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramNetworkError
 from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, BotCommand, CallbackQuery,
+    ChatMemberUpdated,
 )
 
 from config import (
@@ -72,6 +73,7 @@ from db.repository import (
     get_enabled_alert_rules,
     consume_telegram_link_token,
     link_telegram_account,
+    set_telegram_blocked,
     set_telegram_otp,
     link_driver_group,
     get_pending_proposal_for_group,
@@ -136,6 +138,42 @@ async def update_group_title(group_id: int, title: str):
             logger.info(f"Updated group title for driver {driver.driver_bot_id}: {title}")
 
 
+@dp.my_chat_member()
+async def handle_my_chat_member(update: ChatMemberUpdated) -> None:
+    """Notices when somebody blocks or unblocks the bot.
+
+    Telegram reports both through the same update on a private chat: the new
+    status is "kicked" when they block and "member" when they come back. It
+    is the only way to know - a bot cannot ask, and the alternative is
+    finding out from a 403 on a message that mattered.
+
+    Nothing is disconnected. Blocking is reversible and the update that
+    reverses it arrives here too, so the link stays and delivery simply
+    resumes. Making somebody re-link after every block would be a chore they
+    would skip, which leaves the channel dead while still looking connected
+    - the exact failure this is here to prevent.
+    """
+    if update.chat.type != "private":
+        return
+
+    status = update.new_chat_member.status
+    if status not in ("kicked", "member"):
+        return
+
+    blocked = status == "kicked"
+    try:
+        rows = await asyncio.to_thread(set_telegram_blocked, update.from_user.id, blocked)
+    except Exception:
+        logger.exception("Couldn't record a block/unblock for %s", update.from_user.id)
+        return
+
+    if rows:
+        logger.info(
+            "Telegram user %s %s the bot (%s account row(s) updated).",
+            update.from_user.id, "blocked" if blocked else "unblocked", rows,
+        )
+
+
 async def _connect_from_start(message: Message, payload: str) -> None:
     """Connects the Telegram account that just pressed Start.
 
@@ -165,6 +203,7 @@ async def _connect_from_start(message: Message, payload: str) -> None:
     await asyncio.to_thread(
         link_telegram_account,
         result["account_type"], result["account_id"], message.from_user.id,
+        message.from_user.username or message.from_user.full_name,
     )
     await message.reply(
         "✅ **Telegram connected.**\n\n"

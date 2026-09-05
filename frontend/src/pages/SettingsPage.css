@@ -702,3 +702,14 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Which account an integration is actually connected to. Quieter than the
+   description above it - it answers a follow-up question, not the first
+   one - but present, because "connected" alone hides connecting the wrong
+   one. */
+.integration-account {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  word-break: break-all;
+}

@@ -775,11 +775,11 @@ export const dashboardApi = {
     apiRequest<{
       channels: { key: NotificationChannel; label: string }[]
       events: NotificationEventPreference[]
-      /** Whether Telegram can be delivered to at all. Telegram refuses to
-       *  let a bot message anyone who has not opened a chat with it, so a
-       *  switch turned on without this is indistinguishable from a working
-       *  one until the message nobody received. */
-      telegram_connected: boolean
+      /** Whether Telegram can be delivered to, whose account it reaches,
+       *  and whether that account has since blocked the bot. Connected on
+       *  its own is not enough: it says nothing about which account, and it
+       *  stays true after a block, when nothing arrives at all. */
+      telegram: { connected: boolean; username: string | null; blocked: boolean }
     }>('/api/notifications/preferences'),
 
   /** A one-tap link that connects this account to the bot. `url` is null
@@ -850,6 +850,10 @@ export interface CompanySettings {
   // Connected, but Google has stopped accepting the stored token - the
   // owner has to reconnect before the bot can read the inbox again.
   gmail_needs_reconnect?: boolean
+  /** Which mailbox is connected. "Connected" reads the same whether it is
+   *  the right inbox or somebody else's, and the way that gets noticed
+   *  otherwise is rate confirmations quietly not being found. */
+  gmail_address?: string | null
   samsara_connected: boolean
   company_name: string
   mc_number: string
