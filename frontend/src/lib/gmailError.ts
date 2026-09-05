@@ -31,7 +31,14 @@ const MESSAGES: Record<string, string> = {
 
 /** Google's own error codes, which arrive as `?gmail=error_google&reason=`. */
 const GOOGLE_REASONS: Record<string, string> = {
-  access_denied: 'The connection was cancelled on the Google screen, so nothing was connected.',
+  // Google sends access_denied for two different things and does not say
+  // which: the owner pressed Cancel, or the account is not on the tester
+  // list while the app is still in Google's "Testing" status. Claiming the
+  // first sends somebody looking for a mistake they did not make, so this
+  // names both rather than guessing.
+  access_denied:
+    'Nothing was connected. Either the Google screen was cancelled, or that account is not on ' +
+    "this app's Google tester list yet - Google shows the same message for both.",
   admin_policy_enforced:
     "Your Google Workspace administrator blocks this connection. They'll need to allow it first.",
   invalid_scope: 'Google rejected the permissions this app asked for. That is a bug on our side.',
