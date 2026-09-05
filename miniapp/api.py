@@ -748,10 +748,35 @@ def _status_field(user: dict) -> dict:
     return {"status": get_account_status(account_type, account_id)}
 
 
+def _company_name_field(user: dict) -> dict:
+    """The company's name as it is now, not as it was at sign-in.
+
+    The session token carries a copy, stamped when the token was minted, and
+    returning that meant the header kept showing the old name after a rename
+    while every screen that reads the database showed the new one - the same
+    account, named two different things on one page, until the session
+    happened to expire.
+
+    A token is for identity: company_id is the part that is signed and the
+    part that decides what anyone can reach. A display name is not
+    authorisation, so it is read rather than trusted.
+    """
+    company_id = user.get("company_id")
+    if not company_id:
+        return {}
+
+    from db.repository import get_company_billing_info
+
+    company = get_company_billing_info(company_id)
+    return {"company_name": company["company_name"]} if company else {}
+
+
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
     return {
         **user,
+        # After the spread, so a stale name in the token loses to the live one.
+        **_company_name_field(user),
         **_gmail_connected_field(user.get("role"), user.get("company_id")),
         **_status_field(user),
         **_avatar_field(user),
