@@ -134,6 +134,15 @@ one tap away instead of twenty messages up by the afternoon - and exactly one lo
 the driver never has to work out which of several is today's. This needs the **Pin messages**
 admin right; without it the pin is logged and skipped, and the load still lands.
 
+The company logo goes on too. The picture on a truck's group is the carrier's, not the driver's -
+a dispatcher looking at forty groups should see who they work for in every one of them - so a
+confirmation writes the group's name, description and photo together. It reads the other way as
+well: a carrier who has never uploaded a logo usually has one sitting on a group already, and the
+bot takes that as the company logo the first time it reads the group. That direction only ever
+fills a gap, never overwrites a mark somebody chose on the dashboard. Note that the owner-side
+picture in Settings **is** the company logo - it is stored against the company, one per carrier -
+while a dispatcher's is their own.
+
 Send `/readbio` in the group to read the description again after editing it. The **Details**
 button on any driver in Settings opens the same fields for typing in by hand, which is the path
 for carriers who keep nothing in the description.
@@ -195,6 +204,21 @@ and therefore the record of what was sent. And events with a real consequence at
 payment, a sign-in nobody recognises, an integration that quietly stopped working - ignore
 preferences entirely, because whoever muted one a year ago will not remember doing so on the day it
 matters.
+
+Changes to a company's records are announced from one place rather than from each endpoint.
+`services/change_log.py` maps a request - the method and path - to an event, and one middleware
+reads that map after the response is built. A notify() call at the end of every endpoint that
+writes something is the obvious version and it is wrong within a month: somebody adds an endpoint,
+forgets the call, and "we will tell you when anything changes" quietly stops being true for exactly
+the change that mattered. Adding a line to one list is harder to forget, and an endpoint nobody
+added a line for is at least visibly missing from a single list. Only successful requests count -
+a 4xx changed nothing - and nothing in the middleware can fail the request, since the change is
+already made and answered for by the time it runs.
+
+Almost all of these default to the dashboard alone. The site feed is the record; Telegram and email
+are for the carrier who asks for them, because a message per edit is the fastest way to teach
+somebody to ignore the sender. The exceptions are the two with a consequence attached: a teammate
+gaining access, and a payment method disappearing.
 
 Preferences are stored only where they differ from the default. Writing a full grid of switches when
 an account is created would freeze today's defaults for everyone who never opens the page, and an
