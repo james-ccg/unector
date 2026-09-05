@@ -29,6 +29,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from config import (
+    env,
     FORCE_HTTPS,
     FRONTEND_URL,
     GOOGLE_CLIENT_ID,
@@ -1849,7 +1850,11 @@ def get_settings(user: dict = Depends(get_current_user)):
 # Settings connected. This is separate from gmail_setup.py, which is the
 # older CLI-based way of doing the exact same thing.
 # ------------------------------------------------------------------
-GMAIL_REDIRECT_URI = os.getenv("GMAIL_OAUTH_REDIRECT_URI", "http://localhost:8000/api/settings/gmail/callback")
+# env(), not os.getenv(): a key left blank in .env returns "" and the
+# default beside it never runs. An empty redirect_uri is what Google
+# answers with "Missing required parameter: redirect_uri", which reads
+# like a bug here and is a blank line in a config file.
+GMAIL_REDIRECT_URI = env("GMAIL_OAUTH_REDIRECT_URI", "http://localhost:8000/api/settings/gmail/callback")
 
 
 _GMAIL_RETURN_PATHS = {"settings": "/settings", "onboarding": "/onboarding/connect-gmail"}
@@ -1982,7 +1987,7 @@ def disconnect_gmail(user: dict = Depends(require_owner), _csrf: None = Depends(
 # services/google_identity_service.py for why this is kept separate from
 # the Gmail integration's restricted scopes.
 # ------------------------------------------------------------------
-GOOGLE_LOGIN_REDIRECT_URI = os.getenv(
+GOOGLE_LOGIN_REDIRECT_URI = env(
     "GOOGLE_LOGIN_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback"
 )
 
@@ -2094,7 +2099,7 @@ def google_login_callback(
 # details. See PendingRegistration's docstring for the full flow and why
 # nothing is created until the final /api/auth/register submit.
 # ------------------------------------------------------------------
-REGISTER_GMAIL_REDIRECT_URI = os.getenv(
+REGISTER_GMAIL_REDIRECT_URI = env(
     "REGISTER_GMAIL_OAUTH_REDIRECT_URI", "http://localhost:8000/api/auth/register/gmail/callback"
 )
 

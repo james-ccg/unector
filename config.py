@@ -10,10 +10,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def env(name: str, default: str = "") -> str:
+    """A setting from .env, treating blank as absent.
+
+    os.getenv's own default only applies when the key is missing entirely.
+    A key that is present but empty - `GMAIL_OAUTH_REDIRECT_URI=` on its own
+    line, which is how .env.example ships several of these - returns "", and
+    the carefully chosen fallback beside it never runs.
+
+    That is not theoretical here. It sent every app email out with an empty
+    From header once, and it later sent Google an OAuth request with an empty
+    redirect_uri, which Google answered with "Missing required parameter:
+    redirect_uri" - an error that reads like a bug in the request builder and
+    is actually a blank line in a config file.
+
+    A blank line and a missing line mean the same thing to a person editing
+    .env, so they mean the same thing here.
+    """
+    return (os.getenv(name) or "").strip() or default
+
+
 # --- Global (single) settings ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///unector.db")
+DATABASE_URL = env("DATABASE_URL", "sqlite:///unector.db")
 
 # Optional: if a direct connection to api.telegram.org is blocked/unstable,
 # set a proxy address here, e.g. http://user:pass@host:port or socks5://host:port
@@ -30,33 +51,33 @@ GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 # 7 days, so the Gmail connection silently dies on a timer and Settings
 # warns ahead of each expiry. Publish the consent screen and set this to
 # false: tokens then last indefinitely and the countdown is meaningless.
-GOOGLE_OAUTH_TESTING_MODE = os.getenv("GOOGLE_OAUTH_TESTING_MODE", "true").strip().lower() != "false"
+GOOGLE_OAUTH_TESTING_MODE = env("GOOGLE_OAUTH_TESTING_MODE", "true").strip().lower() != "false"
 
 # Samsara GPS monitoring settings. Each company's own Samsara API key is
 # stored encrypted in the DB (see samsara_setup.py) - these two are just
 # tuning knobs, not secrets.
-SAMSARA_NEARBY_MILES = float(os.getenv("SAMSARA_NEARBY_MILES", "5"))
-SAMSARA_POLL_INTERVAL_SECONDS = int(os.getenv("SAMSARA_POLL_INTERVAL_SECONDS", "120"))
+SAMSARA_NEARBY_MILES = float(env("SAMSARA_NEARBY_MILES", "5"))
+SAMSARA_POLL_INTERVAL_SECONDS = int(env("SAMSARA_POLL_INTERVAL_SECONDS", "120"))
 
 # Test mode: simulates a truck driving toward each load's pickup/delivery
 # instead of calling the real Samsara API - so the whole alert pipeline
 # (thresholds, custom messages, batching) can be exercised with no Samsara
 # account and no real trucks. See services/samsara_test_mode.py. Never turn
 # this on in production - every company would see simulated locations.
-SAMSARA_TEST_MODE = os.getenv("SAMSARA_TEST_MODE", "false").strip().lower() == "true"
-SAMSARA_TEST_START_MILES = float(os.getenv("SAMSARA_TEST_START_MILES", "60"))
-SAMSARA_TEST_SPEED_MPH = float(os.getenv("SAMSARA_TEST_SPEED_MPH", "600"))
+SAMSARA_TEST_MODE = env("SAMSARA_TEST_MODE", "false").strip().lower() == "true"
+SAMSARA_TEST_START_MILES = float(env("SAMSARA_TEST_START_MILES", "60"))
+SAMSARA_TEST_SPEED_MPH = float(env("SAMSARA_TEST_SPEED_MPH", "600"))
 
 # Deployment environment. Set ENVIRONMENT=production on the real server -
 # this gates cookie Secure flags and HTTPS enforcement, both of which would
 # otherwise break plain-http localhost development.
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+ENVIRONMENT = env("ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = ENVIRONMENT == "production"
 # Off by default so local http://localhost dev keeps working. Turn on once
 # deployed somewhere that actually terminates HTTPS in front of this app -
 # if a reverse proxy already redirects to HTTPS, leave this off too, to
 # avoid a redirect loop.
-FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").strip().lower() == "true"
+FORCE_HTTPS = env("FORCE_HTTPS", "false").strip().lower() == "true"
 
 # Whether a reverse proxy sits in front of this app and can be believed
 # about the client's IP.
@@ -69,12 +90,12 @@ FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").strip().lower() == "true"
 # so anyone could vary it per request and never be limited at all. Hence a
 # deliberate switch: turn it on only when something you control is actually
 # terminating connections in front of this process.
-TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "false").strip().lower() == "true"
+TRUST_PROXY_HEADERS = env("TRUST_PROXY_HEADERS", "false").strip().lower() == "true"
 
 # Mini App (owner/dispatcher dashboard) settings.
 # JWT_SECRET_KEY signs login sessions - set a real random value in production;
 # the fallback below is only for local development.
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-only-change-me-before-going-live")
+JWT_SECRET_KEY = env("JWT_SECRET_KEY", "dev-only-change-me-before-going-live")
 # Public HTTPS URL where the Mini App is served (e.g. an ngrok tunnel during
 # development, or your real domain once deployed). Used by the bot's
 # /dashboard command to open the Mini App from a button.
@@ -83,7 +104,7 @@ MINIAPP_URL = os.getenv("MINIAPP_URL", "").strip() or None
 # The web dashboard's own URL (React frontend, e.g. Vite dev server or the
 # production domain). Used to redirect back here after OAuth flows like
 # Gmail Connect complete.
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
 
 # ------------------------------------------------------------------
 # Two-factor authentication settings
@@ -91,15 +112,15 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 # WebAuthn (security keys / Touch ID / Windows Hello). RP_ID must be the
 # bare domain the frontend is served from (e.g. "localhost" in dev,
 # "app.unector.com" in production) - no scheme, no port.
-WEBAUTHN_RP_ID = os.getenv("WEBAUTHN_RP_ID", "localhost")
-WEBAUTHN_RP_NAME = os.getenv("WEBAUTHN_RP_NAME", "Unector")
-WEBAUTHN_ORIGIN = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:5173")
+WEBAUTHN_RP_ID = env("WEBAUTHN_RP_ID", "localhost")
+WEBAUTHN_RP_NAME = env("WEBAUTHN_RP_NAME", "Unector")
+WEBAUTHN_ORIGIN = env("WEBAUTHN_ORIGIN", "http://localhost:5173")
 
 # Email OTP - sent via plain SMTP (separate from the per-company Gmail OAuth
 # used for RC processing, since this is platform-level login security, not
 # tied to any one company's inbox). A Gmail "app password" works fine here.
 SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = int(env("SMTP_PORT", "587"))
 SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 # os.getenv's default only applies when the variable is absent. Set but
