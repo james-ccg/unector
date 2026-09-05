@@ -5,6 +5,7 @@ import { authApi, twoFaApi, publicApi, errorMessage } from '../services/api'
 import type { LoginSuccess, TwoFaChallenge } from '../services/api'
 import { isWebAuthnSupported, getCredential } from '../services/webauthn'
 import Turnstile from '../components/Turnstile'
+import { turnstileUnavailableMessage } from '../lib/turnstile'
 import PasswordInput from '../components/PasswordInput'
 import './LoginPage.css'
 
@@ -48,6 +49,10 @@ export default function LoginPage() {
 
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  // Why the check could not run, when it could not. The submit button is
+  // already disabled without a token, so without this the form is simply
+  // dead with nothing on screen saying why.
+  const [turnstileError, setTurnstileError] = useState<string | null>(null)
   // Bumped to force the Turnstile widget to remount (and issue a fresh
   // token) after a failed attempt or a tab switch. Cloudflare tokens are
   // single-use - once verify_turnstile has checked one, submitting it again
@@ -62,6 +67,7 @@ export default function LoginPage() {
 
   const resetTurnstile = () => {
     setTurnstileToken(null)
+    setTurnstileError(null)
     setTurnstileNonce((n) => n + 1)
   }
 
@@ -286,7 +292,15 @@ export default function LoginPage() {
                       Forgot password?
                     </Link>
                   </p>
-                  <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <Turnstile
+                    key={turnstileNonce}
+                    siteKey={turnstileSiteKey}
+                    onToken={setTurnstileToken}
+                    onUnavailable={setTurnstileError}
+                  />
+                  {turnstileError && (
+                    <p className="error">{turnstileUnavailableMessage(turnstileError)}</p>
+                  )}
                   <button
                     type="submit"
                     className="btn-primary btn-full"
@@ -335,7 +349,15 @@ export default function LoginPage() {
                     <span>Password</span>
                     <PasswordInput name="password" placeholder="Password" required />
                   </label>
-                  <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+                  <Turnstile
+                    key={turnstileNonce}
+                    siteKey={turnstileSiteKey}
+                    onToken={setTurnstileToken}
+                    onUnavailable={setTurnstileError}
+                  />
+                  {turnstileError && (
+                    <p className="error">{turnstileUnavailableMessage(turnstileError)}</p>
+                  )}
                   <button
                     type="submit"
                     className="btn-primary btn-full"

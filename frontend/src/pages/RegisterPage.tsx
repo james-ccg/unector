@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { authApi, billingApi, publicApi, errorMessage } from '../services/api'
 import Turnstile from '../components/Turnstile'
+import { turnstileUnavailableMessage } from '../lib/turnstile'
 import PasswordInput from '../components/PasswordInput'
 import { gmailErrorMessage } from '../lib/gmailError'
 import './LoginPage.css'
@@ -26,6 +27,10 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState('')
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  // Why the check could not run, when it could not. The submit button is
+  // already disabled without a token, so without this the form is simply
+  // dead with nothing on screen saying why.
+  const [turnstileError, setTurnstileError] = useState<string | null>(null)
   // Bumped to force the Turnstile widget to remount after a failed attempt -
   // Cloudflare tokens are single-use, so retrying with the same one (e.g.
   // after "MC number already registered") always fails Turnstile too.
@@ -176,6 +181,7 @@ export default function RegisterPage() {
     } catch (err) {
       setError(errorMessage(err))
       setTurnstileToken(null)
+      setTurnstileError(null)
       setTurnstileNonce((n) => n + 1)
       setLoading(false)
     }
@@ -289,7 +295,15 @@ export default function RegisterPage() {
                 <span>Confirm Password</span>
                 <PasswordInput name="confirm_password" placeholder="Repeat password" required minLength={8} />
               </label>
-              <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+              <Turnstile
+                    key={turnstileNonce}
+                    siteKey={turnstileSiteKey}
+                    onToken={setTurnstileToken}
+                    onUnavailable={setTurnstileError}
+                  />
+                  {turnstileError && (
+                    <p className="error">{turnstileUnavailableMessage(turnstileError)}</p>
+                  )}
               <button
                 type="submit"
                 className="btn-primary btn-full"

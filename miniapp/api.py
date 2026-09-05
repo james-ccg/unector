@@ -543,7 +543,11 @@ def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
     if not TURNSTILE_SECRET_KEY:
         return
     if not token:
-        raise HTTPException(400, "Couldn't confirm you're not a bot. Try again.")
+        # No token at all means the widget never produced one - it could not
+        # load, or it refused this hostname. "Try again" was the old wording
+        # and it described a different failure while recommending the one
+        # thing that cannot fix this one.
+        raise HTTPException(400, "The bot check didn't run, so this couldn't be submitted. Reload the page, and if it keeps happening the check is being blocked from this network or address.")
 
     import requests
 
@@ -560,7 +564,12 @@ def verify_turnstile(token: str | None, remote_ip: str | None) -> None:
         raise HTTPException(503, "The bot check is unreachable right now. Try again in a moment.")
 
     if not result.get("success"):
-        raise HTTPException(400, "Couldn't confirm you're not a bot. Try again.")
+        # Cloudflare says why in error-codes. Logged rather than shown: the
+        # codes name our own configuration ("invalid-input-secret") as often
+        # as anything the visitor did, and the visitor cannot act on either.
+        import logging
+        logging.warning("Turnstile rejected a token: %s", result.get("error-codes"))
+        raise HTTPException(400, "Couldn't confirm you're not a bot. Reload the page and try once more.")
 
 
 @app.get("/api/public/config")
@@ -639,11 +648,19 @@ def register_company(request: Request, body: RegisterRequest, response: Response
                 {"role": "owner", "company_id": new_company.id, "company_name": new_company.company_name}
             )
             set_session_cookies(response, token)
+            # The same shape every other way into a session returns. A brand
+            # new company has no avatar or status yet, so this adds nulls
+            # rather than data - which is the point: the frontend gets one
+            # object to reason about instead of four that differ.
             return {
-                "company_name": new_company.company_name,
+                **_session_view({
+                    "role": "owner",
+                    "company_id": new_company.id,
+                    "company_name": new_company.company_name,
+                }),
                 "mc_number": new_company.mc_number,
-                "company_id": new_company.id,
-                "role": "owner",
+                # Read from the pending OAuth token rather than the database:
+                # the connection is being written in this same transaction.
                 "gmail_connected": bool(pending_gmail),
             }
     except HTTPException:
@@ -721,7 +738,7 @@ def _finish_password_step(request: Request, response: Response, account_type: st
         token = create_session_token(base_claims)
         set_session_cookies(response, token)
         _notify_sign_in(request, base_claims)
-        return {"role": account_type, **extra_claims, **_gmail_connected_field(account_type, extra_claims["company_id"])}
+        return _session_view(base_claims)
 
     available_methods = [
         m
@@ -771,16 +788,43 @@ def _company_name_field(user: dict) -> dict:
     return {"company_name": company["company_name"]} if company else {}
 
 
+# How the token keeps itself honest, rather than anything about the account.
+# /api/me used to hand the raw claims back, which meant the page had `sid` -
+# the session id the CSRF token is bound to - sitting in JavaScript, when the
+# session cookie carrying it is httpOnly precisely so scripts cannot read it.
+# Nothing was exploitable through it, but there is no reason for it to be
+# there, and it was the difference that stopped a login and a page load
+# answering with the same shape.
+_TOKEN_BOOKKEEPING = ("purpose", "sid", "exp", "iat", "nbf", "jti")
+
+
+def _session_view(claims: dict) -> dict:
+    """Everything the frontend needs to know about a signed-in account.
+
+    One function because there are four ways to arrive at a session -
+    registering, a password login, finishing 2FA, finishing WebAuthn - plus
+    the page-load check, and each of them was assembling this by hand. Three
+    of the four left out the avatar and the status, so signing in showed a
+    blank profile until something happened to call /api/me and fill it in.
+    Refreshing the page fixed it, which is the tell: the data was always
+    there, it just was not in the reply that mattered.
+
+    The live lookups come after the claims, so a value stamped into the token
+    at sign-in loses to the current one - see _company_name_field.
+    """
+    account = {k: v for k, v in claims.items() if k not in _TOKEN_BOOKKEEPING}
+    return {
+        **account,
+        **_company_name_field(account),
+        **_gmail_connected_field(account.get("role"), account.get("company_id")),
+        **_status_field(account),
+        **_avatar_field(account),
+    }
+
+
 @app.get("/api/me")
 def me(user: dict = Depends(get_current_user)):
-    return {
-        **user,
-        # After the spread, so a stale name in the token loses to the live one.
-        **_company_name_field(user),
-        **_gmail_connected_field(user.get("role"), user.get("company_id")),
-        **_status_field(user),
-        **_avatar_field(user),
-    }
+    return _session_view(user)
 
 
 class SetStatusRequest(BaseModel):
@@ -3039,7 +3083,7 @@ async def login_2fa_verify(request: Request, body: TwoFaLoginVerifyRequest, resp
     token = create_session_token(session_claims)
     set_session_cookies(response, token)
     _notify_sign_in(request, session_claims)
-    return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
+    return _session_view(session_claims)
 
 
 @app.post("/api/2fa/login/webauthn/verify")
@@ -3079,7 +3123,7 @@ async def login_2fa_webauthn_verify(
     token = create_session_token(session_claims)
     set_session_cookies(response, token)
     _notify_sign_in(request, session_claims)
-    return {**session_claims, **_gmail_connected_field(session_claims["role"], session_claims["company_id"])}
+    return _session_view(session_claims)
 
 
 # ------------------------------------------------------------------

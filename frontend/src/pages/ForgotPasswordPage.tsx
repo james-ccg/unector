@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { authApi, publicApi, errorMessage } from '../services/api'
 import Turnstile from '../components/Turnstile'
+import { turnstileUnavailableMessage } from '../lib/turnstile'
 import './LoginPage.css'
 
 export default function ForgotPasswordPage() {
@@ -10,6 +11,10 @@ export default function ForgotPasswordPage() {
   const [sent, setSent] = useState(false)
   const [turnstileSiteKey, setTurnstileSiteKey] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  // Why the check could not run, when it could not. The submit button is
+  // already disabled without a token, so without this the form is simply
+  // dead with nothing on screen saying why.
+  const [turnstileError, setTurnstileError] = useState<string | null>(null)
   const [turnstileNonce, setTurnstileNonce] = useState(0)
 
   useEffect(() => {
@@ -33,6 +38,7 @@ export default function ForgotPasswordPage() {
     } catch (err) {
       setError(errorMessage(err))
       setTurnstileToken(null)
+      setTurnstileError(null)
       setTurnstileNonce((n) => n + 1)
     } finally {
       setLoading(false)
@@ -75,7 +81,15 @@ export default function ForgotPasswordPage() {
                 <span>MC Number</span>
                 <input type="text" name="mc_number" placeholder="123456" required />
               </label>
-              <Turnstile key={turnstileNonce} siteKey={turnstileSiteKey} onToken={setTurnstileToken} />
+              <Turnstile
+                    key={turnstileNonce}
+                    siteKey={turnstileSiteKey}
+                    onToken={setTurnstileToken}
+                    onUnavailable={setTurnstileError}
+                  />
+                  {turnstileError && (
+                    <p className="error">{turnstileUnavailableMessage(turnstileError)}</p>
+                  )}
               <button
                 type="submit"
                 className="btn-primary btn-full"
